@@ -1,0 +1,20 @@
+body {
+  font-family: Arial, sans-serif;
+  padding: 10px;
+  width: 300px;
+}
+
+input, button {
+  width: 100%;
+  margin: 5px 0;
+}
+
+#response {
+  white-space: pre-wrap; 
+  background: #f9f9f9; 
+  padding: 10px; 
+  border: 1px solid #ccc; 
+  margin-top: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+}
