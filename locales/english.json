@@ -1,11 +1,9 @@
 {
-    "welcome": "Welcome to the intelligent assistant Kamila!",
+    "welcome": "Welcome to Kamila, your intelligent assistant!",
     "queryPlaceholder": "Type your question...",
     "sendButton": "Send",
     "responseLabel": "Response:",
-    "loginError": "Please log in to darwina.weblucy.com to use the app.",
-    "settings": "Settings",
-    "about": "About",
-    "language": "Language",
-    "version": "Version"
+    "instructionsButton": "📋 Instructions",
+    "updateButton": "🚀 Update",
+    "instructionsContent": "<h3>How to update the application?</h3><ol><li>Download the ZIP file by clicking 🚀.</li><li>Unzip the file on your computer.</li><li>Navigate to <strong>chrome://extensions</strong>.</li><li>Enable <strong>Developer Mode</strong>.</li><li>Click <strong>„Load unpacked”</strong> and select the plugin folder.</li></ol>"
 }

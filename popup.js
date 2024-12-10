@@ -5,12 +5,47 @@ const webhookUrl = 'https://hook.eu2.make.com/gf28akjoeof22mrb2jma1puxl91k2udk';
 const queryInput = document.getElementById('query');
 const responseDiv = document.getElementById('response');
 const sendButton = document.getElementById('send');
+const flagElements = document.querySelectorAll('.flag'); // Flagi językowe
 
-// TODO: W przyszłości dodać funkcję inicjalizującą wtyczkę i sprawdzającą autoryzację przy starcie.
-//       Np. po załadowaniu popupu wywołać checkAuthStatus() i w zależności od wyniku:
-//       - pozwolić zadawać pytania
-//       - lub poprosić o login/hasło
+// Funkcja inicjalizująca wtyczkę
+document.addEventListener('DOMContentLoaded', async () => {
+  const preferredLanguage = localStorage.getItem('language') || 'polish'; // Domyślny język
+  await setLanguage(preferredLanguage); // Ładujemy tłumaczenia
 
+  // Obsługa kliknięcia flag
+  flagElements.forEach(flag => {
+    flag.addEventListener('click', async () => {
+      const selectedLanguage = flag.getAttribute('data-lang');
+      await setLanguage(selectedLanguage);
+    });
+  });
+});
+
+// Funkcja ustawiania języka
+async function setLanguage(lang) {
+  localStorage.setItem('language', lang); // Zapisz wybór w localStorage
+  await loadTranslations(lang); // Wczytaj tłumaczenia
+}
+
+// Funkcja ładowania tłumaczeń
+async function loadTranslations(lang = 'polish') {
+  try {
+    const response = await fetch(`locales/${lang}.json`);
+    if (!response.ok) throw new Error('Błąd ładowania tłumaczeń');
+
+    const translations = await response.json();
+
+    // Aktualizacja interfejsu
+    document.getElementById('welcome-message').innerText = translations.welcome;
+    queryInput.placeholder = translations.queryPlaceholder;
+    sendButton.innerText = translations.sendButton;
+    document.getElementById('response-label').innerText = translations.responseLabel;
+  } catch (error) {
+    console.error('Błąd podczas ładowania tłumaczeń:', error);
+  }
+}
+
+// Obsługa kliknięcia przycisku wysyłania zapytania
 sendButton.addEventListener('click', async () => {
   const query = queryInput.value.trim();
   if (!query) {
@@ -20,9 +55,6 @@ sendButton.addEventListener('click', async () => {
 
   responseDiv.textContent = 'Wysyłam zapytanie...';
 
-  // TODO: Sprawdzić autoryzację użytkownika przed wysłaniem zapytania (funkcjonalność autoryzacji powinna być gotowa wcześniej)
-  // Jeśli brak autoryzacji, wyświetl komunikat i przerwij.
-  
   const data = await fetchData(query);
   renderResponse(data);
 });
@@ -30,58 +62,46 @@ sendButton.addEventListener('click', async () => {
 /**
  * Sprawdza status autoryzacji użytkownika.
  * TODO:
- * - Najpierw potrzebne jest wdrożenie endpointu sprawdzającego zalogowanie na darwina.weblucy.com.
- * - Funkcja powinna zwracać true/false w zależności od statusu.
- * - Priorytet: wysoki, ponieważ bez autoryzacji nie chcemy udostępniać danych.
+ * - Wdrożyć endpoint sprawdzający zalogowanie na darwina.weblucy.com.
+ * - Zwraca true/false w zależności od statusu.
  */
 async function checkAuthStatus() {
   // TODO: Wywołaj endpoint sprawdzający zalogowanie
   // const response = await fetch('https://darwina.weblucy.com/api/auth/status', { credentials: 'include' });
-  // TODO: Przetwórz wynik, zwróć true/false
-  // return true lub false
+  // return response.ok;
   return true; // Placeholder
 }
 
 /**
  * Wysyła zapytanie do Make.com z parametrem `req` i zwraca przetworzone dane.
- * TODO:
- * - Dodać obsługę błędów, jeśli serwer nie zwróci poprawnych danych.
- * - Priorytet: średni, bo podstawowa wersja już działa, ale obsługa błędów jest kluczowa przed wdrożeniem.
- * @param {string} query - Zapytanie wpisane przez użytkownika.
- * @returns {object} - Odpowiedź z API w formacie JSON.
  */
 async function fetchData(query) {
   try {
     const url = `${webhookUrl}?req="${encodeURIComponent(query)}"`;
     const response = await fetch(url, { method: 'GET' });
     if (!response.ok) {
-      // TODO: Obsługa różnych kodów błędów, np. 401 (nieautoryzowany), 500 (błąd serwera), etc.
       return { error: 'Błąd: ' + response.status };
     }
     const data = await response.json();
     return data;
   } catch (error) {
-    // TODO: Lepsza obsługa błędów sieciowych, retry lub komunikat dla użytkownika.
     return { error: 'Błąd połączenia: ' + error.message };
   }
 }
 
 /**
  * Wyświetla odpowiedź w okienku wtyczki.
- * TODO:
- * - Jeśli odpowiedź zawiera Markdown lub HTML, rozważyć parsowanie i ładniejsze renderowanie.
- * - Jeśli odpowiedź to JSON z danymi leadów lub stanami magazynowymi, dodać funkcje formatowania.
- * - Priorytet: średni, dopiero po tym, jak upewnimy się, że komunikacja i autoryzacja działa.
- * @param {object} data - Dane zwrócone przez fetchData().
  */
 function renderResponse(data) {
   if (data.error) {
     responseDiv.textContent = data.error;
     return;
   }
-  // Na razie prosto: wyświetlamy JSON
-  responseDiv.textContent = JSON.stringify(data, null, 2);
+  responseDiv.textContent = JSON.stringify(data, null, 2); // Wyświetl jako JSON
 }
+
+// TODO: Funkcje fetchLeads, checkProductAvailability i generateReports zostają bez zmian.
+// TODO: Możesz rozbudować je w przyszłości na podstawie logiki tłumaczeń.
 
 // TODO: Funkcja do pobrania leadów z Selly
 //       Wymaga wcześniej w scenariuszu Make.com obsługi zapytań typu "pokaż leady".

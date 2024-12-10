@@ -3,9 +3,7 @@
     "queryPlaceholder": "Wpisz swoje pytanie...",
     "sendButton": "Wyślij",
     "responseLabel": "Odpowiedź:",
-    "loginError": "Zaloguj się na darwina.weblucy.com, aby korzystać z aplikacji.",
-    "settings": "Ustawienia",
-    "about": "O aplikacji",
-    "language": "Język",
-    "version": "Wersja"
+    "instructionsButton": "📋 Instrukcja",
+    "updateButton": "🚀 Zaktualizuj",
+    "instructionsContent": "<h3>Jak zaktualizować aplikację?</h3><ol><li>Pobierz plik ZIP klikając 🚀.</li><li>Rozpakuj ZIP na swoim komputerze.</li><li>Przejdź do <strong>chrome://extensions</strong>.</li><li>Włącz <strong>Tryb programisty</strong>.</li><li>Kliknij <strong>„Wczytaj rozpakowany”</strong> i wskaż folder wtyczki.</li></ol>"
 }

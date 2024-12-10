@@ -8,17 +8,31 @@
 </head>
 <body>
     <div id="app">
-        <div id="language-switcher">
-            <span class="flag" data-lang="polish" title="Polski">🇵🇱</span>
-            <span class="flag" data-lang="english" title="English">🇬🇧</span>
-            <span class="flag" data-lang="ukrainian" title="Українська">🇺🇦</span>
-        </div>
-        <h1 id="welcome-message">Witaj w inteligentnym asystencie Kamila!</h1>
-        <label for="query-input" id="query-label">Zadaj pytanie:</label>
-        <input type="text" id="query" placeholder="Wpisz swoje pytanie...">
-        <button id="send">Wyślij</button>
-        <p id="response-label">Odpowiedź:</p>
-        <div id="response"></div>
+        <header>
+            <h1 id="welcome-message">Witaj w inteligentnym asystencie Kamila!</h1>
+        </header>
+        <main>
+            <label id="response-label" for="query">Twoje zapytanie:</label>
+            <input type="text" id="query" placeholder="Wpisz swoje pytanie...">
+            <button id="send">Wyślij</button>
+            <div id="response"></div>
+        </main>
+        <section id="about-tab">
+            <h2>About</h2>
+            <button id="manual-update-button">🚀 Zaktualizuj</button>
+            <button id="instructions-button">📋 Instrukcja</button>
+            <p id="update-status"></p>
+            <div id="instructions" style="display: none;">
+                <h3>Jak zaktualizować aplikację?</h3>
+                <ol>
+                    <li>Pobierz plik ZIP klikając 🚀.</li>
+                    <li>Rozpakuj ZIP na swoim komputerze.</li>
+                    <li>Przejdź do <strong>chrome://extensions</strong>.</li>
+                    <li>Włącz <strong>Tryb programisty</strong>.</li>
+                    <li>Kliknij <strong>„Wczytaj rozpakowany”</strong> i wskaż folder wtyczki.</li>
+                </ol>
+            </div>
+        </section>
     </div>
     <script src="popup.js"></script>
 </body>
