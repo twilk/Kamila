@@ -3,9 +3,27 @@
     "chat": "Chat",
     "settings": "Ustawienia",
     "about": "O aplikacji",
+    "queryLabel": "Twoje zapytanie:",
     "queryPlaceholder": "Wpisz swoje pytanie...",
     "send": "Wyślij",
-    "instructionsButton": "📋 Instrukcja",
-    "updateButton": "🚀 Zaktualizuj",
-    "instructionsContent": "<h3>Jak zaktualizować aplikację?</h3><ol><li>Pobierz plik ZIP klikając 🚀.</li><li>Rozpakuj plik na swoim komputerze.</li><li>Przejdź do <strong>chrome://extensions</strong>.</li><li>Włącz <strong>Tryb programisty</strong>.</li><li>Kliknij <strong>„Załaduj rozpakowaną”</strong> i wybierz folder wtyczki.</li></ol>"
+    "loading": "Ładowanie...",
+    "errorEmptyQuery": "Proszę wpisać pytanie",
+    "errorConnection": "Błąd połączenia z serwerem",
+    "updateAvailable": "Dostępna jest nowa wersja {version}. Czy chcesz zaktualizować?",
+    "updateLatest": "Masz najnowszą wersję!",
+    "updateError": "Błąd sprawdzania aktualizacji: {message}",
+    "version": "Wersja: {version}",
+    "checkUpdate": "Sprawdź aktualizacje",
+    "showInstructions": "📋 Instrukcja",
+    "themeLight": "Jasny motyw",
+    "themeDark": "Ciemny motyw",
+    "creator": "Twórca: Tomasz Wilk",
+    "purpose": "Cel: Automatyzacja procesów obsługi klienta i zarządzania zamówieniami w Darwin.pl",
+    "leadStatuses": {
+        "submitted": "Złożone",
+        "confirmed": "Potwierdzone przez Klienta",
+        "accepted": "Przyjęte do realizacji",
+        "ready": "Gotowe do odbioru",
+        "overdue": "Zaległe"
+    }
 }

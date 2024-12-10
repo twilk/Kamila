@@ -3,9 +3,27 @@
     "chat": "Chat",
     "settings": "Settings",
     "about": "About",
+    "queryLabel": "Your query:",
     "queryPlaceholder": "Type your question...",
     "send": "Send",
-    "instructionsButton": "📋 Instructions",
-    "updateButton": "🚀 Update",
-    "instructionsContent": "<h3>How to update the application?</h3><ol><li>Download the ZIP file by clicking 🚀.</li><li>Unzip the file on your computer.</li><li>Navigate to <strong>chrome://extensions</strong>.</li><li>Enable <strong>Developer Mode</strong>.</li><li>Click <strong>„Load unpacked”</strong> and select the plugin folder.</li></ol>"
+    "loading": "Loading...",
+    "errorEmptyQuery": "Please enter a question",
+    "errorConnection": "Server connection error",
+    "updateAvailable": "New version {version} is available. Do you want to update?",
+    "updateLatest": "You have the latest version!",
+    "updateError": "Update check error: {message}",
+    "version": "Version: {version}",
+    "checkUpdate": "🚀 Check for updates",
+    "showInstructions": "📋 Instructions",
+    "themeLight": "Light theme",
+    "themeDark": "Dark theme",
+    "creator": "Creator: Tomasz Wilk",
+    "purpose": "Purpose: Automation of customer service and order management processes at Darwin.pl",
+    "leadStatuses": {
+        "submitted": "Submitted",
+        "confirmed": "Confirmed by Customer",
+        "accepted": "Accepted for Processing",
+        "ready": "Ready for Pickup",
+        "overdue": "Overdue"
+    }
 }

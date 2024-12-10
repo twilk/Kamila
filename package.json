@@ -1,0 +1,29 @@
+{
+    "name": "kamila-extension",
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+        "build": "./build.sh",
+        "test": "jest",
+        "test:unit": "jest tests/unit",
+        "test:integration": "jest tests/integration",
+        "test:startup": "jest tests/startup.test.js",
+        "test:coverage": "jest --coverage"
+    },
+    "jest": {
+        "testEnvironment": "jsdom",
+        "setupFiles": ["./tests/setup.js"],
+        "moduleNameMapper": {
+            "^@/(.*)$": "<rootDir>/src/$1"
+        }
+    },
+    "dependencies": {
+        "marked": "^4.0.0"
+    },
+    "devDependencies": {
+        "@babel/core": "^7.15.0",
+        "@babel/preset-env": "^7.15.0",
+        "jest": "^27.0.6",
+        "jest-environment-jsdom": "^27.0.6"
+    }
+} 

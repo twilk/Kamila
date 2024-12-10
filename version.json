@@ -1,4 +1,5 @@
 {
     "version": "1.0.0",
-    "downloadUrl": "https://github.com/twilk/Kamila/archive/refs/heads/main.zip"
+    "downloadUrl": "https://github.com/twilk/Kamila/releases/latest/download/kamila.zip",
+    "releaseNotes": "Pierwsza wersja rozszerzenia Kamila"
 }

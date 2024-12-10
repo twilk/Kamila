@@ -1,0 +1,12 @@
+[
+    {
+        "id": "default",
+        "name": "Domyślne",
+        "file": "default.jpg"
+    },
+    {
+        "id": "dark",
+        "name": "Ciemne",
+        "file": "dark.jpg"
+    }
+] 

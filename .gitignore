@@ -21,3 +21,45 @@ node_modules/
 # Ignore build artifacts (if applicable)
 build/
 dist/
+
+# Environment variables
+.env
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Custom wallpapers uploaded by users
+wallpapers/custom/
+
+# Build
+dist/
+build/
+
+# Dependencies
+node_modules/
+package-lock.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+
+# Custom wallpapers
+wallpapers/custom/
+
+# Test coverage
+coverage/
