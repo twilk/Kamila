@@ -1,0 +1,11 @@
+{
+    "welcome": "Witaj w inteligentnym asystencie Kamila!",
+    "queryPlaceholder": "Wpisz swoje pytanie...",
+    "sendButton": "Wyślij",
+    "responseLabel": "Odpowiedź:",
+    "loginError": "Zaloguj się na darwina.weblucy.com, aby korzystać z aplikacji.",
+    "settings": "Ustawienia",
+    "about": "O aplikacji",
+    "language": "Język",
+    "version": "Wersja"
+}

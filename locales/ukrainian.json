@@ -1,0 +1,11 @@
+{
+    "welcome": "Ласкаво просимо до інтелектуального асистента Kamila!",
+    "queryPlaceholder": "Введіть своє запитання...",
+    "sendButton": "Надіслати",
+    "responseLabel": "Відповідь:",
+    "loginError": "Увійдіть на darwina.weblucy.com, щоб використовувати додаток.",
+    "settings": "Налаштування",
+    "about": "Про програму",
+    "language": "Мова",
+    "version": "Версія"
+}

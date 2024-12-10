@@ -1,0 +1,11 @@
+{
+    "welcome": "Welcome to the intelligent assistant Kamila!",
+    "queryPlaceholder": "Type your question...",
+    "sendButton": "Send",
+    "responseLabel": "Response:",
+    "loginError": "Please log in to darwina.weblucy.com to use the app.",
+    "settings": "Settings",
+    "about": "About",
+    "language": "Language",
+    "version": "Version"
+}
