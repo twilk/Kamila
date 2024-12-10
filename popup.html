@@ -11,28 +11,41 @@
         <header>
             <h1 id="welcome-message">Witaj w inteligentnym asystencie Kamila!</h1>
         </header>
-        <main>
-            <label id="response-label" for="query">Twoje zapytanie:</label>
-            <input type="text" id="query" placeholder="Wpisz swoje pytanie...">
-            <button id="send">Wyślij</button>
-            <div id="response"></div>
-        </main>
-        <section id="about-tab">
-            <h2>About</h2>
-            <button id="manual-update-button">🚀 Zaktualizuj</button>
-            <button id="instructions-button">📋 Instrukcja</button>
-            <p id="update-status"></p>
-            <div id="instructions" style="display: none;">
-                <h3>Jak zaktualizować aplikację?</h3>
-                <ol>
-                    <li>Pobierz plik ZIP klikając 🚀.</li>
-                    <li>Rozpakuj ZIP na swoim komputerze.</li>
-                    <li>Przejdź do <strong>chrome://extensions</strong>.</li>
-                    <li>Włącz <strong>Tryb programisty</strong>.</li>
-                    <li>Kliknij <strong>„Wczytaj rozpakowany”</strong> i wskaż folder wtyczki.</li>
-                </ol>
+        <div id="main-container">
+            <!-- 75% - Panel główny (czatbot, ustawienia, about) -->
+            <div id="main-panel">
+                <div id="chatbot">
+                    <label id="response-label" for="query">Twoje zapytanie:</label>
+                    <input type="text" id="query" placeholder="Wpisz swoje pytanie...">
+                    <button id="send">Wyślij</button>
+                    <div id="response"></div>
+                </div>
+                <div id="settings" style="display: none;">
+                    <h2>Ustawienia</h2>
+                    <p>Załaduj swoje ustawienia z pliku JSON lub zmień preferencje.</p>
+                </div>
+                <div id="about" style="display: none;">
+                    <h2>About</h2>
+                    <p>Twórca: Tomasz Wilk</p>
+                    <p>Aplikacja Kamila została stworzona, aby wspierać Twoją codzienną pracę, ułatwiając dostęp do kluczowych danych.</p>
+                    <button id="manual-update-button">🚀 Zaktualizuj</button>
+                    <button id="instructions-button">📋 Instrukcja</button>
+                </div>
             </div>
-        </section>
+            <!-- 25% - Panel boczny (leady, przyciski) -->
+            <div id="side-panel">
+                <h3>Leady</h3>
+                <ul id="lead-statuses">
+                    <li><span class="lead-icon">✔️</span> Złożone</li>
+                    <li><span class="lead-icon">✔️</span> Potwierdzone przez Klienta</li>
+                    <li><span class="lead-icon">✔️</span> Przyjęte do realizacji w sklepie</li>
+                    <li><span class="lead-icon">✔️</span> Gotowe do odbioru w sklepie</li>
+                    <li><span class="lead-icon">⏳</span> Gotowe do odbioru (powyżej 2 tygodni)</li>
+                </ul>
+                <button id="settings-button">Ustawienia</button>
+                <button id="about-button">About</button>
+            </div>
+        </div>
     </div>
     <script src="popup.js"></script>
 </body>
