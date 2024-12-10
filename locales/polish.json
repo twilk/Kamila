@@ -1,9 +1,11 @@
 {
     "welcome": "Witaj w inteligentnym asystencie Kamila!",
+    "chat": "Chat",
+    "settings": "Ustawienia",
+    "about": "O aplikacji",
     "queryPlaceholder": "Wpisz swoje pytanie...",
-    "sendButton": "Wyślij",
-    "responseLabel": "Odpowiedź:",
+    "send": "Wyślij",
     "instructionsButton": "📋 Instrukcja",
     "updateButton": "🚀 Zaktualizuj",
-    "instructionsContent": "<h3>Jak zaktualizować aplikację?</h3><ol><li>Pobierz plik ZIP klikając 🚀.</li><li>Rozpakuj ZIP na swoim komputerze.</li><li>Przejdź do <strong>chrome://extensions</strong>.</li><li>Włącz <strong>Tryb programisty</strong>.</li><li>Kliknij <strong>„Wczytaj rozpakowany”</strong> i wskaż folder wtyczki.</li></ol>"
+    "instructionsContent": "<h3>Jak zaktualizować aplikację?</h3><ol><li>Pobierz plik ZIP klikając 🚀.</li><li>Rozpakuj plik na swoim komputerze.</li><li>Przejdź do <strong>chrome://extensions</strong>.</li><li>Włącz <strong>Tryb programisty</strong>.</li><li>Kliknij <strong>„Załaduj rozpakowaną”</strong> i wybierz folder wtyczki.</li></ol>"
 }

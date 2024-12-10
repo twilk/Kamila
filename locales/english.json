@@ -1,8 +1,10 @@
 {
     "welcome": "Welcome to Kamila, your intelligent assistant!",
+    "chat": "Chat",
+    "settings": "Settings",
+    "about": "About",
     "queryPlaceholder": "Type your question...",
-    "sendButton": "Send",
-    "responseLabel": "Response:",
+    "send": "Send",
     "instructionsButton": "📋 Instructions",
     "updateButton": "🚀 Update",
     "instructionsContent": "<h3>How to update the application?</h3><ol><li>Download the ZIP file by clicking 🚀.</li><li>Unzip the file on your computer.</li><li>Navigate to <strong>chrome://extensions</strong>.</li><li>Enable <strong>Developer Mode</strong>.</li><li>Click <strong>„Load unpacked”</strong> and select the plugin folder.</li></ol>"

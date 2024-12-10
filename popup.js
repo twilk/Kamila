@@ -5,32 +5,33 @@ const webhookUrl = 'https://hook.eu2.make.com/gf28akjoeof22mrb2jma1puxl91k2udk';
 const queryInput = document.getElementById('query');
 const responseDiv = document.getElementById('response');
 const sendButton = document.getElementById('send');
-const settingsTab = document.getElementById('settings-tab');
-const aboutTab = document.getElementById('about-tab');
-const chatTab = document.getElementById('chat-tab');
-const themeInputs = document.querySelectorAll('input[name="theme"]');
-const tabLinks = document.querySelectorAll('.nav-link');
-const tabContents = document.querySelectorAll('.tab-pane');
 
 // Funkcja inicjalizująca wtyczkę
 document.addEventListener('DOMContentLoaded', async () => {
-    // Ustaw preferowany język z localStorage (domyślny: 'polish')
-    const preferredLanguage = localStorage.getItem('language') || 'polish';
-    await setLanguage(preferredLanguage); // Ładujemy tłumaczenia
-    await updateLeadCounts(); // Pobierz dane leadów
+    // Obsługa kart
+    const tabLinks = document.querySelectorAll('.nav-link');
+    const tabContents = document.querySelectorAll('.tab-pane');
 
-    // Obsługa kart (Chat, Ustawienia, About)
     tabLinks.forEach(tab => {
         tab.addEventListener('click', (e) => {
             e.preventDefault();
-            handleTabChange(tab);
+
+            // Dezaktywuj wszystkie linki i ukryj zawartość
+            tabLinks.forEach(link => link.classList.remove('active'));
+            tabContents.forEach(content => content.classList.remove('show', 'active'));
+
+            // Aktywuj kliknięty link i jego zawartość
+            tab.classList.add('active');
+            const targetId = tab.id.replace('-tab', '');
+            document.getElementById(targetId).classList.add('show', 'active');
         });
     });
 
-    // Obsługa zmiany motywu (Ciemny/Jasny)
+    // Inne funkcjonalności (motyw, leady, zapytania itp.)
     const savedTheme = localStorage.getItem('theme') || 'light';
     applyTheme(savedTheme);
 
+    const themeInputs = document.querySelectorAll('input[name="theme"]');
     themeInputs.forEach(input => {
         input.addEventListener('change', (event) => {
             const selectedTheme = event.target.value;
@@ -39,24 +40,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    // Inicjalizacja tooltipów (Bootstrap)
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+    await updateLeadCounts();
+    initTooltips();
 });
 
-// Funkcja do przełączania kart
-function handleTabChange(tab) {
-    // Usuń aktywne klasy ze wszystkich kart i zawartości
-    tabLinks.forEach(t => t.classList.remove('active'));
-    tabContents.forEach(content => content.classList.remove('show', 'active'));
-
-    // Dodaj aktywne klasy do wybranej karty i jej zawartości
-    tab.classList.add('active');
-    const targetId = tab.id.split('-')[0]; // np. 'chat' z 'chat-tab'
-    document.getElementById(targetId).classList.add('show', 'active');
-}
-
-// Funkcja stosująca motyw (ciemny/jasny)
+// Funkcja stosująca motyw
 function applyTheme(theme) {
     if (theme === 'dark') {
         document.body.classList.add('dark-theme');
@@ -67,21 +55,17 @@ function applyTheme(theme) {
     }
 }
 
-// Funkcja pobierająca dane o leadach
+// Funkcja pobierająca dane leadów
 async function updateLeadCounts() {
-    try {
-        const leadData = await fetchLeadData();
-        document.getElementById('count-submitted').textContent = leadData.submitted || 0;
-        document.getElementById('count-confirmed').textContent = leadData.confirmed || 0;
-        document.getElementById('count-accepted').textContent = leadData.accepted || 0;
-        document.getElementById('count-ready').textContent = leadData.ready || 0;
-        document.getElementById('count-overdue').textContent = leadData.overdue || 0;
-    } catch (error) {
-        console.error('Błąd podczas aktualizacji leadów:', error);
-    }
+    const leadData = await fetchLeadData();
+    document.getElementById('count-submitted').textContent = leadData.submitted || 0;
+    document.getElementById('count-confirmed').textContent = leadData.confirmed || 0;
+    document.getElementById('count-accepted').textContent = leadData.accepted || 0;
+    document.getElementById('count-ready').textContent = leadData.ready || 0;
+    document.getElementById('count-overdue').textContent = leadData.overdue || 0;
 }
 
-// Symulacja danych leadów (możesz zastąpić prawdziwymi danymi z API)
+// Symulacja danych leadów
 async function fetchLeadData() {
     return {
         submitted: 12,
@@ -92,13 +76,13 @@ async function fetchLeadData() {
     };
 }
 
-// Funkcja ustawiania języka (symulowana)
-async function setLanguage(lang) {
-    localStorage.setItem('language', lang);
-    // Możesz tutaj zaimplementować ładowanie tłumaczeń
+// Inicjalizacja tooltipów
+function initTooltips() {
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
 }
 
-// Obsługa wysyłania zapytań z pola czatu
+// Obsługa wysyłania zapytań
 sendButton.addEventListener('click', async () => {
     const query = queryInput.value.trim();
     if (!query) {
@@ -110,22 +94,22 @@ sendButton.addEventListener('click', async () => {
 
     try {
         const response = await fetch(`${webhookUrl}?req="${encodeURIComponent(query)}"`);
-        if (!response.ok) throw new Error(`Błąd serwera: ${response.status}`);
         const data = await response.json();
-        renderResponse(data);
+        responseDiv.textContent = JSON.stringify(data, null, 2);
     } catch (error) {
         responseDiv.textContent = `Błąd: ${error.message}`;
     }
 });
 
-// Funkcja wyświetlania odpowiedzi w czacie
-function renderResponse(data) {
-    if (data.error) {
-        responseDiv.textContent = data.error;
-        return;
-    }
-    responseDiv.textContent = JSON.stringify(data, null, 2);
-}
+
+// // Funkcja wyświetlania odpowiedzi w czacie
+// function renderResponse(data) {
+//     if (data.error) {
+//         responseDiv.textContent = data.error;
+//         return;
+//     }
+//     responseDiv.textContent = JSON.stringify(data, null, 2);
+// }
 
 // TODO: Funkcje fetchLeads, checkProductAvailability i generateReports zostają bez zmian.
 // TODO: Możesz rozbudować je w przyszłości na podstawie logiki tłumaczeń.

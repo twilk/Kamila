@@ -1,34 +1,50 @@
-/* Szerokość okna popup */
 body {
     width: 800px;
     height: 600px;
+    overflow: hidden; /* Ukryj przewijanie */
 }
 
-/* Styl leadów */
 #lead-panel {
     border-right: 1px solid #ccc;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 .lead-status {
-    margin: 15px 0;
     font-size: 24px;
+    margin: 15px 0;
     cursor: pointer;
-    line-height: 1.2;
+    text-align: center;
 }
 
-/* Karty */
+.lead-count {
+    font-size: 16px;
+    display: block;
+    margin-top: 5px;
+}
+
 .nav-tabs .nav-link {
     cursor: pointer;
 }
 
-/* Tooltipy */
 .tooltip {
     font-size: 14px;
 }
 
-/* Responsywność */
-@media (max-width: 768px) {
-    body {
-        width: 100%;
-    }
+#language-switcher {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+}
+
+.flag {
+    font-size: 24px;
+    margin-right: 10px;
+    cursor: pointer;
+    transition: transform 0.2s ease-in-out;
+}
+
+.flag:hover {
+    transform: scale(1.2);
 }
