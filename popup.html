@@ -1,17 +1,25 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Kamila</title>
-<link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kamila</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>Kamila</h1>
-<input type="text" id="query" placeholder="Zadaj pytanie..."/>
-<button id="send">Wyślij</button>
-<div id="response"></div>
-
-<script src="popup.js"></script>
+    <div id="app">
+        <div id="language-switcher">
+            <span class="flag" data-lang="polish" title="Polski">🇵🇱</span>
+            <span class="flag" data-lang="english" title="English">🇬🇧</span>
+            <span class="flag" data-lang="ukrainian" title="Українська">🇺🇦</span>
+        </div>
+        <h1 id="welcome-message">Witaj w inteligentnym asystencie Kamila!</h1>
+        <label for="query-input" id="query-label">Zadaj pytanie:</label>
+        <input type="text" id="query" placeholder="Wpisz swoje pytanie...">
+        <button id="send">Wyślij</button>
+        <p id="response-label">Odpowiedź:</p>
+        <div id="response"></div>
+    </div>
+    <script src="popup.js"></script>
 </body>
 </html>
