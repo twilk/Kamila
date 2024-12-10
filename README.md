@@ -1,95 +1,73 @@
-Poniżej znajduje się zaktualizowana wersja README, w której dodatkowo wyeksponowałem (np. listami wypunktowanymi i pogrubieniami) poszczególne funkcjonalności wymienione wcześniej, tak aby pracownicy jeszcze wyraźniej dostrzegli wartość z korzystania z Kamili.
+# Kamila – Twój **inteligentny asystent** w pracy 🚀🤖
 
----
+**Wersja:** 1.0.0 *(przed autoupdate)*
 
-# Kamila – Twój inteligentny asystent w pracy
+## 🎯 Ogólne założenia
 
-**Wersja:** 1.0.0 (Wydanie przed wdrożeniem autoupdate)
+**Kamila** to rozszerzenie do **Google Chrome**, stworzone z myślą o pracownikach **Darwin.pl**.  
+Jej misją jest ułatwienie Twojej codziennej pracy, **błyskawiczny dostęp do kluczowych danych** i **inteligentne wsparcie** w podejmowaniu decyzji.
 
-## Ogólne założenia
+Dzięki sprytnym integracjom z wieloma systemami (Notion, Selly, Google Sheets, PC-Market, OpenAI przez Make.com) Kamila potrafi m.in.:
 
-**Kamila** to rozszerzenie do przeglądarki Google Chrome, stworzone specjalnie dla pracowników Darwin.pl. Jej głównym celem jest ułatwienie codziennej pracy, przyspieszenie dostępu do kluczowych informacji oraz wsparcie w podejmowaniu decyzji. Dzięki integracji z różnymi systemami firmowymi i zewnętrznymi (Notion, Selly, Google Sheets, PC-Market, OpenAI przez Make.com) Kamila potrafi:
+- 🔎 **Znaleźć dostępność towarów** i natychmiast Ci o tym poinformować.  
+- 💼 **Wyświetlić najnowsze leady z Selly**, dzięki czemu nic Ci nie umknie.  
+- 🗂 **Dostarczyć dane o pracownikach i sklepach z Notion**: kontakty, grafiki, zastępstwa — wszystko pod ręką.  
+- 📝 **Przetwarzać dane z Google Sheets**: grafiki, ewidencje, analizy sprzedaży, dostępność towaru na magazynie.  
+- 🧩 **Automatyzować procesy przez Make.com**, byś mógł otrzymać gotowe odpowiedzi w ułamku sekundy.
 
-- **Szybko udzielać odpowiedzi na pytania dotyczące dostępności towarów** (np. z baz PC-Market),
-- **Wyszukiwać i prezentować najnowsze leady pozyskane przez Selly**,
-- **Dostarczać dane o pracownikach i sklepach z Notion**, w tym informacje o kontaktach, grafikach i zastępstwach,
-- **Przetwarzać dane z Google Sheets**, takie jak grafiki, ewidencje czasu pracy, analizy sprzedaży, stany magazynowe,
-- **Bezpośrednio kontaktować się z wieloma źródłami danych poprzez Make.com**, by w tle zautomatyzować procesy i zwrócić Ci gotowe odpowiedzi.
+## 💎 Dlaczego Kamila jest dla Ciebie wartościowa?
 
-## Dlaczego Kamila jest ważna dla Ciebie
+W codziennym biegu **liczy się każda sekunda**. Kamila pomoże Ci:
 
-W środowisku pracy każda sekunda ma znaczenie. **Kamila** sprawia, że poszukiwanie informacji i ich interpretacja stają się szybsze, prostsze i dokładniejsze:
+- ⏱ **Szybciej podejmować decyzje:** Bez ciągłego przeklikiwania dziesiątek zakładek.  
+- 💬 **Usprawnić komunikację:** Natychmiast sprawdzaj informacje o sklepach, pracownikach czy raportach.  
+- ⚡ **Skuteczniej realizować zadania:**  
+  - Potrzebujesz wiedzieć, skąd wziąć towar? Kamila poda Ci gotową odpowiedź!  
+  - Chcesz sprawdzić najnowsze leady? Kamila natychmiast wyświetli listę.  
+- 😌 **Oszczędzić czas i nerwy:** Jedno okno przeglądarki, jedno rozszerzenie i wszystkie dane w zasięgu ręki.
 
-- **Szybsze podejmowanie decyzji:**  
-  Bezpośredni wgląd w dane (np. dostępność towaru z PC-Market, listę leadów z Selly) bez ręcznego wyszukiwania.
-  
-- **Prostsza komunikacja:**  
-  Natychmiastowy dostęp do informacji o pracownikach, sklepach czy raportach, dzięki czemu szybciej odpowiesz na pilne pytania i prośby.
+## 🚀 Jak zacząć?
 
-- **Skuteczniejsza realizacja zadań:**  
-  **Potrzebujesz wiedzieć, skąd wziąć towar?** Zapytaj Kamilę, a ona sprawdzi bazy i poda Ci gotową odpowiedź.  
-  **Chcesz zobaczyć nowe leady dla Twojego sklepu?** Kamila natychmiast wyświetli listę pozyskanych kontaktów.
-
-- **Oszczędność czasu i stresu:**  
-  Zamiast żonglować arkuszami, dokumentami i systemami, Kamila zrobi to za Ciebie, dostarczając jasnych wskazówek i podsumowań.
-
-- **Wygoda i spójność:**  
-  Wszystkie dane i odpowiedzi są pod ręką, w jednym okienku przeglądarki. W miarę rozwoju Kamili coraz więcej procesów zostanie zautomatyzowanych, a asystent stanie się jeszcze bardziej wszechstronny i intuicyjny.
-
-## Jak zacząć?
-
-1. **Pobierz najnowszą wersję:**  
-   Obecnie autoupdate nie jest dostępny, więc upewnij się, że posiadasz najnowszą wersję rozszerzenia. Gdy pojawi się nowa aktualizacja, firma poinformuje o tym wewnętrznie.
-
-2. **Zainstaluj rozszerzenie w Chrome:**  
-   - Otwórz `chrome://extensions/`.
-   - Włącz **Tryb programisty**.
-   - Kliknij **„Wczytaj rozpakowany”** i wskaż folder z plikami rozszerzenia Kamila.
+1. **Pobierz najnowszą wersję** (bez autoupdate musisz to zrobić ręcznie – nie martw się, damy znać, gdy pojawi się nowa).  
+2. **Zainstaluj Kamila w Chrome:**  
+   - Wejdź na `chrome://extensions/`  
+   - Włącz **Tryb programisty**  
+   - Kliknij **„Wczytaj rozpakowany”** i wybierz folder z plikami Kamili.  
    
-   Ikona Kamili pojawi się na pasku narzędzi przeglądarki.
+   Ikona Kamili pojawi się na pasku narzędzi.
 
-3. **Sprawdź autoryzację (jeśli wymagana):**  
-   Być może musisz być zalogowany na darwina.weblucy.com lub posiadać specjalne hasło. Postępuj zgodnie z instrukcjami działu IT.
+3. **Sprawdź autoryzację:** Być może potrzebujesz być zalogowany do `darwina.weblucy.com` lub podać specjalne hasło. Postępuj zgodnie z instrukcjami IT.  
+4. **Korzystaj!:**  
+   - Kliknij ikonę Kamili.  
+   - Wpisz pytanie lub wybierz sugerowane opcje.  
+   - Kamila przetworzy dane i wyświetli wynik od ręki! 🎉
 
-4. **Korzystaj z Kamili:**
-   - Kliknij ikonę rozszerzenia, aby otworzyć okno Kamili.
-   - Wpisz pytanie lub skorzystaj z proponowanych skrótów.
-   - Kamila pobierze, zinterpretuje i wyświetli dane bezpośrednio w oknie rozszerzenia.
+## 💡 Wskazówki
 
-## Wskazówki dla efektywnego korzystania
+- Bądź konkretny:  
+  **„Pokaż mi dzisiejsze leady z Selly dla sklepu nr 4”** jest precyzyjniejsze niż „Jakie są leady?”  
+- Wykorzystaj integracje do maksimum:  
+  Potrzebujesz grafiku z Google Sheets? Kontaktu do pracownika z Notion? Kamila to załatwi.  
+- Skorzystaj z inteligencji AI:  
+  Jeśli dane są skomplikowane, poproś o podsumowanie czy kluczowe punkty.  
+  Kamila uczyni je przejrzystymi i zrozumiałymi.
 
-- **Konkretne pytania, konkretne odpowiedzi:**  
-  „Pokaż mi dzisiejsze leady z Selly dla sklepu nr 4” jest bardziej precyzyjne niż „Jakie są leady?”.
-  
-- **Wykorzystaj integracje do maksimum:**  
-  Jeśli potrzebujesz grafiku z Google Sheets lub chcesz sprawdzić kontakt do pracownika w Notion, wspomnij o tym Kamili, a otrzymasz dane szybciej.
+## ⚠️ Znane ograniczenia
 
-- **Włącz inteligencję AI:**  
-  Jeśli dane są trudne do zrozumienia, poproś Kamilę o podsumowanie lub wyjaśnienie. Otrzymasz klarowne, skondensowane informacje.
+- **Brak autoupdate**: Na razie aktualizacje ręcznie, ale już nad tym pracujemy.  
+- **Funkcje w rozwoju**: Niektóre opcje dopiero powstają – możesz natrafić na placeholdery lub info o przyszłych funkcjach.
 
-## Znane ograniczenia
+## 🔮 Plany na przyszłość
 
-- **Brak autoupdate:**  
-  Na ten moment musisz ręcznie aktualizować Kamilę. Będziesz informowany o nowych wersjach wewnętrznie.
-  
-- **Funkcje w fazie rozwoju:**  
-  Niektóre opcje mogą być jeszcze w przygotowaniu. Możesz napotkać placeholdery lub komunikaty o planowanych integracjach.
+- **Autoupdate**: Już wkrótce nie będziesz musiał nic robić, by mieć najnowszą wersję Kamili.  
+- **Jeszcze potężniejsze AI**: Kamila będzie jeszcze lepiej interpretować dane, pomagać w złożonych zadaniach i reagować na specyficzne potrzeby.  
+- **Więcej integracji**: Kolejne źródła danych i narzędzia raportowania dodadzą Ci jeszcze więcej mocy w codziennej pracy.
 
-## Plany na przyszłość
+## 🤝 Potrzebujesz pomocy?
 
-- **Autoupdate:**  
-  Wkrótce Kamila będzie aktualizować się automatycznie, co pozwoli Ci zawsze korzystać z najnowszych funkcjonalności bez dodatkowego wysiłku.
-
-- **Zaawansowane funkcje AI:**  
-  Kamila stanie się jeszcze skuteczniejsza w interpretacji złożonych danych, obsłudze nietypowych zadań i reagowaniu na specyficzne potrzeby.
-
-- **Więcej integracji:**  
-  Planowane są kolejne źródła danych, abyś miał pod ręką pełen zestaw informacji potrzebnych do efektywnej pracy.
-
-## Pomoc i sugestie
-
-Masz problemy, pytania lub propozycje ulepszeń? Skontaktuj się z działem wsparcia IT lub złóż zgłoszenie w firmowym helpdesku. Twoja opinia jest cenna i pomaga w dalszym rozwoju Kamili.
+Masz pytania, sugestie, pomysły? Skontaktuj się z działem wsparcia IT lub zgłoś sprawę w firmowym helpdesku. Twoja opinia kształtuje przyszłość Kamili!
 
 ---
 
-**Kamila jest tu, aby Ci pomóc.** Korzystaj z niej na co dzień, by pracować szybciej, wydajniej i z mniejszym stresem. W miarę rozwoju będzie oferować coraz więcej funkcji i udogodnień, dopasowanych do Twoich potrzeb i wyzwań.
+**Kamila jest po to, by Cię wspierać.**  
+Korzystaj z niej każdego dnia i ciesz się łatwiejszą, szybszą i mniej stresującą pracą! ✨
