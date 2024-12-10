@@ -4,7 +4,11 @@
     "version": "1.0.0",
     "description": "Asystent AI Kamila dla Darwina.pl",
     "action": {
-        "default_popup": "popup.html"
+        "default_popup": "popup.html",
+        "default_icon": "icon48.png",
+        "default_title": "Kamila",
+        "default_popup_width": 800,
+        "default_popup_height": 600
     },
     "icons": {
         "16": "icon16.png",

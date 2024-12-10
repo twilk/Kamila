@@ -4,81 +4,79 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kamila</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
-    <div id="app">
-        <header>
-            <h1 id="welcome-message">Witaj w inteligentnym asystencie Kamila!</h1>
+    <div class="container-fluid">
+        <!-- Wiadomość powitalna -->
+        <header class="text-center py-2">
+            <h6 id="welcome-message" class="text-muted">Witaj w inteligentnym asystencie Kamila!</h6>
         </header>
-        <div id="main-container">
-            <!-- 75% - Panel główny (czatbot, ustawienia, about) -->
-            <div id="main-panel">
-                <div id="chatbot">
-                    <label id="response-label" for="query">Twoje zapytanie:</label>
-                    <input type="text" id="query" placeholder="Wpisz swoje pytanie...">
-                    <button id="send">Wyślij</button>
-                    <div id="response"></div>
+
+        <!-- Layout główny -->
+        <div class="row">
+            <!-- Panel leadów -->
+            <div class="col-2 text-center d-flex flex-column align-items-center" id="lead-panel">
+                <div class="lead-status" data-bs-toggle="tooltip" title="Złożone">
+                    📤 <br><span id="count-submitted">12</span>
                 </div>
-                <div id="settings" style="display: none;">
-                    <h2>Ustawienia</h2>
-                    <p>Wybierz motyw:</p>
-                    <label>
-                        <input type="radio" name="theme" value="light" checked> Jasny motyw
-                    </label>
-                    <label>
-                        <input type="radio" name="theme" value="dark"> Ciemny motyw
-                    </label>
-                    <p>Załaduj swoje ustawienia z pliku JSON lub zmień preferencje.</p>
+                <div class="lead-status" data-bs-toggle="tooltip" title="Potwierdzone przez Klienta">
+                    ✅ <br><span id="count-confirmed">8</span>
                 </div>
-                <div id="about" style="display: none;">
-                    <h2>About</h2>
-                    <p>Twórca: Tomasz Wilk</p>
-                    <p>Aplikacja Kamila została stworzona, aby wspierać Twoją codzienną pracę, ułatwiając dostęp do kluczowych danych.</p>
-                    <button id="manual-update-button">🚀 Zaktualizuj</button>
-                    <button id="instructions-button">📋 Instrukcja</button>
+                <div class="lead-status" data-bs-toggle="tooltip" title="Przyjęte do realizacji w sklepie">
+                    📦 <br><span id="count-accepted">5</span>
+                </div>
+                <div class="lead-status" data-bs-toggle="tooltip" title="Gotowe do odbioru w sklepie">
+                    📬 <br><span id="count-ready">15</span>
+                </div>
+                <div class="lead-status" data-bs-toggle="tooltip" title="Gotowe do odbioru (powyżej 2 tygodni)">
+                    ⏳ <br><span id="count-overdue">2</span>
                 </div>
             </div>
-            <!-- 25% - Panel boczny (leady, przyciski) -->
-            <div id="side-panel">
-                <h3>Leady</h3>
-                <ul id="lead-statuses">
-                    <li>
-                        <a href="https://selly.pl/leads?status=submitted" target="_blank">
-                            <span class="lead-icon">📤</span> 
-                            Złożone (<span id="count-submitted">0</span>)
-                        </a>
+
+            <!-- Główna sekcja (karty: Chat/Ustawienia/About) -->
+            <div class="col-10">
+                <ul class="nav nav-tabs">
+                    <li class="nav-item">
+                        <a class="nav-link active" id="chat-tab" href="#">Chat</a>
                     </li>
-                    <li>
-                        <a href="https://selly.pl/leads?status=confirmed" target="_blank">
-                            <span class="lead-icon">✅</span> 
-                            Potwierdzone przez Klienta (<span id="count-confirmed">0</span>)
-                        </a>
+                    <li class="nav-item">
+                        <a class="nav-link" id="settings-tab" href="#">Ustawienia</a>
                     </li>
-                    <li>
-                        <a href="https://selly.pl/leads?status=accepted" target="_blank">
-                            <span class="lead-icon">📦</span> 
-                            Przyjęte do realizacji w sklepie (<span id="count-accepted">0</span>)
-                        </a>
-                    </li>
-                    <li>
-                        <a href="https://selly.pl/leads?status=ready" target="_blank">
-                            <span class="lead-icon">📬</span> 
-                            Gotowe do odbioru w sklepie (<span id="count-ready">0</span>)
-                        </a>
-                    </li>
-                    <li>
-                        <a href="https://selly.pl/leads?status=overdue" target="_blank">
-                            <span class="lead-icon">⏳</span> 
-                            Gotowe do odbioru (powyżej 2 tygodni) (<span id="count-overdue">0</span>)
-                        </a>
+                    <li class="nav-item">
+                        <a class="nav-link" id="about-tab" href="#">About</a>
                     </li>
                 </ul>
-                <button id="settings-button">Ustawienia</button>
-                <button id="about-button">About</button>
+                <div class="tab-content p-3">
+                    <div id="chat" class="tab-pane fade show active">
+                        <label for="query">Twoje zapytanie:</label>
+                        <input type="text" id="query" class="form-control" placeholder="Wpisz swoje pytanie...">
+                        <button id="send" class="btn btn-primary mt-2">Wyślij</button>
+                        <div id="response" class="mt-3"></div>
+                    </div>
+                    <div id="settings" class="tab-pane fade">
+                        <h5>Ustawienia</h5>
+                        <p>Wybierz motyw aplikacji:</p>
+                        <label>
+                            <input type="radio" name="theme" value="light" checked> Jasny motyw
+                        </label>
+                        <label class="ms-3">
+                            <input type="radio" name="theme" value="dark"> Ciemny motyw
+                        </label>
+                    </div>
+                    <div id="about" class="tab-pane fade">
+                        <h5>About</h5>
+                        <p>Twórca: Tomasz Wilk</p>
+                        <p>Aplikacja Kamila została stworzona, aby wspierać Twoją codzienną pracę, ułatwiając dostęp do kluczowych danych.</p>
+                        <button id="manual-update-button" class="btn btn-success">🚀 Zaktualizuj</button>
+                        <button id="instructions-button" class="btn btn-info">📋 Instrukcja</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="popup.js"></script>
 </body>
 </html>
