@@ -4,7 +4,12 @@ body {
     padding: 20px;
     background-color: #f9f9f9;
     color: #333;
-    width: 400px; /* Szersze okno */
+    width: 400px;
+}
+
+.dark-theme {
+    background-color: #333;
+    color: white;
 }
 
 header {
@@ -23,7 +28,7 @@ header {
 }
 
 #main-panel {
-    flex: 3; /* 75% */
+    flex: 3;
     background-color: #ffffff;
     padding: 15px;
     border-radius: 10px;
@@ -31,14 +36,11 @@ header {
 }
 
 #side-panel {
-    flex: 1; /* 25% */
+    flex: 1;
     background-color: #ffffff;
     padding: 15px;
     border-radius: 10px;
     box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
 }
 
 #lead-statuses {
@@ -46,14 +48,19 @@ header {
     padding: 0;
 }
 
-#lead-statuses li {
-    margin: 5px 0;
+#lead-statuses a {
+    text-decoration: none;
+    color: inherit;
     display: flex;
     align-items: center;
+    gap: 10px;
+    margin-bottom: 5px;
 }
 
-.lead-icon {
-    margin-right: 10px;
+#lead-statuses a:hover {
+    background-color: #f0f0f0;
+    padding: 5px;
+    border-radius: 5px;
 }
 
 button {
@@ -62,8 +69,6 @@ button {
     border-radius: 5px;
     cursor: pointer;
     font-size: 14px;
-    text-align: center;
-    transition: background-color 0.2s;
 }
 
 button:hover {

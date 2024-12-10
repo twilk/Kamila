@@ -22,6 +22,13 @@
                 </div>
                 <div id="settings" style="display: none;">
                     <h2>Ustawienia</h2>
+                    <p>Wybierz motyw:</p>
+                    <label>
+                        <input type="radio" name="theme" value="light" checked> Jasny motyw
+                    </label>
+                    <label>
+                        <input type="radio" name="theme" value="dark"> Ciemny motyw
+                    </label>
                     <p>Załaduj swoje ustawienia z pliku JSON lub zmień preferencje.</p>
                 </div>
                 <div id="about" style="display: none;">
@@ -36,11 +43,36 @@
             <div id="side-panel">
                 <h3>Leady</h3>
                 <ul id="lead-statuses">
-                    <li><span class="lead-icon">✔️</span> Złożone</li>
-                    <li><span class="lead-icon">✔️</span> Potwierdzone przez Klienta</li>
-                    <li><span class="lead-icon">✔️</span> Przyjęte do realizacji w sklepie</li>
-                    <li><span class="lead-icon">✔️</span> Gotowe do odbioru w sklepie</li>
-                    <li><span class="lead-icon">⏳</span> Gotowe do odbioru (powyżej 2 tygodni)</li>
+                    <li>
+                        <a href="https://selly.pl/leads?status=submitted" target="_blank">
+                            <span class="lead-icon">📤</span> 
+                            Złożone (<span id="count-submitted">0</span>)
+                        </a>
+                    </li>
+                    <li>
+                        <a href="https://selly.pl/leads?status=confirmed" target="_blank">
+                            <span class="lead-icon">✅</span> 
+                            Potwierdzone przez Klienta (<span id="count-confirmed">0</span>)
+                        </a>
+                    </li>
+                    <li>
+                        <a href="https://selly.pl/leads?status=accepted" target="_blank">
+                            <span class="lead-icon">📦</span> 
+                            Przyjęte do realizacji w sklepie (<span id="count-accepted">0</span>)
+                        </a>
+                    </li>
+                    <li>
+                        <a href="https://selly.pl/leads?status=ready" target="_blank">
+                            <span class="lead-icon">📬</span> 
+                            Gotowe do odbioru w sklepie (<span id="count-ready">0</span>)
+                        </a>
+                    </li>
+                    <li>
+                        <a href="https://selly.pl/leads?status=overdue" target="_blank">
+                            <span class="lead-icon">⏳</span> 
+                            Gotowe do odbioru (powyżej 2 tygodni) (<span id="count-overdue">0</span>)
+                        </a>
+                    </li>
                 </ul>
                 <button id="settings-button">Ustawienia</button>
                 <button id="about-button">About</button>

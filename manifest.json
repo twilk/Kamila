@@ -2,17 +2,16 @@
     "manifest_version": 3,
     "name": "Kamila",
     "version": "1.0.0",
-    "description": "Asystent AI Kamila dla Darwin.pl",
+    "description": "Asystent AI Kamila dla Darwina.pl",
     "action": {
-      "default_popup": "popup.html"
+        "default_popup": "popup.html"
     },
     "icons": {
-      "16": "icon16.png",
-      "48": "icon48.png",
-      "128": "icon128.png"
+        "16": "icon16.png",
+        "48": "icon48.png",
+        "128": "icon128.png"
     },
     "permissions": [
-      "storage"
+        "storage"
     ]
-  }
-  
+}
