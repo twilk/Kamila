@@ -1,4 +1,4 @@
-# Kamila – Twój **inteligentny asystent** w pracy 🚀🤖
+# KAMILA – Inteligentny Asystent DARWINA.PL 🚀
 
 **Wersja:** 1.0.0 *(przed autoupdate)*
 
@@ -40,7 +40,7 @@
 
 ## 🎯 Ogólne założenia
 
-**Kamila** to rozszerzenie do **Google Chrome**, stworzone z myślą o pracownikach **Darwin.pl**.  
+**KAMILA** to rozszerzenie do **Google Chrome**, stworzone z myślą o pracownikach **DARWINA.PL**.  
 Jej misją jest ułatwienie Twojej codziennej pracy, **błyskawiczny dostęp do kluczowych danych** i **inteligentne wsparcie** w podejmowaniu decyzji.
 
 Dzięki sprytnym integracjom z wieloma systemami (Notion, Selly, Google Sheets, PC-Market, OpenAI przez Make.com) Kamila potrafi m.in.:
@@ -175,16 +175,47 @@ Thanks to integrations with various systems (Notion, Selly, Google Sheets, PC-Ma
 
 ### Загальна концепція
 
-**Kamila** — це розширення для Chrome, створене для працівників Darwin.pl, щоб спростити щоденні завдання, надати швидкий доступ до ключових даних та запропонувати інтелектуальну підтримку в прийнятті рішень.
+**Kamila** — це розширення для Chrome, створене для працівників Darwin.pl, щоб спростити щоденн�� завдання, надати швидкий доступ до ключових даних та запропонувати інтелектуальну підтримку в прийнятті рішень.
 
 Завдяки інтеграціям з різними системами (Notion, Selly, Google Sheets, PC-Market, OpenAI через Make.com) Kamila може:
 
 - 🔎 **Знаходити наявність товару** та одразу інформувати вас.  
 - 💼 **Відображати найновіші ліди з Selly**, щоб ви нічого не пропустили.  
 - 🗂 **Надавати дані про працівників і магазини з Notion**: контакти, графіки, заміни — все під рукою.  
-- 📝 **Обробляти дані з Google Sheets**: графіки, облік робочого часу, аналізи продажів, наявність товару.  
+- 📝 **Обробляти дані з Google Sheets**: графіки, олік робочого часу, аналізи продажів, наявність товару.  
 - 🧩 **Автоматизувати процеси через Make.com**, щоб надавати готові відповіді за лічені секунди.
 
 *(… далі українська версія буде дзеркальним відображенням польського змісту …)*
 
 </details>
+
+## Instalacja
+
+1. Pobierz Node.js: [Download](https://nodejs.org/dist/v20.11.1/node-v20.11.1-x64.msi)
+2. Zainstaluj zależności: `npm install`
+3. Zbuduj projekt: `npm run build`
+
+## Rozwój
+
+### Testy
+
+```bash
+# Uruchom wszystkie testy
+npm test
+
+# Uruchom testy jednostkowe
+npm run test:unit
+
+# Uruchom testy integracyjne
+npm run test:integration
+
+# Sprawdź pokrycie kodu
+npm run test:coverage
+```
+
+### Pokrycie kodu
+- API: >95%
+- Cache: 100%
+- UI: >90%
+- Walidacja: >90%
+- Całość: >90%

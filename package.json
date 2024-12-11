@@ -3,12 +3,14 @@
     "version": "1.0.0",
     "type": "module",
     "scripts": {
-        "build": "./build.sh",
+        "build": "node scripts/build.js",
         "test": "jest",
         "test:unit": "jest tests/unit",
         "test:integration": "jest tests/integration",
         "test:startup": "jest tests/startup.test.js",
-        "test:coverage": "jest --coverage"
+        "test:coverage": "jest --coverage",
+        "clean": "rimraf dist",
+        "prebuild": "npm run clean"
     },
     "jest": {
         "testEnvironment": "jsdom",
@@ -24,6 +26,8 @@
         "@babel/core": "^7.15.0",
         "@babel/preset-env": "^7.15.0",
         "jest": "^27.0.6",
-        "jest-environment-jsdom": "^27.0.6"
+        "jest-environment-jsdom": "^27.0.6",
+        "fs-extra": "^10.0.0",
+        "rimraf": "^3.0.2"
     }
 } 

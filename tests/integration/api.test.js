@@ -1,6 +1,6 @@
 import { darwinApi } from '../../src/services/darwinApi';
 
-describe('Darwin API Integration', () => {
+describe('DARWINA.PL API Integration', () => {
     beforeAll(async () => {
         await darwinApi.initialize();
     });

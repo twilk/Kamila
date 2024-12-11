@@ -2,11 +2,10 @@
     "manifest_version": 3,
     "name": "Kamila",
     "version": "1.0.0",
-    "description": "Inteligentny asystent dla pracowników Darwin.pl",
+    "description": "Inteligentny asystent dla pracowników DARWINA.PL",
     "permissions": [
         "storage",
-        "downloads",
-        "alarms"
+        "unlimitedStorage"
     ],
     "host_permissions": [
         "https://api.darwina.pl/*"
@@ -30,5 +29,19 @@
     },
     "content_security_policy": {
         "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+    },
+    "web_accessible_resources": [{
+        "resources": ["wallpapers/custom/*"],
+        "matches": ["<all_urls>"]
+    }],
+    "chrome_url_overrides": {
+        "popup": {
+            "width": 800,
+            "height": 600,
+            "min_width": 800,
+            "min_height": 600,
+            "max_width": 800,
+            "max_height": 750
+        }
     }
 }

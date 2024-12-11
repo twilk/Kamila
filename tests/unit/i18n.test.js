@@ -5,6 +5,9 @@ import {
     getCurrentLanguage,
     setLanguage
 } from '@/services/i18n';
+import polishTranslations from '@/locales/polish.json';
+import englishTranslations from '@/locales/english.json';
+import ukrainianTranslations from '@/locales/ukrainian.json';
 
 describe('Internationalization Tests', () => {
     beforeEach(() => {
@@ -143,5 +146,50 @@ describe('Internationalization Tests', () => {
             localStorage.setItem('language', 'ukrainian');
             expect(getCurrentLanguage()).toBe('ukrainian');
         });
+    });
+});
+
+describe('Translations', () => {
+    const requiredKeys = [
+        'welcome',
+        'queryLabel',
+        'queryPlaceholder',
+        'send',
+        'chat',
+        'settings',
+        'about',
+        'status'
+    ];
+
+    test('all translations should have the same keys', () => {
+        const polishKeys = Object.keys(polishTranslations).sort();
+        const englishKeys = Object.keys(englishTranslations).sort();
+        const ukrainianKeys = Object.keys(ukrainianTranslations).sort();
+
+        expect(englishKeys).toEqual(polishKeys);
+        expect(ukrainianKeys).toEqual(polishKeys);
+    });
+
+    test('all required keys should be present', () => {
+        requiredKeys.forEach(key => {
+            expect(polishTranslations).toHaveProperty(key);
+            expect(englishTranslations).toHaveProperty(key);
+            expect(ukrainianTranslations).toHaveProperty(key);
+        });
+    });
+
+    test('translations should not be empty', () => {
+        [polishTranslations, englishTranslations, ukrainianTranslations].forEach(translations => {
+            Object.entries(translations).forEach(([key, value]) => {
+                expect(value).toBeTruthy();
+                expect(value.trim()).not.toBe('');
+            });
+        });
+    });
+
+    test('welcome message should contain DARWINA.PL', () => {
+        expect(polishTranslations.welcome).toContain('DARWINA.PL');
+        expect(englishTranslations.welcome).toContain('DARWINA.PL');
+        expect(ukrainianTranslations.welcome).toContain('DARWINA.PL');
     });
 }); 

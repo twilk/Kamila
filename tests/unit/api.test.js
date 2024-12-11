@@ -1,7 +1,7 @@
 import { darwinApi } from '@/services/darwinApi';
 import { API_CONFIG } from '@/config/api';
 
-describe('Darwin API Service Tests', () => {
+describe('DARWINA.PL API Service Tests', () => {
     beforeEach(() => {
         fetch.mockClear();
         localStorage.clear();

@@ -1,12 +1,11 @@
-[
-    {
-        "id": "default",
-        "name": "Domyślne",
-        "file": "default.jpg"
-    },
-    {
-        "id": "dark",
-        "name": "Ciemne",
-        "file": "dark.jpg"
-    }
-] 
+{
+    "wallpapers": [
+        {
+            "id": "OBR1",
+            "name": "Obraz 1",
+            "file": "OBR1.jpg",
+            "thumbnail": "OBR1_thumb.jpg"
+        }
+    ],
+    "defaultWallpaper": "default"
+} 

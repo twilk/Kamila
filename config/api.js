@@ -1,6 +1,6 @@
 export const API_CONFIG = {
     DARWIN: {
-        BASE_URL: 'https://api.darwina.pl',
+        BASE_URL: 'https://darwina.pl/api',
         ENDPOINTS: {
             ORDERS: '/orders',
             ORDER_STATUS: '/orders/status',
@@ -19,12 +19,21 @@ export const API_CONFIG = {
             },
             ACCEPTED: {
                 id: 3,
-                name: 'Przyjęte do realizacji'
+                name: 'Przyjęte do realizacji w sklepie'
             },
             READY: {
                 id: 5,
-                name: 'Gotowe do odbioru'
+                name: 'Gotowe do odbioru w sklepie'
             }
         }
     }
-}; 
+};
+
+export const API_BASE_URL = 'https://api.example.com';
+export const API_KEY = 'YOUR_API_KEY'; 
+
+import credentials from './credentials.json';
+
+export const SELLY_API_BASE_URL = 'https://darwina.pl/api';
+export const SELLY_API_KEY = credentials.apiKey;
+export const SELLY_API_SECRET = credentials.apiSecret; 

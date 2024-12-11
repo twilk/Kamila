@@ -1,6 +1,6 @@
 import { darwinApi } from '@/services/darwinApi';
 
-describe('Darwin API Error Handling', () => {
+describe('DARWINA.PL API Error Handling', () => {
     beforeEach(() => {
         fetch.mockClear();
     });
