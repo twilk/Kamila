@@ -99,13 +99,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             const isDebugEnabled = localStorage.getItem('debug-enabled') === 'true';
             debugSwitch.checked = isDebugEnabled;
             document.body.classList.toggle('debug-enabled', isDebugEnabled);
-            resizeWindow(isDebugEnabled ? 750 : 600);
+            
+            // Daj czas na inicjalizację UI
+            setTimeout(adjustWindowHeight, 50);
         
             debugSwitch.addEventListener('change', async (e) => {
                 const isEnabled = e.target.checked;
                 document.body.classList.toggle('debug-enabled', isEnabled);
                 localStorage.setItem('debug-enabled', isEnabled);
-                resizeWindow(isEnabled ? 750 : 600);
+                setTimeout(adjustWindowHeight, 50);
             });
         }
         
@@ -600,21 +602,10 @@ document.getElementById('send')?.addEventListener('click', async () => {
 });
 
 function adjustWindowHeight() {
-    const bodyHeight = document.body.offsetHeight;
-    const targetHeight = Math.max(bodyHeight, 600); // Minimalna wysokość
-    resizeWindow(targetHeight);
+    const isDebugEnabled = document.body.classList.contains('debug-enabled');
+    const height = isDebugEnabled ? 750 : 600;
+    resizeWindow(height);
 }
-
-// Wywołaj, gdy zmienia się tryb debugowania
-debugSwitch.addEventListener('change', (e) => {
-    const isEnabled = e.target.checked;
-    document.body.classList.toggle('debug-enabled', isEnabled);
-    localStorage.setItem('debug-enabled', isEnabled);
-
-    // Dopasuj wysokość okna po zmianie
-    setTimeout(adjustWindowHeight, 100); // Timeout pozwala na pełne wyrenderowanie elementów
-});
-
 
 // Funkcja pomocnicza do zmiany rozmiaru okna
 async function resizeWindow(height) {
@@ -633,7 +624,6 @@ async function resizeWindow(height) {
         document.body.style.height = `${height}px`;
     }
 }
-
 
 // Obsługa wysyłania zapytania przez Enter
 document.getElementById('query')?.addEventListener('keypress', (e) => {

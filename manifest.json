@@ -5,18 +5,14 @@
     "description": "Inteligentny asystent dla pracowników DARWINA.PL",
     "permissions": [
         "storage",
-        "unlimitedStorage"
+        "tabs",
+        "windows"
     ],
     "host_permissions": [
         "https://api.darwina.pl/*"
     ],
     "action": {
-        "default_popup": "popup.html",
-        "default_icon": {
-            "16": "icon16.png",
-            "48": "icon48.png",
-            "128": "icon128.png"
-        }
+        "default_popup": "popup.html"
     },
     "icons": {
         "16": "icon16.png",
@@ -33,15 +29,5 @@
     "web_accessible_resources": [{
         "resources": ["wallpapers/custom/*"],
         "matches": ["<all_urls>"]
-    }],
-    "chrome_url_overrides": {
-        "popup": {
-            "width": 800,
-            "height": 600,
-            "min_width": 800,
-            "min_height": 600,
-            "max_width": 800,
-            "max_height": 750
-        }
-    }
+    }]
 }

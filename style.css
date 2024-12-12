@@ -44,8 +44,6 @@
 
 /* ===== PODSTAWOWE STYLE ===== */
 html, body {
-    width: 800px;
-    height: 600px;
     margin: 0;
     padding: 0;
     background-color: var(--light-bg);
@@ -61,7 +59,9 @@ body.dark-theme {
 /* Kontener główny */
 .container-fluid {
     padding: 1rem;
-    height: 100%;
+    min-height: 600px;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Panel boczny */
@@ -139,6 +139,13 @@ header {
     background: var(--light-surface);
     border-top: 1px solid var(--light-border);
     padding: 0.5rem;
+    display: none;
+    height: 150px;
+}
+
+/* Show debug panel when debug is enabled */
+body.debug-enabled .debug-panel {
+    display: block;
 }
 
 .dark-theme .debug-panel {
@@ -292,9 +299,11 @@ header {
 }
 
 body.debug-enabled {
-    height: 750px; /* Wysokość w stanie debugowania */
+    height: 750px;
 }
 
 body {
-    transition: height 0.3s ease; /* Animacja zmiany wysokości */
+    width: 800px;
+    height: 600px;
+    transition: height 0.3s ease;
 }
