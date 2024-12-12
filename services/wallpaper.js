@@ -1,3 +1,5 @@
+import { sendLogToPopup } from '../config/api.js';
+
 export const WallpaperManager = {
     async init() {
         try {
@@ -15,7 +17,7 @@ export const WallpaperManager = {
             
             return true;
         } catch (error) {
-            console.error('Wallpaper initialization error:', error);
+            sendLogToPopup('❌ Wallpaper initialization failed', 'error', error.message);
             return false;
         }
     },
@@ -51,9 +53,11 @@ export const WallpaperManager = {
                 preview.classList.toggle('active', preview.dataset.wallpaper === wallpaper);
             });
             
+            sendLogToPopup('🖼️ Wallpaper updated', 'success');
+            
             return true;
         } catch (error) {
-            console.error('Failed to apply wallpaper:', error);
+            sendLogToPopup('❌ Wallpaper update failed', 'error', error.message);
             return false;
         }
     }

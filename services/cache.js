@@ -1,3 +1,5 @@
+import { sendLogToPopup } from '../config/api.js';
+
 export const CacheManager = {
     async init() {
         try {
@@ -9,7 +11,7 @@ export const CacheManager = {
             }
             return false;
         } catch (error) {
-            console.error('Cache initialization error:', error);
+            sendLogToPopup('❌ Cache initialization error', 'error', error.message);
             return false;
         }
     },
@@ -17,9 +19,10 @@ export const CacheManager = {
     async set(key, data) {
         try {
             localStorage.setItem(key, JSON.stringify(data));
+            sendLogToPopup('💾 Cache updated', 'info', key);
             return true;
         } catch (error) {
-            console.error('Cache set error:', error);
+            sendLogToPopup('❌ Cache set error', 'error', error.message);
             return false;
         }
     },
@@ -29,7 +32,7 @@ export const CacheManager = {
             const data = localStorage.getItem(key);
             return data ? JSON.parse(data) : null;
         } catch (error) {
-            console.error('Cache get error:', error);
+            sendLogToPopup('❌ Cache get error', 'error', error.message);
             return null;
         }
     },
@@ -43,7 +46,7 @@ export const CacheManager = {
             }
             return true;
         } catch (error) {
-            console.error('Cache clear error:', error);
+            sendLogToPopup('❌ Cache clear error', 'error', error.message);
             return false;
         }
     }

@@ -29,19 +29,19 @@
 
         <div class="row">
             <div class="col-2" id="side-panel">
-                <div class="lead-status" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.submitted">
-                    📤 <span class="lead-count" id="count-submitted">-</span>
+                <div class="lead-status" data-status="9" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.submitted">
+                    📤 <span class="lead-count" id="count-9">-</span>
                 </div>
-                <div class="lead-status" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.confirmed">
-                    ✅ <span class="lead-count" id="count-confirmed">-</span>
+                <div class="lead-status" data-status="7" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.confirmed">
+                    ✅ <span class="lead-count" id="count-7">-</span>
                 </div>
-                <div class="lead-status" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.accepted">
+                <div class="lead-status" data-status="8" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.accepted">
                     📦 <span class="lead-count" id="count-accepted">-</span>
                 </div>
-                <div class="lead-status" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.ready">
+                <div class="lead-status" data-status="10" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.ready">
                     📬 <span class="lead-count" id="count-ready">-</span>
                 </div>
-                <div class="lead-status" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.overdue">
+                <div class="lead-status" data-status="11" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.overdue">
                     ⏳ <span class="lead-count" id="count-overdue">-</span>
                 </div>
             </div>
@@ -252,6 +252,8 @@
             <div class="log-entry log-empty" data-i18n="debugPanelEmpty">Brak logów</div>
         </div>
     </div>
+
+    <div id="orders-container" class="orders-container"></div>
 
     <script src="lib/bootstrap.bundle.min.js"></script>
     <script type="module" src="popup.js"></script>

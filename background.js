@@ -1,4 +1,5 @@
 import { UpdateManager } from './services/updateManager.js';
+import { getSellyCredentials } from './config/api.js';
 
 const updateManager = new UpdateManager();
 const CHECK_INTERVAL = 1000 * 60 * 60; // co godzinę
@@ -107,6 +108,86 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         };
 
         reader.readAsDataURL(file);
+        return true;
+    }
+});
+
+// Dodaj funkcję wysyłania logów do popup
+function sendLogToPopup(message, type = 'info', data = null) {
+    chrome.runtime.sendMessage({
+        type: 'LOG_MESSAGE',
+        payload: {
+            message,
+            type,
+            data
+        }
+    });
+}
+
+chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
+    if (message.type === 'FETCH_SELLY_DATA') {
+        try {
+            const sellyConfig = await getSellyCredentials();
+            sendLogToPopup('📡 Fetching data from Selly API...', 'info');
+            
+            // Parametry zapytania
+            const params = new URLSearchParams({
+                status_id: '9,7',
+                limit: '50',
+                date_to: '2024-12-01',
+                date_from: message.dateFrom || '2024-01-01',
+                page: message.page || '1'
+            });
+
+            sendLogToPopup('🔍 Request params:', 'info', params.toString());
+
+            const response = await fetch(
+                `${sellyConfig.SELLY_API_BASE_URL}/orders?${params.toString()}`,
+                {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${sellyConfig.SELLY_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+            
+            // Dodaj szczegółowe informacje o odpowiedzi
+            const responseDetails = {
+                status: response.status,
+                statusText: response.statusText,
+                headers: Object.fromEntries(response.headers.entries()),
+                url: response.url
+            };
+
+            if (!response.ok) {
+                throw new Error(`Błąd API: ${response.status} ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            sendLogToPopup('📦 Received data:', 'info', `${data.length} orders`);
+
+            // Przygotuj dane zgodnie z dokumentacją API
+            const orders = Array.isArray(data) ? data : (data.data || []);
+            const statusCounts = orders.reduce((acc, order) => {
+                const status = order.status_id;
+                if (status) {
+                    acc[status] = (acc[status] || 0) + 1;
+                }
+                return acc;
+            }, {});
+
+            sendLogToPopup('📊 Status counts:', 'info', JSON.stringify(statusCounts));
+
+            sendResponse({ 
+                success: true, 
+                statusCounts: statusCounts,
+                responseDetails: responseDetails
+            });
+        } catch (error) {
+            sendLogToPopup('❌ API Error:', 'error', error.message);
+            sendResponse({ success: false, error: error.message });
+        }
         return true;
     }
 }); 

@@ -1,10 +1,47 @@
 import { darwinApi } from '@/services/darwinApi';
 import { API_CONFIG } from '@/config/api';
+import { sendLogToPopup } from '../../config/api.js';
+
+// Dodajmy mocki dla API
+const mockApiResponses = {
+    orders: {
+        submitted: { total: 5 },
+        confirmed: { total: 3 },
+        accepted: { total: 2 },
+        ready: { total: 1 }
+    },
+    credentials: {
+        apiKey: 'test-key',
+        apiSecret: 'test-secret'
+    }
+};
 
 describe('DARWINA.PL API Service Tests', () => {
     beforeEach(() => {
         fetch.mockClear();
         localStorage.clear();
+        sendLogToPopup('🧪 Starting API test', 'info');
+
+        // Mockujemy fetch dla API
+        global.fetch = jest.fn((url) => {
+            if (url.includes('/orders')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve(mockApiResponses.orders)
+                });
+            }
+            if (url.includes('/credentials')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve(mockApiResponses.credentials)
+                });
+            }
+            return Promise.reject(new Error('Unknown endpoint'));
+        });
+    });
+
+    afterEach(() => {
+        sendLogToPopup('✅ API test completed', 'success');
     });
 
     describe('Initialization', () => {
@@ -27,6 +64,7 @@ describe('DARWINA.PL API Service Tests', () => {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             });
+            sendLogToPopup('✅ API endpoints test passed', 'success');
         });
 
         test('should handle initialization failures', async () => {
@@ -49,6 +87,7 @@ describe('DARWINA.PL API Service Tests', () => {
                 
                 expect(darwinApi.credentials).toBeNull();
             }
+            sendLogToPopup('✅ API endpoints test passed', 'success');
         });
     });
 
@@ -106,6 +145,7 @@ describe('DARWINA.PL API Service Tests', () => {
                 created_at: '2024-01-01T12:00:00Z',
                 modified_at: '2024-01-01T12:30:00Z'
             });
+            sendLogToPopup('✅ API endpoints test passed', 'success');
         });
 
         test('should count orders by status correctly', async () => {
@@ -134,6 +174,7 @@ describe('DARWINA.PL API Service Tests', () => {
             });
 
             expect(fetch).toHaveBeenCalledTimes(mockResponses.size);
+            sendLogToPopup('✅ API endpoints test passed', 'success');
         });
     });
 
@@ -161,6 +202,7 @@ describe('DARWINA.PL API Service Tests', () => {
                     expect.any(Error)
                 );
             }
+            sendLogToPopup('✅ API endpoints test passed', 'success');
         });
 
         test('should handle rate limiting with exponential backoff', async () => {
@@ -190,6 +232,7 @@ describe('DARWINA.PL API Service Tests', () => {
             expect(duration).toBeGreaterThan(
                 (Math.pow(2, maxAttempts - 1) - 1) * 1000 // Minimalny czas dla backoff
             );
+            sendLogToPopup('✅ API endpoints test passed', 'success');
         });
     });
 }); 

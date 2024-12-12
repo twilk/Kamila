@@ -1,17 +1,14 @@
-export const ThemeManager = {
-    init() {
-        const savedTheme = localStorage.getItem('theme') || 'light';
-        this.applyTheme(savedTheme);
-        
-        // Nasłuchuj zmian
-        document.querySelectorAll('input[name="theme"]').forEach(radio => {
-            radio.addEventListener('change', (e) => this.applyTheme(e.target.value));
-        });
-    },
+import { sendLogToPopup } from '../config/api.js';
 
-    applyTheme(theme) {
-        document.body.classList.toggle('dark-theme', theme === 'dark');
-        localStorage.setItem('theme', theme);
-        document.querySelector(`input[value="${theme}"]`).checked = true;
+export const ThemeManager = {
+    setTheme(theme) {
+        try {
+            document.body.classList.remove('light-theme', 'dark-theme');
+            document.body.classList.add(`${theme}-theme`);
+            localStorage.setItem('theme', theme);
+            sendLogToPopup('🎨 Theme changed', 'success', theme);
+        } catch (error) {
+            sendLogToPopup('❌ Theme change failed', 'error', error.message);
+        }
     }
 }; 

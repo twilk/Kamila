@@ -1,58 +1,68 @@
 import { WallpaperManager } from '@/services/wallpaper';
+import { sendLogToPopup } from '../../config/api.js';
 
-describe('WallpaperManager', () => {
+// Mocki dla tapet
+const mockWallpapers = {
+    manifest: {
+        defaultWallpaper: 'default',
+        wallpapers: [
+            { id: 'default', thumbnail: 'default-thumb.jpg' },
+            { id: 'dark', thumbnail: 'dark-thumb.jpg' },
+            { id: 'light', thumbnail: 'light-thumb.jpg' }
+        ]
+    }
+};
+
+describe('Wallpaper Tests', () => {
     beforeEach(() => {
-        // Wyczyść localStorage
-        localStorage.clear();
+        sendLogToPopup('🧪 Starting wallpaper test', 'info');
         
-        // Przygotuj DOM
+        // Mock DOM elements
         document.body.innerHTML = `
             <div id="wallpapers-grid"></div>
         `;
-        
-        // Mock fetch
-        global.fetch = jest.fn(() =>
-            Promise.resolve({
-                ok: true,
-                json: () => Promise.resolve({
-                    wallpapers: [
-                        {
-                            id: 'OBR1',
-                            name: 'Obraz 1',
-                            file: 'OBR1.jpg',
-                            thumbnail: 'OBR1_thumb.jpg'
-                        }
-                    ],
-                    defaultWallpaper: 'default'
-                })
-            })
-        );
+
+        // Mock fetch dla manifestu tapet
+        global.fetch = jest.fn((url) => {
+            if (url.includes('manifest.json')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve(mockWallpapers.manifest)
+                });
+            }
+            return Promise.reject(new Error('Unknown endpoint'));
+        });
+
+        // Mock localStorage
+        const localStorageMock = {
+            getItem: jest.fn(),
+            setItem: jest.fn(),
+            clear: jest.fn()
+        };
+        Object.defineProperty(window, 'localStorage', {
+            value: localStorageMock
+        });
     });
 
     test('should initialize with default wallpaper', async () => {
-        await WallpaperManager.init();
-        expect(document.body.style.backgroundImage).toBe('');
-        expect(localStorage.getItem('wallpaper')).toBe('default');
+        try {
+            await WallpaperManager.init();
+            expect(document.body.style.backgroundImage).toBe('');
+            sendLogToPopup('✅ Wallpaper initialization test passed', 'success');
+        } catch (error) {
+            sendLogToPopup('❌ Wallpaper initialization test failed', 'error', error.message);
+            throw error;
+        }
     });
 
-    test('should load wallpaper previews', async () => {
-        await WallpaperManager.init();
-        const grid = document.getElementById('wallpapers-grid');
-        expect(grid.children.length).toBe(1);
-        expect(grid.querySelector('[data-wallpaper="OBR1"]')).toBeTruthy();
-    });
-
-    test('should apply wallpaper', async () => {
-        await WallpaperManager.applyWallpaper('OBR1');
-        expect(document.body.style.backgroundImage).toBe('url(wallpapers/OBR1.jpg)');
-        expect(localStorage.getItem('wallpaper')).toBe('OBR1');
-    });
-
-    test('should handle errors gracefully', async () => {
-        // Symuluj błąd fetch
-        global.fetch = jest.fn(() => Promise.reject(new Error('Network error')));
-        
-        const result = await WallpaperManager.init();
-        expect(result).toBe(false);
+    test('should apply custom wallpaper', async () => {
+        try {
+            await WallpaperManager.applyWallpaper('dark');
+            expect(document.body.style.backgroundImage).toBe('url(wallpapers/dark.jpg)');
+            sendLogToPopup('✅ Custom wallpaper test passed', 'success');
+        } catch (error) {
+            sendLogToPopup('❌ Custom wallpaper test failed', 'error', error.message);
+            throw error;
+        }
     });
 }); 

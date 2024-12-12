@@ -1,3 +1,13 @@
+import { sendLogToPopup } from '../config/api.js';
+
+async function loadTranslations(lang) {
+    const response = await fetch(`locales/${lang}.json`);
+    if (!response.ok) {
+        throw new Error(`Failed to load translations for ${lang}`);
+    }
+    return await response.json();
+}
+
 export const i18n = {
     currentLanguage: 'polish',
     translations: null,
@@ -5,25 +15,34 @@ export const i18n = {
     async init() {
         try {
             const savedLanguage = localStorage.getItem('language') || 'polish';
-            const translations = await this.loadLanguage(savedLanguage);
-            if (!this.validateTranslations(translations)) {
+            const response = await fetch(`locales/${savedLanguage}.json`);
+            if (!response.ok) {
+                throw new Error(`Failed to load translations for ${savedLanguage}`);
+            }
+            this.translations = await response.json();
+            this.currentLanguage = savedLanguage;
+            
+            if (!this.validateTranslations(this.translations)) {
                 throw new Error('Invalid translations format');
             }
-            this.translations = translations;
-            return translations;
+            
+            sendLogToPopup('🌍 Translations loaded', 'success');
+            return this.translations;
         } catch (error) {
-            console.error('Language initialization error:', error);
+            sendLogToPopup('❌ Failed to load translations', 'error', error.message);
+            // Próba załadowania języka polskiego jako fallback
             try {
                 const response = await fetch('locales/polish.json');
                 if (!response.ok) {
-                    throw new Error(`Failed to load fallback translations (${response.status})`);
+                    throw new Error('Failed to load fallback translations');
                 }
-                const fallbackTranslations = await response.json();
-                if (!this.validateTranslations(fallbackTranslations)) {
+                this.translations = await response.json();
+                this.currentLanguage = 'polish';
+                if (!this.validateTranslations(this.translations)) {
                     throw new Error('Invalid fallback translations format');
                 }
-                this.translations = fallbackTranslations;
-                return fallbackTranslations;
+                sendLogToPopup('🌍 Fallback translations loaded', 'success');
+                return this.translations;
             } catch (fallbackError) {
                 console.error('Fallback translation loading error:', fallbackError);
                 this.translations = {};
@@ -120,33 +139,6 @@ export const i18n = {
         }
 
         return true;
-    },
-
-    async loadLanguage(lang) {
-        try {
-            const response = await fetch(`locales/${lang}.json`);
-            if (!response.ok) {
-                throw new Error(`Failed to load translations for ${lang} (status: ${response.status})`);
-            }
-            
-            const translations = await response.json();
-            if (!translations || typeof translations !== 'object') {
-                throw new Error(`Invalid translations format for ${lang}`);
-            }
-
-            this.translations = translations;
-            this.currentLanguage = lang;
-            localStorage.setItem('language', lang);
-            
-            return translations;
-        } catch (error) {
-            console.error('Translation loading error:', error);
-            if (lang !== 'polish') {
-                console.warn('Falling back to polish translations');
-                return this.loadLanguage('polish');
-            }
-            throw error;
-        }
     },
 
     translate(key) {

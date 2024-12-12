@@ -1,10 +1,13 @@
-import { version } from '../manifest.json';
+import { sendLogToPopup } from '../config/api.js';
 
 export class UpdateManager {
     constructor() {
-        this.currentVersion = version;
         this.repoUrl = 'https://api.github.com/repos/twilk/Kamila';
         this.updateInProgress = false;
+
+        // Get the current version from the manifest
+        const manifest = chrome.runtime.getManifest();
+        this.currentVersion = manifest.version;
     }
 
     async checkForUpdates() {
@@ -12,6 +15,8 @@ export class UpdateManager {
             const latestRelease = await this.getLatestRelease();
             const hasUpdate = this.compareVersions(latestRelease.tag_name, this.currentVersion);
             
+            sendLogToPopup('🔄 Update check completed', 'info');
+
             return {
                 hasUpdate,
                 currentVersion: this.currentVersion,
@@ -20,7 +25,7 @@ export class UpdateManager {
                 downloadUrl: latestRelease.zipball_url
             };
         } catch (error) {
-            console.error('Błąd sprawdzania aktualizacji:', error);
+            sendLogToPopup('❌ Update check failed', 'error', error.message);
             throw new Error('Nie udało się sprawdzić aktualizacji');
         }
     }
@@ -65,10 +70,10 @@ export class UpdateManager {
 
             return true;
         } catch (error) {
-            console.error('Błąd pobierania aktualizacji:', error);
+            sendLogToPopup('❌ Update download failed', 'error', error.message);
             throw new Error('Nie udało się pobrać aktualizacji');
         } finally {
             this.updateInProgress = false;
         }
     }
-} 
+}

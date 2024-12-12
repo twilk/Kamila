@@ -1,9 +1,15 @@
-import { i18n, API } from './services/index.js';
+import { API } from './services/index.js';
+//import { API_BASE_URL, API_KEY } from '../config/api.js';
 import { API_BASE_URL, API_KEY } from '../config/api.js';
-import { SELLY_API_BASE_URL, SELLY_API_KEY } from '../config/api.js';
+import { getSellyCredentials } from './config/api.js';
+import { i18n } from './services/i18n.js';
 
 // Globalna zmienna dla tooltipów
 let tooltipList = [];
+
+// Tymczasowo dla testów - 10 sekund
+const REFRESH_INTERVAL = 10000;
+let refreshCount = 0;
 
 // Funkcja logowania
 function logToPanel(message, type = 'info', data = null) {
@@ -56,15 +62,32 @@ function logToPanel(message, type = 'info', data = null) {
     }
 }
 
+// Dodaj obsługę logów z background.js
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'LOG_MESSAGE') {
+        const { message: logMessage, type, data } = message.payload;
+        logToPanel(logMessage, type, data);
+    }
+});
+
 // Inicjalizacja
 document.addEventListener('DOMContentLoaded', async () => {
     logToPanel('🚀 Aplikacja uruchomiona');
     
     try {
+        // Inicjalizacja tłumaczeń
+        await i18n.init();
+        
+        // Inicjalizacja konfiguracji Selly
+        const sellyConfig = await getSellyCredentials();
+
+        // Teraz można kontynuować inicjalizację aplikacji korzystając z sellyConfig
+        // Przykład:
+        // API.init(sellyConfig); // Jeśli API potrzebuje konfiguracji
+
         // Inicjalizacja języka - musi być pierwsza!
-        const translations = await i18n.init();
         i18n.updateDataI18n();
-        updateInterface(translations);
+        updateInterface(i18n.translations);
         logToPanel('✅ Język zainicjalizowany', 'success');
 
         // Inicjalizacja tooltipów Bootstrap
@@ -73,26 +96,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Obsługa przełącznika debug
         const debugSwitch = document.getElementById('debug-switch');
         if (debugSwitch) {
-            // Wczytaj zapisany stan debug i ustaw rozmiar okna
             const isDebugEnabled = localStorage.getItem('debug-enabled') === 'true';
             debugSwitch.checked = isDebugEnabled;
             document.body.classList.toggle('debug-enabled', isDebugEnabled);
-            await resizeWindow(isDebugEnabled ? 750 : 600);
-            logToPanel('✅ Rozmiar okna zaktualizowany', 'success');
-
-            // Dodaj obsługę zmiany stanu
+            resizeWindow(isDebugEnabled ? 750 : 600);
+        
             debugSwitch.addEventListener('change', async (e) => {
                 const isEnabled = e.target.checked;
                 document.body.classList.toggle('debug-enabled', isEnabled);
                 localStorage.setItem('debug-enabled', isEnabled);
-                
-                if (!isEnabled && document.querySelector('[data-target="#status"]').classList.contains('active')) {
-                    document.querySelector('[data-target="#chat"]').click();
-                }
-
-                await resizeWindow(isEnabled ? 750 : 600);
+                resizeWindow(isEnabled ? 750 : 600);
             });
         }
+        
 
         // Obsługa czyszczenia logów
         document.getElementById('clear-logs')?.addEventListener('click', () => {
@@ -164,9 +180,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             flag.addEventListener('click', async (e) => {
                 const lang = e.target.getAttribute('data-lang');
                 try {
-                    const translations = await i18n.loadLanguage(lang);
-                    updateInterface(translations);
+                    // Zapisz wybrany język
+                    localStorage.setItem('language', lang);
+                    
+                    // Załaduj tłumaczenia dla nowego języka
+                    await i18n.init();
+                    
+                    // Zaktualizuj interfejs i flagi
+                    i18n.updateDataI18n();
+                    updateInterface(i18n.translations);
                     i18n.updateFlags(lang);
+                    
                     logToPanel(`✅ Język zmieniony na: ${lang}`, 'success');
                 } catch (error) {
                     logToPanel(`❌ Błąd zmiany języka: ${error.message}`, 'error');
@@ -267,41 +291,98 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Funkcja do pobierania danych z API Selly
         async function fetchSellyData() {
             try {
-                const response = await fetch(`${SELLY_API_BASE_URL}/orders`, { // Ustaw endpoint na 'orders'
-                    method: 'GET', // Lub inna metoda, np. 'POST'
-                    headers: {
-                        'Authorization': `Bearer ${SELLY_API_KEY}`,
-                        'Content-Type': 'application/json'
-                    }
+                refreshCount++;
+                logToPanel(`🔄 Odświeżanie #${refreshCount}`, 'info');
+                
+                const response = await chrome.runtime.sendMessage({
+                    type: 'FETCH_SELLY_DATA',
+                    dateFrom: '2024-01-01',
+                    page: '1'
                 });
                 
-                if (!response.ok) {
-                    throw new Error(`Błąd: ${response.status} ${response.statusText}`);
+                if (response.success) {
+                    const { statusCounts, responseDetails } = response;
+                    
+                    // Log szczegółów odpowiedzi API
+                    logToPanel('📡 Status API:', 'info', `${responseDetails.status} ${responseDetails.statusText}`);
+                    logToPanel('🔗 URL:', 'info', responseDetails.url);
+                    
+                    // Log nagłówków odpowiedzi
+                    if (responseDetails.headers) {
+                        const headers = [];
+                        if (responseDetails.headers['content-type']) {
+                            headers.push(`Content-Type: ${responseDetails.headers['content-type']}`);
+                        }
+                        if (responseDetails.headers['x-total-count']) {
+                            headers.push(`Total: ${responseDetails.headers['x-total-count']}`);
+                        }
+                        if (headers.length > 0) {
+                            logToPanel('📨 Nagłówki:', 'info', headers.join(', '));
+                        }
+                    }
+
+                    // Aktualizacja liczników w interfejsie
+                    Object.entries(statusCounts).forEach(([statusId, count]) => {
+                        const element = document.querySelector(`[data-status="${statusId}"] .lead-count`);
+                        if (element) {
+                            element.textContent = count;
+                            element.classList.remove('count-error');
+                        }
+                    });
+                    
+                    logToPanel('✅ Dane zaktualizowane', 'success');
+                } else {
+                    throw new Error(response.error);
                 }
-                
-                const data = await response.json();
-                
-                // Załóżmy, że odpowiedź zawiera pola: field1, field2, field3, field4
-                const { field1, field2, field3, field4 } = data;
-                
-                // Przetwarzanie i aktualizacja interfejsu użytkownika
-                document.getElementById('field1').textContent = field1;
-                document.getElementById('field2').textContent = field2;
-                document.getElementById('field3').textContent = field3;
-                document.getElementById('field4').textContent = field4;
-                
-                logToPanel('✅ Dane z Selly API pobrane pomyślnie', 'success');
-                
             } catch (error) {
                 console.error('Błąd podczas pobierania danych z Selly API:', error);
-                logToPanel('❌ B��ąd pobierania danych z Selly API', 'error', error);
+                logToPanel('❌ Błąd pobierania danych z Selly API', 'error', error.message);
+                
+                // W przypadku błędu, oznacz wszystkie liczniki jako niedostępne
+                document.querySelectorAll('.lead-count').forEach(counter => {
+                    counter.textContent = '-';
+                    counter.classList.add('count-error');
+                });
             }
         }
-        
-        // Wywołanie funkcji fetchSellyData, np. podczas ładowania popup
-        fetchSellyData();
+
+        // Funkcja obsługująca kliknięcie w status
+        async function handleStatusClick() {
+            try {
+                logToPanel('🔄 Ręczne odświeżanie statusów...', 'info');
+                await fetchSellyData();
+                // Dodaj efekt wizualny potwierdzający odświeżenie
+                this.classList.add('refreshed');
+                setTimeout(() => this.classList.remove('refreshed'), 1000);
+            } catch (error) {
+                logToPanel('❌ Błąd podczas ręcznego odświeżania', 'error', error.message);
+            }
+        }
+
+        // Dodaj po inicjalizacji fetchSellyData
+        function initStatusClickHandlers() {
+            document.querySelectorAll('.lead-status').forEach(element => {
+                element.removeEventListener('click', handleStatusClick);
+                element.addEventListener('click', handleStatusClick);
+            });
+            logToPanel('✅ Zainicjalizowano obsługę kliknięć na statusy', 'success');
+        }
+
+        // Pierwsze pobranie danych
+        await fetchSellyData();
+        initStatusClickHandlers();
+        logToPanel('🔄 Uruchomiono automatyczne odświeżanie (co 5 minut)', 'info');
+
+        // Ustaw interwał odświeżania
+        const refreshInterval = setInterval(fetchSellyData, REFRESH_INTERVAL);
+
+        // Dodaj czyszczenie interwału przy zamknięciu popup
+        window.addEventListener('unload', () => {
+            clearInterval(refreshInterval);
+            logToPanel('🛑 Zatrzymano automatyczne odświeżanie', 'info');
+        });
     } catch (error) {
-        logToPanel('❌ Błąd inicjalizacji', 'error', error);
+        logToPanel('❌ Błąd inicjalizacji', 'error', error.message);
     }
 });
 
@@ -518,14 +599,32 @@ document.getElementById('send')?.addEventListener('click', async () => {
     }
 });
 
+function adjustWindowHeight() {
+    const bodyHeight = document.body.offsetHeight;
+    const targetHeight = Math.max(bodyHeight, 600); // Minimalna wysokość
+    resizeWindow(targetHeight);
+}
+
+// Wywołaj, gdy zmienia się tryb debugowania
+debugSwitch.addEventListener('change', (e) => {
+    const isEnabled = e.target.checked;
+    document.body.classList.toggle('debug-enabled', isEnabled);
+    localStorage.setItem('debug-enabled', isEnabled);
+
+    // Dopasuj wysokość okna po zmianie
+    setTimeout(adjustWindowHeight, 100); // Timeout pozwala na pełne wyrenderowanie elementów
+});
+
+
 // Funkcja pomocnicza do zmiany rozmiaru okna
 async function resizeWindow(height) {
     try {
+        // Aktualizacja okna w przeglądarce
         if (chrome?.windows?.getCurrent) {
             const window = await chrome.windows.getCurrent();
             await chrome.windows.update(window.id, { height });
         } else {
-            // Jesteśmy w trybie deweloperskim lub nie mamy uprawnień
+            // Dla trybu deweloperskiego lub braku uprawnień
             document.body.style.height = `${height}px`;
         }
     } catch (error) {
@@ -534,6 +633,7 @@ async function resizeWindow(height) {
         document.body.style.height = `${height}px`;
     }
 }
+
 
 // Obsługa wysyłania zapytania przez Enter
 document.getElementById('query')?.addEventListener('keypress', (e) => {
@@ -606,5 +706,62 @@ async function fetchData() {
     } catch (error) {
         console.error('Błąd podczas pobierania danych z API:', error);
     }
+}
+
+// Funkcja pomocnicza do tworzenia elementu zamówienia
+function createOrderElement(order) {
+    const orderDiv = document.createElement('div');
+    orderDiv.className = 'order-item';
+    
+    // Przykładowa struktura HTML dla zamówienia
+    orderDiv.innerHTML = `
+        <div class="order-header">
+            <span class="order-id">Zamówienie #${order.id}</span>
+            <span class="order-date">${new Date(order.created_at).toLocaleDateString()}</span>
+        </div>
+        <div class="order-details">
+            <div class="order-status">Status: ${order.status}</div>
+            <div class="order-customer">Klient: ${order.customer_name}</div>
+            <div class="order-value">Wartość: ${order.total_value} PLN</div>
+        </div>
+    `;
+    
+    // Dodaj obsługę kliknięcia, jeśli potrzebna
+    orderDiv.addEventListener('click', () => {
+        showOrderDetails(order);
+    });
+    
+    return orderDiv;
+}
+
+// Funkcja do wyświetlania szczegółów zamówienia
+function showOrderDetails(order) {
+    // Przykład użycia istniejącego modalu
+    const modal = document.getElementById('leadDetailsModal');
+    const modalBody = modal.querySelector('.modal-body');
+    
+    modalBody.innerHTML = `
+        <div class="order-details-full">
+            <h6>Szczegóły zamówienia #${order.id}</h6>
+            <p><strong>Data utworzenia:</strong> ${new Date(order.created_at).toLocaleString()}</p>
+            <p><strong>Status:</strong> ${order.status}</p>
+            <p><strong>Klient:</strong> ${order.customer_name}</p>
+            <p><strong>Email:</strong> ${order.customer_email}</p>
+            <p><strong>Telefon:</strong> ${order.customer_phone}</p>
+            <p><strong>Wartość zamówienia:</strong> ${order.total_value} PLN</p>
+            <div class="order-items-list">
+                <h6>Produkty:</h6>
+                <ul>
+                    ${order.items.map(item => `
+                        <li>${item.name} - ${item.quantity} szt. - ${item.price} PLN</li>
+                    `).join('')}
+                </ul>
+            </div>
+        </div>
+    `;
+    
+    // Pokaż modal używając Bootstrap
+    const bootstrapModal = new bootstrap.Modal(modal);
+    bootstrapModal.show();
 }
 
