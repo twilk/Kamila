@@ -10,7 +10,53 @@ async function loadTranslations(lang) {
 
 export const i18n = {
     currentLanguage: 'polish',
-    translations: null,
+    translations: {
+        pl: {
+            // ... istniejące tłumaczenia ...
+            
+            // Sekcja tła
+            background: "Tło",
+            chooseWallpaper: "Wybierz plik",
+            removeWallpaper: "Usuń tło",
+            
+            // Sekcja debug
+            debugTitle: "Debugowanie",
+            debugMode: "Tryb debugowania",
+            debugPanelTitle: "Panel debugowania",
+            debugPanelClear: "Wyczyść logi",
+            debugPanelEmpty: "Brak logów",
+        },
+        en: {
+            // ... istniejące tłumaczenia ...
+            
+            // Background section
+            background: "Background",
+            chooseWallpaper: "Choose file",
+            removeWallpaper: "Remove background",
+            
+            // Debug section
+            debugTitle: "Debugging",
+            debugMode: "Debug mode",
+            debugPanelTitle: "Debug panel",
+            debugPanelClear: "Clear logs",
+            debugPanelEmpty: "No logs",
+        },
+        ua: {
+            // ... istniejące tłumaczenia ...
+            
+            // Секція фону
+            background: "Фон",
+            chooseWallpaper: "Вибрати файл",
+            removeWallpaper: "Видалити фон",
+            
+            // Секція налагодження
+            debugTitle: "Налагодження",
+            debugMode: "Режим налагодження",
+            debugPanelTitle: "Панель налагодження",
+            debugPanelClear: "Очистити логи",
+            debugPanelEmpty: "Немає логів",
+        }
+    },
 
     async init() {
         try {

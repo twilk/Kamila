@@ -307,3 +307,44 @@ body {
     height: 600px;
     transition: height 0.3s ease;
 }
+
+/* Kontrolki tapety */
+.wallpaper-controls {
+    padding: 0.5rem;
+    background: var(--light-surface);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--light-border);
+}
+
+.dark-theme .wallpaper-controls {
+    background: var(--dark-surface);
+    border-color: var(--dark-border);
+}
+
+.wallpaper-input-group {
+    margin-bottom: 0.5rem;
+}
+
+.wallpaper-input-group label {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    transition: all var(--transition-fast);
+}
+
+.wallpaper-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.wallpaper-actions button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    transition: all var(--transition-fast);
+}

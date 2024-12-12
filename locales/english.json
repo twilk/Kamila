@@ -13,6 +13,7 @@
     "background": "Background",
     "defaultBackground": "Default",
     "addCustomWallpaper": "Add custom wallpaper",
+    "removeWallpaper": "Remove background",
     "wallpaperRequirements": "Max size: 2MB, Recommended dimensions: 800x600px",
     "debugMode": "Debug mode",
     "creator": "Creator: Tomasz Wilk",

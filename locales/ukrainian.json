@@ -13,6 +13,7 @@
     "background": "Фон",
     "defaultBackground": "За замовчуванням",
     "addCustomWallpaper": "Додати власний фон",
+    "removeWallpaper": "Видалити фон",
     "wallpaperRequirements": "Макс. розмір: 2МБ, Рекомендовані розміри: 800x600px",
     "debugMode": "Режим налагодження",
     "creator": "Розробник: Tomasz Wilk",
