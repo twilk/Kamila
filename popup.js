@@ -540,6 +540,12 @@ function initTooltips() {
         const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
         tooltipList = [...tooltipTriggerList].map(el => {
             try {
+                // Aktualizuj tytuł tooltipa z tłumaczenia
+                if (el.hasAttribute('data-i18n-tooltip')) {
+                    const key = el.getAttribute('data-i18n-tooltip');
+                    el.title = i18n.translate(key);
+                }
+                
                 return new bootstrap.Tooltip(el, {
                     animation: true,
                     delay: { show: 100, hide: 100 },

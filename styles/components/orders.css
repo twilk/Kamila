@@ -1,0 +1,66 @@
+/* Orders Container */
+.orders-container {
+    position: fixed;
+    bottom: 150px;
+    left: 0;
+    right: 0;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--bg-primary);
+    border-top: 1px solid var(--border-color);
+    padding: var(--spacing-sm);
+    display: none;
+}
+
+.debug-enabled .orders-container {
+    bottom: 300px;
+}
+
+/* Order Items */
+.order-item {
+    padding: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    transition: all var(--animation-speed-fast) var(--ease-out);
+}
+
+.order-item:hover {
+    background-color: var(--bg-hover);
+    transform: translateY(-1px);
+}
+
+/* Order Details */
+.order-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: var(--spacing-xs);
+}
+
+.order-id {
+    font-weight: bold;
+    color: var(--primary);
+}
+
+.order-date {
+    color: var(--text-secondary);
+    font-size: 0.9em;
+}
+
+.order-details {
+    font-size: 0.9em;
+}
+
+.order-status {
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.order-customer {
+    margin-bottom: var(--spacing-xs);
+}
+
+.order-value {
+    font-weight: bold;
+} 

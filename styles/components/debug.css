@@ -1,0 +1,25 @@
+/* Debug Controls */
+.debug-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.form-check.form-switch {
+    margin: 0;
+    padding-left: 2.5em;
+}
+
+.form-check-input {
+    cursor: pointer;
+}
+
+.form-check-label {
+    font-size: 12px;
+    cursor: pointer;
+}
+
+/* Scrollbar Styles for Debug Panel */
+.debug-content::-webkit-scrollbar {
+    width: 8px;
+}

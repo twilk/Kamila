@@ -1,0 +1,49 @@
+/* Debug Helpers */
+.debug-enabled .debug-info {
+    display: block;
+}
+
+.debug-info {
+    display: none;
+    padding: var(--spacing-xs);
+    margin: var(--spacing-xs) 0;
+    background-color: var(--bg-secondary);
+    border-radius: var(--border-radius-sm);
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+/* Utility Classes */
+.hidden {
+    display: none !important;
+}
+
+.invisible {
+    visibility: hidden !important;
+}
+
+.text-center {
+    text-align: center !important;
+}
+
+.text-right {
+    text-align: right !important;
+}
+
+.text-muted {
+    color: var(--text-secondary) !important;
+}
+
+/* Spacing Utilities */
+.m-0 { margin: 0 !important; }
+.p-0 { padding: 0 !important; }
+
+.mt-1 { margin-top: var(--spacing-sm) !important; }
+.mb-1 { margin-bottom: var(--spacing-sm) !important; }
+.ml-1 { margin-left: var(--spacing-sm) !important; }
+.mr-1 { margin-right: var(--spacing-sm) !important; }
+
+.mt-2 { margin-top: var(--spacing-md) !important; }
+.mb-2 { margin-bottom: var(--spacing-md) !important; }
+.ml-2 { margin-left: var(--spacing-md) !important; }
+.mr-2 { margin-right: var(--spacing-md) !important; } 
