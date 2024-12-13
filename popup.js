@@ -72,9 +72,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Inicjalizacja
 document.addEventListener('DOMContentLoaded', async () => {
-    logToPanel('🚀 Aplikacja uruchomiona');
-    
     try {
+        logToPanel('🚀 Aplikacja uruchomiona');
+
+        // Inicjalizacja języka na podstawie zapisanego wyboru
+        const savedLanguage = localStorage.getItem('language') || 'polish';
+        // Aktualizacja flag przy starcie
+        i18n.updateFlags(savedLanguage);
+        
         // Inicjalizacja tłumaczeń
         await i18n.init();
         
@@ -709,7 +714,7 @@ function createOrderElement(order) {
     const orderDiv = document.createElement('div');
     orderDiv.className = 'order-item';
     
-    // Przykładowa struktura HTML dla zamówienia
+    // Przykładowa struktura HTML dla zam��wienia
     orderDiv.innerHTML = `
         <div class="order-header">
             <span class="order-id">Zamówienie #${order.id}</span>
