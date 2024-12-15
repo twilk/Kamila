@@ -17,12 +17,12 @@
    - Wejdź na stronę repozytorium Kamili na GitHubie.
    - Pobierz archiwum z najświeższą wersją, korzystając z tego linku:  
      [Pobierz Kamila (main.zip)](https://github.com/twilk/Kamila/archive/refs/heads/main.zip)
-   - Rozpakuj pobrane archiwum na swoim komputerze (np. `C:\Kamila`).
+   - Rozpakuj pobrane archiwum na swoim komputerze (np. `C:\Users\[SKLEP]\Downloads\Kamila`).
 
 2. **Zainstaluj wtyczkę w Google Chrome:**
    - Otwórz Chrome i przejdź do `chrome://extensions/`.
    - Włącz **Tryb programisty** (przełącznik w prawym górnym rogu).
-   - Kliknij **„Wczytaj rozpakowany”** i wskaż folder z rozpakowaną wtyczką Kamila.
+   - Kliknij **„Załaduj rozpakowane”** i wskaż folder z rozpakowaną wtyczką Kamila.
    - Po chwili ikona Kamili powinna pojawić się na pasku narzędzi.
 
 3. **Sprawdź autoryzację (jeśli wymagana):**
@@ -45,11 +45,11 @@ Jej misją jest ułatwienie Twojej codziennej pracy, **błyskawiczny dostęp do 
 
 Dzięki sprytnym integracjom z wieloma systemami (Notion, Selly, Google Sheets, PC-Market, OpenAI przez Make.com) Kamila potrafi m.in.:
 
-- 🔎 **Znaleźć dostępność towarów** i natychmiast Ci o tym poinformować.  
+- 🔎 **Znaleźć dostępność towarów** i natychmiast Ci o tym poinformować.  //TODO
 - 💼 **Wyświetlić najnowsze leady z Selly**, dzięki czemu nic Ci nie umknie.  
-- 🗂 **Dostarczyć dane o pracownikach i sklepach z Notion**: kontakty, grafiki, zastępstwa — wszystko pod ręką.  
-- 📝 **Przetwarzać dane z Google Sheets**: grafiki, ewidencje, analizy sprzedaży, dostępność towaru na magazynie.  
-- 🧩 **Automatyzować procesy przez Make.com**, byś mógł otrzymać gotowe odpowiedzi w ułamku sekundy.
+- 🗂 **Dostarczyć dane o pracownikach i sklepach z Notion**: kontakty, grafiki, zastępstwa — wszystko pod ręką.  //TODO
+- 📝 **Przetwarzać dane z Google Sheets**: grafiki, ewidencje, analizy sprzedaży, dostępność towaru na magazynie.  //TODO
+- 🧩 **Automatyzować procesy przez Make.com**, byś mógł otrzymać gotowe odpowiedzi w ułamku sekundy.  //TODO
 
 ## 💎 Dlaczego Kamila jest dla Ciebie wartościowa?
 
@@ -102,7 +102,7 @@ Korzystaj z niej każdego dnia i ciesz się łatwiejszą, szybszą i mniej stres
    - Go to the Kamila GitHub repository.
    - Download the newest archive from:  
      [Download Kamila (main.zip)](https://github.com/twilk/Kamila/archive/refs/heads/main.zip)
-   - Unzip it on your computer (e.g., `C:\Kamila`).
+   - Unzip it on your computer (e.g., `C:\Users\[SKLEP]\Downloads\Kamila`).
 
 2. **Install the extension in Google Chrome:**
    - Open Chrome and go to `chrome://extensions/`.
@@ -129,11 +129,11 @@ Korzystaj z niej każdego dnia i ciesz się łatwiejszą, szybszą i mniej stres
 
 Thanks to integrations with various systems (Notion, Selly, Google Sheets, PC-Market, OpenAI via Make.com), Kamila can:
 
-- 🔎 **Find product availability** and inform you immediately.  
-- 💼 **Display the latest leads from Selly**, so you never miss anything.  
-- 🗂 **Deliver data about employees and stores from Notion**: contacts, schedules, substitutions—all at hand.  
-- 📝 **Process data from Google Sheets**: schedules, work time records, sales analyses, product availability.  
-- 🧩 **Automate processes via Make.com**, providing ready answers in a fraction of a second.
+- 🔎 **Find product availability** and inform you immediately.  //TODO
+- 💼 **Display the latest leads from Selly**, so you never miss anything.
+- 🗂 **Deliver data about employees and stores from Notion**: contacts, schedules, substitutions—all at hand.  //TODO
+- 📝 **Process data from Google Sheets**: schedules, work time records, sales analyses, product availability.  //TODO
+- 🧩 **Automate processes via Make.com**, providing ready answers in a fraction of a second.  //TODO
 
 *(… rest of the English version is a direct translation mirroring the Polish content …)*
 
@@ -152,7 +152,7 @@ Thanks to integrations with various systems (Notion, Selly, Google Sheets, PC-Ma
    - Перейдіть до репозиторію Kamila на GitHub.
    - Завантажте найсвіжіший архів за посиланням:  
      [Завантажити Kamila (main.zip)](https://github.com/twilk/Kamila/archive/refs/heads/main.zip)
-   - Розпакуйте архів на своєму комп’ютері (наприклад, `C:\Kamila`).
+   - Розпакуйте архів на своєму комп’ютері (наприклад, `C:\Users\[SKLEP]\Downloads\Kamila`).
 
 2. **Встановіть розширення у Google Chrome:**
    - Відкрийте Chrome та перейдіть до `chrome://extensions/`.
@@ -175,47 +175,94 @@ Thanks to integrations with various systems (Notion, Selly, Google Sheets, PC-Ma
 
 ### Загальна концепція
 
-**Kamila** — це розширення для Chrome, створене для працівників Darwin.pl, щоб спростити щоденн�� завдання, надати швидкий доступ до ключових даних та запропонувати інтелектуальну підтримку в прийнятті рішень.
+**Kamila** — це розширення для Chrome, створене для працівників Darwin.pl, щоб спростити щоденні завдання, надати швидкий доступ до ключових даних та запропонувати інтелектуальну підтримку в прийнятті рішень.
 
 Завдяки інтеграціям з різними системами (Notion, Selly, Google Sheets, PC-Market, OpenAI через Make.com) Kamila може:
 
-- 🔎 **Знаходити наявність товару** та одразу інформувати вас.  
+- 🔎 **Знаходити наявність товару** та одразу інформувати вас.  //TODO
 - 💼 **Відображати найновіші ліди з Selly**, щоб ви нічого не пропустили.  
-- 🗂 **Надавати дані про працівників і магазини з Notion**: контакти, графіки, заміни — все під рукою.  
-- 📝 **Обробляти дані з Google Sheets**: графіки, олік робочого часу, аналізи продажів, наявність товару.  
-- 🧩 **Автоматизувати процеси через Make.com**, щоб надавати готові відповіді за лічені секунди.
+- 🗂 **Надавати дані про працівників і магазини з Notion**: контакти, графіки, заміни — все під рукою.  //TODO
+- 📝 **Обробляти дані з Google Sheets**: графіки, олік робочого часу, аналізи продажів, наявність товару.  //TODO
+- 🧩 **Автоматизувати процеси через Make.com**, щоб надавати готові відповіді за лічені секунди.  //TODO
 
 *(… далі українська версія буде дзеркальним відображенням польського змісту …)*
 
 </details>
 
-## Instalacja
+## 🛠 Dokumentacja Techniczna / Technical Documentation / Технічна документація
 
-1. Pobierz Node.js: [Download](https://nodejs.org/dist/v20.11.1/node-v20.11.1-x64.msi)
-2. Zainstaluj zależności: `npm install`
-3. Zbuduj projekt: `npm run build`
+<details>
+<summary>🇵🇱 Polski</summary>
 
-## Rozwój
+### 📊 Monitorowanie Zamówień w Darwinie
 
-### Testy
+#### Obsługiwane Statusy
+- `1` - Złożone zamówienia
+- `2` - Potwierdzone przez klienta
+- `3` - Przyjęte do realizacji
+- `5` - Gotowe do odbioru
+  - Standardowe (<14 dni)
+  - Zaległe (>14 dni)
 
-```bash
-# Uruchom wszystkie testy
-npm test
+#### Automatyczne Odświeżanie
+- Interwał sprawdzania: co 5 minut
+- Dane są buforowane (cache)
+- Możliwość ręcznego odświeżenia
 
-# Uruchom testy jednostkowe
-npm run test:unit
+#### Filtrowanie Zamówień
+- Według punktu odbioru
+- Według statusu
+- Według daty (zamówienia starsze niż 14 dni są oznaczane jako zaległe)
 
-# Uruchom testy integracyjne
-npm run test:integration
+</details>
 
-# Sprawdź pokrycie kodu
-npm run test:coverage
-```
+<details>
+<summary>🇬🇧 English</summary>
 
-### Pokrycie kodu
-- API: >95%
-- Cache: 100%
-- UI: >90%
-- Walidacja: >90%
-- Całość: >90%
+### 📊 Darwin Order Monitoring
+
+#### Supported Statuses
+- `1` - Submitted orders
+- `2` - Customer confirmed
+- `3` - Accepted for processing
+- `5` - Ready for pickup
+  - Standard (<14 days)
+  - Overdue (>14 days)
+
+#### Auto-Refresh
+- Check interval: every 5 minutes
+- Data is cached
+- Manual refresh available
+
+#### Order Filtering
+- By pickup point
+- By status
+- By date (orders older than 14 days are marked as overdue)
+
+</details>
+
+<details>
+<summary>🇺🇦 Українська</summary>
+
+### 📊 Моніторинг Замовлень Darwin
+
+#### Підтримувані Статуси
+- `1` - Створені замовлення
+- `2` - Підтверджені клієнтом
+- `3` - Прийняті в обробку
+- `5` - Готові до видачі
+  - Стандартні (<14 днів)
+  - Прострочені (>14 днів)
+
+#### Автоматичне Оновлення
+- Інтервал перевірки: кожні 5 хвилин
+- Дані кешуються
+- Можливість ручного оновлення
+
+#### Фільтрація Замовлень
+- За пунктом видачі
+- За статусом
+- За датою (замовлення старші 14 днів позначаються як прострочені)
+
+</details>
+
