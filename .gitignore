@@ -1,5 +1,5 @@
 # Ignore sensitive credentials
-credentials.json
+# credentials.json
 
 # Ignore system files
 .DS_Store
