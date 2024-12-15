@@ -64,9 +64,11 @@ export class StatusChecker {
 
     async testOrders() {
         try {
-            const counts = await this.darwinApi.fetchLeadCounts();
-            return counts !== null;
-        } catch {
+            const orders = await this.darwinApi.getLeadDetails(
+                API_CONFIG.DARWINA.STATUS_CODES.SUBMITTED.id
+            );
+            return Array.isArray(orders);
+        } catch (error) {
             return false;
         }
     }

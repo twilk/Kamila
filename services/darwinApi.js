@@ -2,8 +2,8 @@ import { API_CONFIG } from '../config/api.js';
 
 class DarwinApiService {
     constructor() {
-        this.baseUrl = API_CONFIG.DARWIN.BASE_URL;
-        this.endpoints = API_CONFIG.DARWIN.ENDPOINTS;
+        this.baseUrl = API_CONFIG.DARWINA.BASE_URL;
+        this.endpoints = API_CONFIG.DARWINA.ENDPOINTS;
         this.credentials = null;
     }
 
@@ -46,16 +46,16 @@ class DarwinApiService {
             // Zlicz zamówienia według statusów
             data.forEach(order => {
                 switch(order.status_id) {
-                    case API_CONFIG.DARWIN.STATUS_CODES.SUBMITTED.id:
+                    case API_CONFIG.DARWINA.STATUS_CODES.SUBMITTED.id:
                         counts.submitted++;
                         break;
-                    case API_CONFIG.DARWIN.STATUS_CODES.CONFIRMED.id:
+                    case API_CONFIG.DARWINA.STATUS_CODES.CONFIRMED.id:
                         counts.confirmed++;
                         break;
-                    case API_CONFIG.DARWIN.STATUS_CODES.ACCEPTED.id:
+                    case API_CONFIG.DARWINA.STATUS_CODES.ACCEPTED.id:
                         counts.accepted++;
                         break;
-                    case API_CONFIG.DARWIN.STATUS_CODES.READY.id:
+                    case API_CONFIG.DARWINA.STATUS_CODES.READY.id:
                         counts.ready++;
                         break;
                 }
@@ -104,7 +104,7 @@ class DarwinApiService {
     }
 
     getStatusName(statusId) {
-        const status = Object.values(API_CONFIG.DARWIN.STATUS_CODES)
+        const status = Object.values(API_CONFIG.DARWINA.STATUS_CODES)
             .find(s => s.id === statusId);
         return status ? status.name : 'Nieznany';
     }

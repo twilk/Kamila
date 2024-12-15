@@ -47,4 +47,17 @@ describe('DARWINA.PL API Error Handling', () => {
             .rejects
             .toThrow('Błąd pobierania klientów');
     });
+
+    test('should handle severe transformation errors', async () => {
+        const result = darwinApi.transformOrdersData([corruptedOrder]);
+        expect(result).toEqual([{
+            id: undefined,
+            status: API_CONFIG.DARWINA.STATUS_CODES.UNKNOWN,
+            customer: { name: undefined, email: undefined },
+            items: [],
+            total: undefined,
+            created_at: undefined,
+            modified_at: undefined
+        }]);
+    });
 }); 

@@ -1,4 +1,4 @@
-import { handleThemeChange, handleLanguageChange, showError, showResponse, initializeBootstrap } from '@/popup';
+import { handleThemeChange, handleLanguageChange, showError, showResponse, initializeBootstrap, initDebugMode, addLogToPanel } from '@/popup';
 
 describe('Popup UI', () => {
     beforeEach(() => {
@@ -265,5 +265,32 @@ describe('Popup UI', () => {
             expect(document.querySelector('label[for="query"]').textContent).toBe('Your query:');
             expect(document.getElementById('send').textContent).toBe('Send');
         });
+    });
+
+    test('should initialize debug mode', () => {
+        localStorage.setItem('debugMode', 'true');
+        initDebugMode();
+        expect(document.body.classList.contains('debug-enabled')).toBe(true);
+    });
+
+    test('should add logs to panel', () => {
+        localStorage.setItem('debugMode', 'true');
+        initDebugMode();
+        
+        addLogToPanel('Test message', 'info');
+        const logs = document.querySelectorAll('.log-entry');
+        expect(logs.length).toBe(1);
+        expect(logs[0].textContent).toContain('Test message');
+    });
+
+    test('should maintain state after theme change', () => {
+        localStorage.setItem('debugMode', 'true');
+        initDebugMode();
+        
+        addLogToPanel('Test message', 'info');
+        document.body.classList.toggle('dark-theme');
+        
+        const logs = document.querySelectorAll('.log-entry');
+        expect(logs.length).toBe(1);
     });
 }); 

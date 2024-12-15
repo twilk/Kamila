@@ -12,30 +12,38 @@ export class UpdateManager {
 
     async checkForUpdates() {
         try {
-            const latestRelease = await this.getLatestRelease();
-            const hasUpdate = this.compareVersions(latestRelease.tag_name, this.currentVersion);
+            const release = await this.getLatestRelease();
+            if (!release) {
+                console.log('No release info available');
+                return { hasUpdate: false };
+            }
+            const hasUpdate = this.compareVersions(release.tag_name, this.currentVersion);
             
             sendLogToPopup('🔄 Update check completed', 'info');
 
             return {
                 hasUpdate,
                 currentVersion: this.currentVersion,
-                latestVersion: latestRelease.tag_name,
-                releaseNotes: latestRelease.body,
-                downloadUrl: latestRelease.zipball_url
+                latestVersion: release.tag_name,
+                releaseNotes: release.body,
+                downloadUrl: release.zipball_url
             };
         } catch (error) {
-            sendLogToPopup('❌ Update check failed', 'error', error.message);
-            throw new Error('Nie udało się sprawdzić aktualizacji');
+            console.log('Update check skipped:', error.message);
+            return { hasUpdate: false };
         }
     }
 
     async getLatestRelease() {
-        const response = await fetch(`${this.repoUrl}/releases/latest`);
-        if (!response.ok) {
-            throw new Error('Nie udało się pobrać informacji o najnowszej wersji');
+        try {
+            const response = await fetch(`${this.repoUrl}/releases/latest`);
+            if (!response.ok) {
+                return null;
+            }
+            return await response.json();
+        } catch (error) {
+            return null;
         }
-        return await response.json();
     }
 
     compareVersions(latest, current) {

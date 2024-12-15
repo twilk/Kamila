@@ -9,7 +9,7 @@ describe('Darwin API Extended Integration', () => {
     test('should handle complete order flow', async () => {
         // Pobierz zamówienia w statusie "złożone"
         const submittedOrders = await darwinApi.getLeadDetails(
-            API_CONFIG.DARWIN.STATUS_CODES.SUBMITTED.id
+            API_CONFIG.DARWINA.STATUS_CODES.SUBMITTED.id
         );
         expect(Array.isArray(submittedOrders)).toBe(true);
 

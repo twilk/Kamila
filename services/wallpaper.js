@@ -1,64 +1,60 @@
 import { sendLogToPopup } from '../config/api.js';
 
-export const WallpaperManager = {
-    async init() {
+export class WallpaperService {
+    constructor() {
+        this.currentWallpaper = localStorage.getItem('wallpaper');
+        this.maxSize = 2 * 1024 * 1024; // 2MB
+        this.validTypes = [
+            'image/jpeg', 'image/jpg', 'image/pjpeg',
+            'image/png', 'image/gif', 'image/webp',
+            'image/bmp', 'image/tiff'
+        ];
+    }
+
+    async setWallpaper(file) {
         try {
-            // Załaduj manifest tapet
-            const response = await fetch('wallpapers/manifest.json');
-            if (!response.ok) throw new Error('Błąd ładowania manifestu tapet');
-            const manifest = await response.json();
+            if (!file) throw new Error('No file provided');
             
-            // Wczytaj zapisaną tapetę lub użyj domyślnej
-            const savedWallpaper = localStorage.getItem('wallpaper') || manifest.defaultWallpaper;
-            await this.applyWallpaper(savedWallpaper);
-            
-            // Załaduj podglądy tapet
-            this.loadPreviews(manifest.wallpapers);
-            
-            return true;
-        } catch (error) {
-            sendLogToPopup('❌ Wallpaper initialization failed', 'error', error.message);
-            return false;
-        }
-    },
-
-    loadPreviews(wallpapers) {
-        const grid = document.getElementById('wallpapers-grid');
-        if (!grid) return;
-
-        wallpapers.forEach(wallpaper => {
-            const preview = document.createElement('div');
-            preview.className = 'wallpaper-item';
-            preview.innerHTML = `
-                <div class="wallpaper-preview" 
-                     data-wallpaper="${wallpaper.id}"
-                     style="background-image: url(wallpapers/${wallpaper.thumbnail})">
-                </div>
-            `;
-            grid.appendChild(preview);
-        });
-    },
-
-    async applyWallpaper(wallpaper) {
-        try {
-            if (wallpaper === 'default') {
-                document.body.style.backgroundImage = '';
-            } else {
-                document.body.style.backgroundImage = `url(wallpapers/${wallpaper}.jpg)`;
+            // Validate file
+            if (file.size > this.maxSize) {
+                throw new Error('File too large (max 2MB)');
             }
-            localStorage.setItem('wallpaper', wallpaper);
             
-            // Aktualizuj aktywną tapetę w UI
-            document.querySelectorAll('.wallpaper-preview').forEach(preview => {
-                preview.classList.toggle('active', preview.dataset.wallpaper === wallpaper);
-            });
+            if (!this.validTypes.includes(file.type)) {
+                throw new Error('Invalid file type');
+            }
+
+            // Create URL and save
+            const url = URL.createObjectURL(file);
+            localStorage.setItem('wallpaper', url);
+            this.currentWallpaper = url;
             
-            sendLogToPopup('🖼️ Wallpaper updated', 'success');
-            
+            sendLogToPopup('✨ Wallpaper updated', 'success');
+            return { success: true, url };
+        } catch (error) {
+            sendLogToPopup('❌ Wallpaper error', 'error', error.message);
+            return { success: false, error: error.message };
+        }
+    }
+
+    removeWallpaper() {
+        try {
+            if (this.currentWallpaper) {
+                URL.revokeObjectURL(this.currentWallpaper);
+            }
+            localStorage.removeItem('wallpaper');
+            this.currentWallpaper = null;
+            sendLogToPopup('🗑️ Wallpaper removed', 'success');
             return true;
         } catch (error) {
-            sendLogToPopup('❌ Wallpaper update failed', 'error', error.message);
+            sendLogToPopup('❌ Error removing wallpaper', 'error', error.message);
             return false;
         }
     }
-}; 
+
+    getCurrentWallpaper() {
+        return this.currentWallpaper;
+    }
+}
+
+export const wallpaperService = new WallpaperService(); 

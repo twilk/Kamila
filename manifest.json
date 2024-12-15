@@ -6,10 +6,14 @@
     "permissions": [
         "storage",
         "tabs",
-        "windows"
+        "windows",
+        "webRequest",
+        "webRequestBlocking",
+        "alarms"
     ],
     "host_permissions": [
-        "https://api.darwina.pl/*"
+        "https://darwina.pl/*",
+        "https://*.darwina.pl/*"
     ],
     "action": {
         "default_popup": "popup.html"
@@ -24,10 +28,28 @@
         "type": "module"
     },
     "content_security_policy": {
-        "extension_pages": "script-src 'self'; object-src 'self';"
+        "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://darwina.pl https://*.darwina.pl;"
     },
+    "content_scripts": [{
+        "matches": ["<all_urls>"],
+        "js": [
+            "config/delivery.js",
+            "config/stores.js", 
+            "config/api.js"
+        ],
+        "type": "module"
+    }],
     "web_accessible_resources": [{
         "resources": ["wallpapers/custom/*"],
+        "matches": ["<all_urls>"]
+    },
+    {
+        "resources": [
+            "config/credentials.json",
+            "config/delivery.js",
+            "config/stores.js",
+            "config/api.js"
+        ],
         "matches": ["<all_urls>"]
     }]
 }

@@ -1,11 +1,37 @@
 {
-    "wallpapers": [
-        {
-            "id": "OBR1",
-            "name": "Obraz 1",
-            "file": "OBR1.jpg",
-            "thumbnail": "OBR1_thumb.jpg"
+    "manifest_version": 3,
+    "name": "KAMILA - Asystent DARWINA.PL",
+    "version": "1.0.0",
+    "description": "Asystent do zarządzania zamówieniami w DARWINA.PL",
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
         }
+    },
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "permissions": [
+        "storage",
+        "alarms"
     ],
-    "defaultWallpaper": "default"
+    "host_permissions": [
+        "*://darwina.pl/*",
+        "*://*.darwina.pl/*"
+    ],
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; connect-src 'self' https://darwina.pl https://*.darwina.pl https://api.github.com https://*.github.com;"
+    },
+    "web_accessible_resources": [{
+        "resources": [
+            "config/credentials.json",
+            "locales/*.json",
+            "wallpapers/*"
+        ],
+        "matches": ["<all_urls>"]
+    }]
 } 

@@ -1,22 +1,36 @@
-// Mock dla chrome API
+import '@testing-library/jest-dom';
+
+// Mock chrome API
 global.chrome = {
-    storage: {
-        local: {
-            get: jest.fn(),
-            set: jest.fn()
-        }
-    },
     runtime: {
         onMessage: {
             addListener: jest.fn()
         },
         sendMessage: jest.fn()
     },
-    action: {
-        setBadgeText: jest.fn(),
-        setBadgeBackgroundColor: jest.fn()
+    storage: {
+        local: {
+            get: jest.fn(),
+            set: jest.fn()
+        }
     }
 };
+
+// Mock localStorage
+const localStorageMock = {
+    getItem: jest.fn(),
+    setItem: jest.fn(),
+    clear: jest.fn(),
+    removeItem: jest.fn()
+};
+Object.defineProperty(window, 'localStorage', { value: localStorageMock });
+
+// Mock fetch
+global.fetch = jest.fn();
+
+// Mock URL
+global.URL.createObjectURL = jest.fn();
+global.URL.revokeObjectURL = jest.fn();
 
 // Mock dla window.bootstrap
 global.bootstrap = {

@@ -1,53 +1,55 @@
 import { sendLogToPopup } from '../config/api.js';
 
-export const CacheManager = {
-    async init() {
+const CACHE_DURATION = 4 * 60 * 1000; // 4 minuty w milisekundach
+
+export class CacheService {
+    static async get(key) {
         try {
-            // Sprawdź czy cache jest dostępny
-            if ('caches' in window) {
-                // Otwórz lub stwórz cache dla aplikacji
-                const cache = await caches.open('kamila-v1');
-                return true;
+            const result = await chrome.storage.local.get([key, `${key}_timestamp`]);
+            const data = result[key];
+            const timestamp = result[`${key}_timestamp`];
+            
+            if (!data || !timestamp) return null;
+            
+            // Sprawdź czy cache nie wygasł
+            if (Date.now() - parseInt(timestamp) > CACHE_DURATION) {
+                await this.clear(key);
+                return null;
             }
-            return false;
+            
+            return data;
         } catch (error) {
-            sendLogToPopup('❌ Cache initialization error', 'error', error.message);
-            return false;
-        }
-    },
-
-    async set(key, data) {
-        try {
-            localStorage.setItem(key, JSON.stringify(data));
-            sendLogToPopup('💾 Cache updated', 'info', key);
-            return true;
-        } catch (error) {
-            sendLogToPopup('❌ Cache set error', 'error', error.message);
-            return false;
-        }
-    },
-
-    get(key) {
-        try {
-            const data = localStorage.getItem(key);
-            return data ? JSON.parse(data) : null;
-        } catch (error) {
-            sendLogToPopup('❌ Cache get error', 'error', error.message);
+            sendLogToPopup('❌ Cache read error', 'error', error.message);
             return null;
         }
-    },
+    }
 
-    clear(key) {
+    static async set(key, data) {
         try {
-            if (key) {
-                localStorage.removeItem(key);
-            } else {
-                localStorage.clear();
-            }
+            await chrome.storage.local.set({
+                [key]: data,
+                [`${key}_timestamp`]: Date.now()
+            });
             return true;
         } catch (error) {
-            sendLogToPopup('❌ Cache clear error', 'error', error.message);
+            sendLogToPopup('❌ Cache write error', 'error', error.message);
             return false;
         }
     }
-}; 
+
+    static async clear(key) {
+        try {
+            await chrome.storage.local.remove([key, `${key}_timestamp`]);
+        } catch (error) {
+            sendLogToPopup('❌ Cache clear error', 'error', error.message);
+        }
+    }
+
+    static async clearAll() {
+        try {
+            await chrome.storage.local.clear();
+        } catch (error) {
+            sendLogToPopup('❌ Cache clear all error', 'error', error.message);
+        }
+    }
+} 

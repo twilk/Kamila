@@ -40,6 +40,10 @@
     
     /* Animacje */
     --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Podstawowe wymiary */
+    --window-height: 600px;
+    --debug-panel-height: 200px;
 }
 
 /* ===== PODSTAWOWE STYLE ===== */
@@ -306,6 +310,7 @@ body {
     width: 800px;
     height: 600px;
     transition: height 0.3s ease;
+    overflow-y: auto;
 }
 
 /* Kontrolki tapety */
@@ -347,4 +352,45 @@ body {
     gap: 0.5rem;
     padding: 0.5rem;
     transition: all var(--transition-fast);
+}
+
+/* Gdy debug jest włączony */
+body.debug-enabled {
+    height: calc(var(--window-height) + var(--debug-panel-height));
+}
+
+/* Panel debugowania */
+.debug-panel {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 200px;
+    background: var(--light-surface);
+    border-top: 1px solid var(--light-border);
+    padding: 16px;
+    z-index: 1000;
+}
+
+.debug-enabled .debug-panel {
+    display: flex !important;
+    flex-direction: column;
+}
+
+.store-selector {
+    padding: 0.5rem;
+    background: var(--light-surface);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--light-border);
+}
+
+.dark-theme .store-selector {
+    background: var(--dark-surface);
+    border-color: var(--dark-border);
+}
+
+.store-selector select {
+    width: 100%;
+    font-size: 0.875rem;
 }

@@ -1,14 +1,16 @@
 import { API } from './services/index.js';
-//import { API_BASE_URL, API_KEY } from '../config/api.js';
-import { API_BASE_URL, API_KEY } from '../config/api.js';
-import { getSellyCredentials } from './config/api.js';
+import { API_BASE_URL, API_CONFIG } from '../config/api.js';
+import { getDarwinaCredentials, sendLogToPopup } from './config/api.js';
 import { i18n } from './services/i18n.js';
+import { CacheService } from './services/cache.js';
+
+const CACHE_KEY = 'darwina_orders_data';
 
 // Globalna zmienna dla tooltipów
 let tooltipList = [];
 
-// Tymczasowo dla testów - 10 sekund
-const REFRESH_INTERVAL = 10000;
+// Tymczasowo dla testów - 1 minuta
+const REFRESH_INTERVAL = 60000;
 let refreshCount = 0;
 
 // Funkcja logowania
@@ -66,24 +68,45 @@ function logToPanel(message, type = 'info', data = null) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'LOG_MESSAGE') {
         const { message: logMessage, type, data } = message.payload;
+        console.log('📝 Log received:', { message: logMessage, type, data }); // Debug
         logToPanel(logMessage, type, data);
     }
 });
 
 // Inicjalizacja
 document.addEventListener('DOMContentLoaded', async () => {
+    console.log('🚀 DOMContentLoaded event fired');
     logToPanel('🚀 Aplikacja uruchomiona');
     
     try {
         // Inicjalizacja tłumaczeń
         await i18n.init();
         
-        // Inicjalizacja konfiguracji Selly
-        const sellyConfig = await getSellyCredentials();
+        // Inicjalizacja konfiguracji DARWINA
+        const darwinaConfig = await getDarwinaCredentials();
+        console.log('🔑 Got Darwina config:', {
+            hasConfig: !!darwinaConfig,
+            hasApiKey: !!darwinaConfig?.DARWINA_API_KEY,
+            baseUrl: darwinaConfig?.DARWINA_API_BASE_URL
+        });
 
-        // Teraz można kontynuować inicjalizację aplikacji korzystając z sellyConfig
-        // Przykład:
-        // API.init(sellyConfig); // Jeśli API potrzebuje konfiguracji
+        // Pierwsze pobranie danych
+        console.log('📡 Starting initial data fetch...');
+        await fetchDarwinaData();
+        initStatusClickHandlers();
+        
+        // Ustaw interwał odświeżania
+        console.log('⏰ Setting up refresh interval:', REFRESH_INTERVAL);
+        const refreshInterval = setInterval(async () => {
+            console.log('⏰ Refresh interval triggered');
+            await fetchDarwinaData();
+        }, REFRESH_INTERVAL);
+
+        // Dodaj czyszczenie interwału przy zamknięciu popup
+        window.addEventListener('unload', () => {
+            clearInterval(refreshInterval);
+            console.log('🛑 Cleared refresh interval');
+        });
 
         // Inicjalizacja języka - musi być pierwsza!
         i18n.updateDataI18n();
@@ -191,7 +214,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // Zaktualizuj interfejs i flagi
                     i18n.updateDataI18n();
                     updateInterface(i18n.translations);
-                    i18n.updateFlags(lang);
+                    // Aktualizuj aktywną flagę
+                    document.querySelectorAll('.flag').forEach(f => {
+                        f.classList.toggle('active', f.getAttribute('data-lang') === lang);
+                    });
                     
                     logToPanel(`✅ Język zmieniony na: ${lang}`, 'success');
                 } catch (error) {
@@ -290,69 +316,95 @@ document.addEventListener('DOMContentLoaded', async () => {
             handleWallpaper(savedWallpaper, true);
         }
 
-        // Funkcja do pobierania danych z API Selly
-        async function fetchSellyData() {
+        // Funkcja do pobierania danych z API DARWINA
+        async function fetchDarwinaData() {
             try {
-                refreshCount++;
-                logToPanel(`🔄 Odświeżanie #${refreshCount}`, 'info');
+                const lastFetchTime = localStorage.getItem('last_fetch_time');
+                const now = Date.now();
                 
-                const response = await chrome.runtime.sendMessage({
-                    type: 'FETCH_SELLY_DATA',
-                    dateFrom: '2024-01-01',
-                    page: '1'
-                });
-                
-                if (response.success) {
-                    const { statusCounts, responseDetails } = response;
-                    
-                    // Log szczegółów odpowiedzi API
-                    logToPanel('📡 Status API:', 'info', `${responseDetails.status} ${responseDetails.statusText}`);
-                    logToPanel('🔗 URL:', 'info', responseDetails.url);
-                    
-                    // Log nagłówków odpowiedzi
-                    if (responseDetails.headers) {
-                        const headers = [];
-                        if (responseDetails.headers['content-type']) {
-                            headers.push(`Content-Type: ${responseDetails.headers['content-type']}`);
-                        }
-                        if (responseDetails.headers['x-total-count']) {
-                            headers.push(`Total: ${responseDetails.headers['x-total-count']}`);
-                        }
-                        if (headers.length > 0) {
-                            logToPanel('📨 Nagłówki:', 'info', headers.join(', '));
-                        }
+                // Jeśli minęło mniej niż minutę, użyj cache
+                if (lastFetchTime && now - parseInt(lastFetchTime) < REFRESH_INTERVAL) {
+                    const cachedData = await CacheService.get(CACHE_KEY);
+                    if (cachedData) {
+                        updateUI(cachedData);
+                        return;
                     }
+                }
 
-                    // Aktualizacja liczników w interfejsie
-                    Object.entries(statusCounts).forEach(([statusId, count]) => {
-                        const element = document.querySelector(`[data-status="${statusId}"] .lead-count`);
-                        if (element) {
-                            element.textContent = count;
-                            element.classList.remove('count-error');
-                        }
-                    });
-                    
-                    logToPanel('✅ Dane zaktualizowane', 'success');
+                // Pobierz nowe dane
+                refreshCount++;
+                const { selectedStore } = await chrome.storage.local.get('selectedStore');
+                const response = await chrome.runtime.sendMessage({
+                    type: 'FETCH_DARWINA_DATA',
+                    selectedStore: selectedStore || 'ALL'
+                });
+
+                if (response.success) {
+                    updateUI(response);
+                    localStorage.setItem('last_fetch_time', now.toString());
                 } else {
                     throw new Error(response.error);
                 }
             } catch (error) {
-                console.error('Błąd podczas pobierania danych z Selly API:', error);
-                logToPanel('❌ Błąd pobierania danych z Selly API', 'error', error.message);
-                
-                // W przypadku błędu, oznacz wszystkie liczniki jako niedostępne
-                document.querySelectorAll('.lead-count').forEach(counter => {
-                    counter.textContent = '-';
-                    counter.classList.add('count-error');
-                });
+                handleError(error);
             }
+        }
+
+        // Funkcja aktualizacji UI
+        function updateUI(data) {
+            const { statusCounts } = data;
+            
+            // Resetuj wszystkie liczniki
+            document.querySelectorAll('.lead-count').forEach(counter => {
+                counter.textContent = '0';
+                counter.classList.remove('count-error');
+                counter.classList.add('count-zero');
+            });
+            
+            // Mapowanie statusów z API na elementy UI
+            const statusMapping = {
+                '1': '[data-status="1"]',      // Złożone (SUBMITTED)
+                '2': '[data-status="2"]',      // Potwierdzone przez Klienta (CONFIRMED)
+                '3': '[data-status="3"]',      // Przyjęte do realizacji (ACCEPTED)
+                'READY': '[data-status="READY"]',      // Gotowe do odbioru (< 2 tygodnie)
+                'OVERDUE': '[data-status="OVERDUE"]'   // Przeterminowane (>= 2 tygodnie)
+            };
+
+            // Aktualizacja liczników
+            Object.entries(statusCounts).forEach(([status, count]) => {
+                // Znajdź odpowiedni selektor dla statusu
+                const selector = statusMapping[status];
+                if (selector) {
+                    const element = document.querySelector(`${selector} .lead-count`);
+                    if (element && count > 0) {
+                        element.textContent = count;
+                        element.classList.remove('count-zero');
+                        logToPanel(`📊 Status ${status}: ${count}`, 'info');
+                    }
+                }
+            });
+
+            // Dodaj tooltip z dokładną datą aktualizacji
+            const timestamp = new Date().toLocaleString();
+            document.querySelectorAll('.lead-status').forEach(status => {
+                const count = status.querySelector('.lead-count').textContent;
+                const statusName = status.getAttribute('data-status');
+                status.setAttribute('title', 
+                    `Status: ${statusName}\n` +
+                    `Liczba zamówień: ${count}\n` +
+                    `Ostatnia aktualizacja: ${timestamp}`
+                );
+            });
+
+            logToPanel('✅ Dane zaktualizowane', 'success');
+            logToPanel('📊 Wszystkie statusy:', 'info', statusCounts);
         }
 
         // Funkcja obsługująca kliknięcie w status
         async function handleStatusClick() {
             try {
                 logToPanel('🔄 Ręczne odświeżanie statusów...', 'info');
-                await fetchSellyData();
+                await fetchDarwinaData();
                 // Dodaj efekt wizualny potwierdzający odświeżenie
                 this.classList.add('refreshed');
                 setTimeout(() => this.classList.remove('refreshed'), 1000);
@@ -361,7 +413,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
 
-        // Dodaj po inicjalizacji fetchSellyData
+        // Dodaj po inicjalizacji fetchDarwinaData
         function initStatusClickHandlers() {
             document.querySelectorAll('.lead-status').forEach(element => {
                 element.removeEventListener('click', handleStatusClick);
@@ -370,19 +422,95 @@ document.addEventListener('DOMContentLoaded', async () => {
             logToPanel('✅ Zainicjalizowano obsługę kliknięć na statusy', 'success');
         }
 
-        // Pierwsze pobranie danych
-        await fetchSellyData();
-        initStatusClickHandlers();
-        logToPanel('🔄 Uruchomiono automatyczne odświeżanie (co 5 minut)', 'info');
-
-        // Ustaw interwał odświeżania
-        const refreshInterval = setInterval(fetchSellyData, REFRESH_INTERVAL);
-
-        // Dodaj czyszczenie interwału przy zamknięciu popup
-        window.addEventListener('unload', () => {
-            clearInterval(refreshInterval);
-            logToPanel('🛑 Zatrzymano automatyczne odświeżanie', 'info');
+        // Obsługa przycisku instrukcji
+        const instructionsButton = document.getElementById('instructions-button');
+        const instructionsModal = document.getElementById('instructionsModal');
+        
+        console.log('Instructions elements:', {
+            button: instructionsButton,
+            modal: instructionsModal,
+            bootstrap: typeof bootstrap !== 'undefined'
         });
+        
+        if (instructionsButton && instructionsModal) {
+            instructionsButton.addEventListener('click', () => {
+                console.log('Instructions button clicked');
+                if (typeof bootstrap === 'undefined') {
+                    logToPanel('❌ Bootstrap nie jest załadowany', 'error');
+                    return;
+                }
+
+                // Sprawdź czy modal już istnieje
+                let modal = bootstrap.Modal.getInstance(instructionsModal);
+                if (!modal) {
+                    modal = new bootstrap.Modal(instructionsModal);
+                }
+                modal.show();
+                logToPanel('📋 Otwarto instrukcję', 'info');
+            });
+        }
+
+        // Obsługa zmiany sklepu
+        const storeSelect = document.getElementById('store-select');
+        if (storeSelect) {
+            // Załaduj listę sklepów
+            import('./config/stores.js').then(({ stores }) => {
+                // Wyczyść obecne opcje
+                storeSelect.innerHTML = '';
+                
+                // Dodaj opcję "Wszystkie sklepy"
+                const allOption = document.createElement('option');
+                allOption.value = 'ALL';
+                allOption.textContent = stores.find(s => s.id === 'ALL').name;
+                allOption.setAttribute('data-i18n', 'allStores');
+                storeSelect.appendChild(allOption);
+                
+                // Dodaj pozostałe sklepy, używając dokładnie danych ze stores.js
+                stores
+                    .filter(store => store.id !== 'ALL')
+                    .forEach(store => {
+                        const option = document.createElement('option');
+                        option.value = store.id;
+                        option.textContent = `${store.name} - ${store.address}`;
+                        storeSelect.appendChild(option);
+                    });
+
+                // Załaduj zapisany wybór
+                chrome.storage.local.get('selectedStore', ({ selectedStore }) => {
+                    storeSelect.value = selectedStore || 'ALL';
+                    });
+            });
+
+            // Dodaj obsługę zmiany
+            storeSelect.addEventListener('change', async (e) => {
+                try {
+                    const selectedStore = e.target.value;
+                    
+                    // Wyczyść cache
+                    await CacheService.clear(CACHE_KEY);
+                    // Usuń timestamp ostatniego odświeżenia
+                    localStorage.removeItem('last_fetch_time');
+                    
+                    // Zapisz wybrany sklep
+                    await chrome.storage.local.set({ selectedStore });
+                    
+                    // Oznacz liczniki jako ładujące się
+                    document.querySelectorAll('.lead-count').forEach(counter => {
+                        counter.textContent = '...';
+                        counter.classList.remove('count-error', 'count-zero');
+                    });
+                    
+                    logToPanel('🏪 Zmieniono sklep na: ' + selectedStore, 'info');
+                    
+                    // Wymuś natychmiastowe pobranie nowych danych
+                    await fetchDarwinaData();
+                    
+                } catch (error) {
+                    logToPanel('❌ Błąd podczas zmiany sklepu', 'error', error.message);
+                    handleError(error);
+                }
+            });
+        }
     } catch (error) {
         logToPanel('❌ Błąd inicjalizacji', 'error', error.message);
     }
@@ -452,7 +580,7 @@ function updateInterface(translations) {
     // Status
     safeUpdateElement('#status h5', el => el.textContent = i18n.translate('serviceStatus'));
     safeUpdateElements('.service-name', (el, index) => {
-        const keys = ['apiSelly', 'authorization', 'orders', 'cache'];
+        const keys = ['apiDarwina', 'authorization', 'orders', 'cache'];
         el.textContent = i18n.translate(keys[index]);
     });
     safeUpdateElements('.legend-item span:not(.status-dot)', (el, index) => {
@@ -603,8 +731,20 @@ document.getElementById('send')?.addEventListener('click', async () => {
 
 function adjustWindowHeight() {
     const isDebugEnabled = document.body.classList.contains('debug-enabled');
-    const height = isDebugEnabled ? 750 : 600;
-    resizeWindow(height);
+    const height = isDebugEnabled ? 800 : 600;
+    
+    if (chrome?.windows?.getCurrent) {
+        chrome.windows.getCurrent(async (window) => {
+            try {
+                await chrome.windows.update(window.id, { height });
+            } catch (error) {
+                console.error('Error resizing window:', error);
+            }
+        });
+    } else {
+        // Fallback dla trybu dev
+        document.body.style.height = `${height}px`;
+    }
 }
 
 // Funkcja pomocnicza do zmiany rozmiaru okna
@@ -686,9 +826,10 @@ function handleWallpaper(imageUrl, isInitial = false) {
 
 async function fetchData() {
     try {
+        const credentials = await getDarwinaCredentials();
         const response = await fetch(`${API_BASE_URL}/endpoint`, {
             headers: {
-                'Authorization': `Bearer ${API_KEY}`
+                'Authorization': `Bearer ${credentials.DARWINA_API_KEY}`
             }
         });
         const data = await response.json();
@@ -753,5 +894,17 @@ function showOrderDetails(order) {
     // Pokaż modal używając Bootstrap
     const bootstrapModal = new bootstrap.Modal(modal);
     bootstrapModal.show();
+}
+
+// Dodaj funkcję handleError
+function handleError(error) {
+    console.error('❌ Error:', error);
+    logToPanel('❌ Błąd pobierania danych z DARWINA API', 'error', error.message);
+    
+    // W przypadku błędu, oznacz wszystkie liczniki jako niedostępne
+    document.querySelectorAll('.lead-count').forEach(counter => {
+        counter.textContent = '-';
+        counter.classList.add('count-error');
+    });
 }
 

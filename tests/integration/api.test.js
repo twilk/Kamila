@@ -1,35 +1,30 @@
-import { darwinApi } from '../../src/services/darwinApi';
+import { APIService } from '../../services/api.js';
+import { CacheService } from '../../services/cache.js';
 
-describe('DARWINA.PL API Integration', () => {
-    beforeAll(async () => {
-        await darwinApi.initialize();
+describe('API Integration', () => {
+    let api;
+    
+    beforeEach(() => {
+        api = new APIService();
+        CacheService.clearAll();
     });
 
-    test('should fetch lead counts', async () => {
-        const counts = await darwinApi.fetchLeadCounts();
+    test('should handle full API flow', async () => {
+        const result = await api.getOrderStatuses();
+        expect(result.success).toBe(true);
+        expect(result.statusCounts).toBeDefined();
         
-        expect(counts).toHaveProperty('submitted');
-        expect(counts).toHaveProperty('confirmed');
-        expect(counts).toHaveProperty('accepted');
-        expect(counts).toHaveProperty('ready');
-        
-        // Sprawdź czy liczby są nieujemne
-        Object.values(counts).forEach(count => {
-            expect(count).toBeGreaterThanOrEqual(0);
-        });
+        // Check cache
+        const cached = await CacheService.get('orders_ALL');
+        expect(cached).toBeDefined();
     });
 
-    test('should fetch lead details', async () => {
-        const statusId = API_CONFIG.DARWIN.STATUS_CODES.SUBMITTED.id;
-        const details = await darwinApi.getLeadDetails(statusId);
+    test('should handle API errors gracefully', async () => {
+        // Force API error
+        global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
         
-        expect(Array.isArray(details)).toBe(true);
-        
-        if (details.length > 0) {
-            const order = details[0];
-            expect(order).toHaveProperty('id');
-            expect(order).toHaveProperty('status');
-            expect(order).toHaveProperty('customer');
-        }
+        const result = await api.getOrderStatuses();
+        expect(result.success).toBe(false);
+        expect(result.error).toBeDefined();
     });
 }); 

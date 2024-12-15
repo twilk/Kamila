@@ -1,10 +1,10 @@
-import { API_BASE_URL, API_KEY, getSellyCredentials, sendLogToPopup } from '../config/api.js';
+import { API_BASE_URL, API_CONFIG, getDarwinaCredentials, sendLogToPopup } from '../config/api.js';
 
 export async function checkStatus() {
-    const sellyConfig = await getSellyCredentials();
-    const response = await fetch(`${sellyConfig.SELLY_API_BASE_URL}/status`, {
+    const darwinaConfig = await getDarwinaCredentials();
+    const response = await fetch(`${darwinaConfig.DARWINA_API_BASE_URL}/status`, {
         headers: {
-            'Authorization': `Bearer ${sellyConfig.SELLY_API_KEY}`
+            'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`
         }
     });
     if (!response.ok) {
@@ -13,22 +13,107 @@ export async function checkStatus() {
     return await response.json();
 }
 
-export const API = {
-    checkStatus: async () => {
+export class APIService {
+    constructor() {
+        this.baseUrl = API_CONFIG.DARWINA.BASE_URL;
+        this.apiKey = null;
+    }
+
+    async init() {
+        if (this.apiKey) return;
+
+        const credentials = await getDarwinaCredentials();
+        if (!credentials?.DARWINA_API_KEY) {
+            throw new Error('No API key available');
+        }
+        this.apiKey = credentials.DARWINA_API_KEY;
+        sendLogToPopup('✅ API initialized', 'success');
+    }
+
+    async getOrderStatuses(selectedStore = 'ALL') {
         try {
-            const response = await fetch('https://api.darwina.pl/status');
-            if (!response.ok) throw new Error('Status check failed');
-            sendLogToPopup('✅ API Status check completed', 'success');
-            return await response.json();
+            await this.init();
+
+            const now = new Date();
+            const yesterday = new Date(now - 24 * 60 * 60 * 1000);
+            
+            const cacheKey = `orders_${selectedStore}`;
+            const cachedData = await CacheService.get(cacheKey);
+            if (cachedData) {
+                sendLogToPopup('📦 Użyto danych z cache', 'info');
+                return cachedData;
+            }
+
+            sendLogToPopup('🔄 Pobieranie danych z API...', 'info');
+            const params = new URLSearchParams({
+                status_id: [
+                    API_CONFIG.DARWINA.STATUS_CODES.SUBMITTED,
+                    API_CONFIG.DARWINA.STATUS_CODES.CONFIRMED,
+                    API_CONFIG.DARWINA.STATUS_CODES.ACCEPTED,
+                    API_CONFIG.DARWINA.STATUS_CODES.READY
+                ].join(','),
+                date_from: yesterday.toISOString().split('T')[0],
+                date_to: now.toISOString().split('T')[0],
+                page: '1'
+            });
+
+            const response = await fetch(`${this.baseUrl}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}?${params}`, {
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const totalPages = data.__metadata?.page_count || 1;
+            sendLogToPopup(`📄 Pobrano stronę 1/${totalPages}`, 'info');
+            let allOrders = [...data.data];
+
+            // Pobierz pozostałe strony
+            for (let page = 2; page <= totalPages; page++) {
+                params.set('page', page.toString());
+                sendLogToPopup(`📄 Pobieranie strony ${page}/${totalPages}...`, 'info');
+                const nextResponse = await fetch(`${this.baseUrl}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}?${params}`, {
+                    headers: {
+                        'Authorization': `Bearer ${this.apiKey}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!nextResponse.ok) {
+                    sendLogToPopup(`❌ Błąd pobierania strony ${page}`, 'error');
+                    continue;
+                }
+                
+                const nextData = await nextResponse.json();
+                allOrders = [...allOrders, ...nextData.data];
+                sendLogToPopup(`✅ Pobrano stronę ${page}/${totalPages}`, 'success');
+            }
+
+            sendLogToPopup(`📊 Łącznie pobrano ${allOrders.length} zamówień`, 'info');
+            // Zlicz statusy
+            const statusCounts = allOrders.reduce((acc, order) => {
+                if (selectedStore === 'ALL' || order.delivery_name?.startsWith(selectedStore)) {
+                    const statusId = order.status_id.toString();
+                    acc[statusId] = (acc[statusId] || 0) + 1;
+                }
+                return acc;
+            }, {});
+
+            const result = { success: true, statusCounts };
+            await CacheService.set(cacheKey, result);
+            sendLogToPopup('✅ Dane zapisane w cache', 'success');
+            return result;
+
         } catch (error) {
-            sendLogToPopup('❌ API Status check failed', 'error', error.message);
-            // Tymczasowo zwracamy symulowane statusy
-            return {
-                api: 'green',
-                auth: 'green',
-                orders: 'green',
-                cache: 'green'
-            };
+            sendLogToPopup('❌ API Error', 'error', error.message);
+            return { success: false, error: error.message };
         }
     }
-}; 
+}
+
+export const API = new APIService(); 

@@ -1,37 +1,36 @@
-import { ApiCache } from '@/services/cache';
-import { CacheManager } from '@/services/cache';
-import { sendLogToPopup } from '../../config/api.js';
+import { CacheService } from '../../services/cache.js';
 
-// Dodajmy mocki dla cache
-const mockCacheData = {
-    testKey: {
-        data: 'test-data',
-        timestamp: Date.now()
-    }
-};
-
-describe('Cache Tests', () => {
+describe('Cache Service', () => {
     beforeEach(() => {
-        sendLogToPopup('🧪 Starting cache test', 'info');
-        // Mockujemy localStorage
-        const localStorageMock = {
-            getItem: jest.fn(key => JSON.stringify(mockCacheData[key])),
-            setItem: jest.fn(),
-            clear: jest.fn(),
-            removeItem: jest.fn()
-        };
-        Object.defineProperty(window, 'localStorage', {
-            value: localStorageMock
-        });
+        localStorage.clear();
     });
 
-    test('Cache operations', async () => {
-        try {
-            // ... test code ...
-            sendLogToPopup('✅ Cache operations test passed', 'success');
-        } catch (error) {
-            sendLogToPopup('❌ Cache operations test failed', 'error', error.message);
-            throw error;
-        }
+    test('should store and retrieve data', () => {
+        const testData = { test: 'data' };
+        CacheService.set('test', testData);
+        
+        const retrieved = CacheService.get('test');
+        expect(retrieved).toEqual(testData);
+    });
+
+    test('should expire after cache duration', async () => {
+        const testData = { test: 'data' };
+        CacheService.set('test', testData);
+        
+        // Simulate time passing
+        jest.advanceTimersByTime(5 * 60 * 1000); // 5 minutes
+        
+        const retrieved = CacheService.get('test');
+        expect(retrieved).toBeNull();
+    });
+
+    test('should clear specific cache', () => {
+        CacheService.set('test1', { data: 1 });
+        CacheService.set('test2', { data: 2 });
+        
+        CacheService.clear('test1');
+        
+        expect(CacheService.get('test1')).toBeNull();
+        expect(CacheService.get('test2')).toBeDefined();
     });
 });
