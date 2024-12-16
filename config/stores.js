@@ -9,11 +9,11 @@ export const stores = [
     { id: 'HOK', name: 'HOK', address: 'Przy Hiltonie - Łucka 20', deliveryId: 64 },
     { id: 'HRU', name: 'HRU', address: 'Przy Muzeum Powstania - Hrubieszowska 2', deliveryId: 65 },
     { id: 'IKR', name: 'IKR', address: 'Idzikowskiego - Ikara 20', deliveryId: 66 },
-    { id: 'KBT', name: 'KBT', address: 'Kabaty przy Bazarku - Wąwozowa 31', deliveryId: 59 },
+    { id: 'KBT', name: 'KBT', address: 'Kabaty - Wąwozowa 6', deliveryId: 59 },
     { id: 'LND', name: 'LND', address: 'C.H. Land - M. Służew - Wałbrzyska 11 lok 144b', deliveryId: 67 },
     { id: 'LUC', name: 'LUC', address: 'Przy Hiltonie - Łucka 20', deliveryId: 68 },
     { id: 'MAG', name: 'MAG', address: 'MAG', deliveryId: 89 },
-    { id: 'MCZ', name: 'MCZ', address: 'Centrum - Widok 19', deliveryId: 58 },
+    { id: 'MCZ', name: 'MCZ', address: 'Kabaty przy Bazarku - Wąwozowa 31', deliveryId: 58 },
     { id: 'MOT', name: 'MOT', address: 'Praga Południe - Motorowa 10', deliveryId: 69 },
     { id: 'NOW', name: 'NOW', address: 'Przy Promenadzie - Nowaka-Jeziorańskiego 9', deliveryId: 70 },
     { id: 'OBR', name: 'OBR', address: 'Służewiec - Obrzeżna 7a', deliveryId: 71 },
@@ -26,7 +26,7 @@ export const stores = [
     { id: 'RP', name: 'RP', address: 'Aleja Rzeczypospolitej 12', deliveryId: 79 },
     { id: 'SIK', name: 'SIK', address: 'Stegny - Sikorskiego 9b', deliveryId: 80 },
     { id: 'STO', name: 'STO', address: 'Stokłosy - Al. KEN 95', deliveryId: 81 },
-    { id: 'WDK', name: 'WDK', address: 'Kabaty - Wąwozowa 6', deliveryId: 82 },
+    { id: 'WDK', name: 'WDK', address: 'Centrum - Widok 19', deliveryId: 82 },
     { id: 'WIL', name: 'WIL', address: 'Miasteczko Wilanów - Aleja Rzeczypospolitej 12', deliveryId: 83 },
     { id: 'ŻEL', name: 'ŻEL', address: 'Wola - Żelazna 67', deliveryId: 84 }
 ];

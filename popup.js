@@ -10,6 +10,7 @@ import {
     checkOrdersStatus, 
     checkCacheStatus 
 } from './services/api.js';
+import { stores } from './config/stores.js';
 
 const CACHE_KEY = 'darwina_orders_data';
 
@@ -1359,10 +1360,18 @@ function initializeLeadStatusLinks() {
             statusElement.addEventListener('click', () => {
                 // Pobierz aktualnie wybrany sklep
                 const storeSelect = document.getElementById('store-select');
-                const selectedStoreId = storeSelect?.value === 'ALL' ? '0' : getStoreId(storeSelect?.value);
+                const selectedStore = storeSelect?.value;
                 
-                // Wygeneruj i otwórz URL
+                // Logowanie dla debugowania
+                console.log('Selected store:', selectedStore);
+                console.log('Store ID:', getStoreId(selectedStore));
+                
+                const selectedStoreId = selectedStore === 'ALL' ? '0' : getStoreId(selectedStore);
+                
+                // Logowanie wygenerowanego URL
                 const url = generateOrdersUrl(status, selectedStoreId);
+                console.log('Generated URL:', url);
+                
                 window.open(url, '_blank');
             });
         }
@@ -1371,35 +1380,7 @@ function initializeLeadStatusLinks() {
 
 // Funkcja pomocnicza do mapowania kodu sklepu na ID
 function getStoreId(storeCode) {
-    const storeMap = {
-        'EKO': '85',  // EkoPark Mokotów
-        'FIL': '59',  // Gocław - Fieldorfa
-        'FRA': '58',  // Francuska
-        'GU': '60',   // Galeria Ursynów
-        'HOK': '61',  // Przy Hiltonie
-        'HRU': '62',  // Przy Muzeum Powstania
-        'IKR': '63',  // Idzikowskiego
-        'KBT': '64',  // Kabaty przy Bazarku
-        'LND': '65',  // C.H. Land
-        'LUC': '66',  // Przy Hiltonie (Łucka)
-        'MAG': '67',  // MAG
-        'MCZ': '68',  // Centrum
-        'MOT': '69',  // Praga Południe
-        'NOW': '70',  // Przy Promenadzie
-        'OBR': '71',  // Służewiec
-        'PAN': '72',  // Rondo ONZ
-        'PLO': '73',  // Metro Płocka
-        'POW': '74',  // Artystyczny Żoliborz
-        'RAC': '75',  // Woronicza
-        'RAY': '76',  // Bemowo Chrzanów
-        'RKW': '77',  // Puławska
-        'RP': '78',   // Aleja Rzeczypospolitej
-        'SIK': '79',  // Stegny
-        'STO': '81',  // Stokłosy
-        'WDK': '82',  // Kabaty
-        'WIL': '83',  // Miasteczko Wilanów
-        'ŻEL': '84'   // Wola - Żelazna
-    };
-    return storeMap[storeCode] || '0'; // '0' dla 'ALL' lub nieznalezionego kodu
+    const store = stores.find(s => s.id === storeCode);
+    return store ? store.deliveryId.toString() : '0';
 }
 
