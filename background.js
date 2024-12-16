@@ -2,6 +2,7 @@ import { getDarwinaCredentials } from './config/api.js';
 import { CacheService } from './services/cache.js';
 import { API_CONFIG } from './config/api.js';
 import { stores } from './config/stores.js';
+import { UserCardService } from './services/userCard.js';
 
 const FETCH_INTERVAL = 5; // minutes
 const CACHE_KEY = 'darwina_orders_data';
@@ -76,6 +77,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
         })();
         return true;
+    }
+    if (message.type === 'USER_DATA_COLLECTED') {
+        handleUserData(message.payload);
     }
 });
 
@@ -270,4 +274,45 @@ function sendLogToPopup(message, type = 'info', data = null) {
 function getCacheKey(selectedStore) {
     return `${CACHE_KEY}_${selectedStore || 'ALL'}`;
 }
+
+// Funkcja obsługująca zebrane dane użytkownika
+async function handleUserData(userData) {
+    if (!userData || !userData.memberId) return;
+    
+    try {
+        const isNewQRCode = await UserCardService.saveUserData(userData);
+        await UserCardService.setCurrentUser(userData.memberId);
+        
+        if (isNewQRCode && !userData.notificationShown) {
+            // Pokaż systemowe powiadomienie
+            chrome.notifications.create(`qr-import-${userData.memberId}`, {
+                type: 'basic',
+                iconUrl: 'icon128.png',
+                title: 'Kamila - Import QR kodu',
+                message: `QR kod użytkownika ${userData.firstName} został pomyślnie zaimportowany.`,
+                priority: 2
+            });
+            
+            // Oznacz powiadomienie jako wyświetlone
+            await UserCardService.markNotificationShown(userData.memberId);
+        }
+
+        chrome.runtime.sendMessage({
+            type: 'USER_CHANGED',
+            payload: userData.memberId
+        });
+
+    } catch (error) {
+        console.error('Error handling user data:', error);
+        sendLogToPopup('❌ Błąd zapisywania danych użytkownika', 'error', error.message);
+    }
+}
+
+// Dodaj obsługę kliknięcia w powiadomienie
+chrome.notifications.onClicked.addListener((notificationId) => {
+    if (notificationId.startsWith('qr-import-')) {
+        // Otwórz popup po kliknięciu w powiadomienie
+        chrome.action.openPopup();
+    }
+});
   

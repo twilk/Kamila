@@ -3,6 +3,7 @@ import { API_BASE_URL, API_CONFIG } from '../config/api.js';
 import { getDarwinaCredentials, sendLogToPopup } from './config/api.js';
 import { i18n } from './services/i18n.js';
 import { CacheService } from './services/cache.js';
+import { UserCardService } from './services/userCard.js';
 
 const CACHE_KEY = 'darwina_orders_data';
 
@@ -71,6 +72,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.log('📝 Log received:', { message: logMessage, type, data }); // Debug
         logToPanel(logMessage, type, data);
     }
+    if (message.type === 'USER_CHANGED') {
+        // Zaktualizuj wybór w selektorze użytkownika
+        const userSelect = document.getElementById('user-select');
+        if (userSelect) {
+            userSelect.value = message.payload;
+        }
+        // Odśwież kartę użytkownika
+        updateUserCard();
+    }
 });
 
 // Inicjalizacja
@@ -105,13 +115,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Inicjalizacja tooltipów Bootstrap
         initTooltips();
 
+        await updateUserCard();
+
     } catch (error) {
         logToPanel('❌ Błąd inicjalizacji', 'error', error.message);
     }
 });
 
 // Nowa funkcja do bezpiecznej inicjalizacji komponentów UI
-function initializeUIComponents() {
+async function initializeUIComponents() {
     // Debug switch
     const debugSwitch = document.getElementById('debug-switch');
     if (debugSwitch) {
@@ -184,6 +196,38 @@ function initializeUIComponents() {
     
     // Inicjalizacja przełącznika motywu
     initializeThemeSwitcher();
+
+    // Inicjalizacja selektora użytkowników
+    await initializeUserSelector();
+}
+
+async function initializeUserSelector() {
+    const userSelect = document.getElementById('user-select');
+    if (!userSelect) return;
+
+    const users = await UserCardService.getAllUsers();
+    const currentUser = await UserCardService.loadCurrentUser();
+
+    // Wyczyść obecne opcje
+    userSelect.innerHTML = `<option value="" data-i18n="noUserSelected">Wybierz użytkownika</option>`;
+
+    // Dodaj opcje dla każdego użytkownika
+    Object.entries(users).forEach(([id, userData]) => {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = userData.fullName;
+        if (currentUser && currentUser.memberId === id) {
+            option.selected = true;
+        }
+        userSelect.appendChild(option);
+    });
+
+    // Obsługa zmiany użytkownika
+    userSelect.addEventListener('change', async (e) => {
+        const selectedId = e.target.value;
+        await UserCardService.setCurrentUser(selectedId);
+        await updateUserCard();
+    });
 }
 
 // Nowa funkcja do obsługi wysyłania zapytania
@@ -858,6 +902,38 @@ function initializeTabs() {
         if (tabToActivate) {
             tabToActivate.click();
         }
+    }
+}
+
+// Zaktualizuj funkcję updateUserCard
+async function updateUserCard() {
+    const userData = await UserCardService.loadCurrentUser();
+    const nameElement = document.querySelector('.user-name');
+    const qrElement = document.querySelector('.qr-code');
+    const cardInner = document.querySelector('.user-card-inner');
+
+    if (!userData) {
+        if (nameElement) {
+            nameElement.textContent = 'Zaloguj się w DAPP';
+        }
+        if (qrElement) {
+            qrElement.src = chrome.runtime.getURL('assets/default-avatar.jpg');
+        }
+        if (cardInner) {
+            cardInner.classList.add('no-user');
+        }
+        return;
+    }
+
+    if (nameElement) {
+        nameElement.textContent = userData.firstName;
+    }
+    if (qrElement && userData.qrCodeUrl) {
+        // Konwertuj link do QR kodu na faktyczny obrazek QR
+        qrElement.src = userData.qrCodeUrl;
+    }
+    if (cardInner) {
+        cardInner.classList.remove('no-user');
     }
 }
 
