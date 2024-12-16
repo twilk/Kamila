@@ -205,4 +205,44 @@ describe('UI Component Tests', () => {
                 .toBe(incompleteTranslations.welcome);
         });
     });
+
+    describe('User Select', () => {
+        beforeEach(() => {
+            document.body.innerHTML = `
+                <select id="user-select" class="form-select form-select-sm">
+                    <option value="" data-i18n="noUserSelected">Wybierz użytkownika</option>
+                </select>
+            `;
+        });
+
+        it('powinno sortować użytkowników alfabetycznie', async () => {
+            const mockUsers = [
+                { id: 1, fullName: "Zofia Kowalska" },
+                { id: 2, fullName: "Adam Nowak" },
+                { id: 3, fullName: "Barbara Wiśniewska" }
+            ];
+
+            // Symuluj odpowiedź fetch
+            global.fetch = jest.fn(() =>
+                Promise.resolve({
+                    json: () => Promise.resolve(mockUsers)
+                })
+            );
+
+            // Inicjalizuj selector
+            await initializeUserSelect();
+
+            // Pobierz wszystkie opcje (pomijając pierwszą - placeholder)
+            const options = Array.from(document.querySelectorAll('#user-select option'))
+                .slice(1)
+                .map(opt => opt.textContent);
+
+            // Sprawdź czy są posortowane alfabetycznie
+            expect(options).toEqual([
+                "Adam Nowak",
+                "Barbara Wiśniewska",
+                "Zofia Kowalska"
+            ].sort());
+        });
+    });
 }); 

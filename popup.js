@@ -4,6 +4,12 @@ import { getDarwinaCredentials, sendLogToPopup } from './config/api.js';
 import { i18n } from './services/i18n.js';
 import { CacheService } from './services/cache.js';
 import { UserCardService } from './services/userCard.js';
+import { 
+    checkApiStatus, 
+    checkAuthStatus, 
+    checkOrdersStatus, 
+    checkCacheStatus 
+} from './services/api.js';
 
 const CACHE_KEY = 'darwina_orders_data';
 
@@ -67,9 +73,9 @@ function logToPanel(message, type = 'info', data = null) {
 
 // Dodaj obsługę logów z background.js
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'LOG_MESSAGE') {
+    if (message.type === 'LOG_MESSAGE' && document.body.classList.contains('debug-enabled')) {
         const { message: logMessage, type, data } = message.payload;
-        console.log('📝 Log received:', { message: logMessage, type, data }); // Debug
+        console.log('📝 Log received:', { message: logMessage, type, data });
         logToPanel(logMessage, type, data);
     }
     if (message.type === 'USER_CHANGED') {
@@ -105,7 +111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await fetchDarwinaData();
 
         // Bezpieczna inicjalizacja komponentów UI
-        initializeUIComponents();
+        await initializeUIComponents();
         
         // Inicjalizacja języka
         i18n.updateDataI18n();
@@ -113,9 +119,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         logToPanel('✅ Język zainicjalizowany', 'success');
 
         // Inicjalizacja tooltipów Bootstrap
-        initTooltips();
+        initializeTooltips();
 
         await updateUserCard();
+
+        // Brakuje inicjalizacji debug mode
+        initializeDebugSwitch();
 
     } catch (error) {
         logToPanel('❌ Błąd inicjalizacji', 'error', error.message);
@@ -124,110 +133,237 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // Nowa funkcja do bezpiecznej inicjalizacji komponentów UI
 async function initializeUIComponents() {
-    // Debug switch
-    const debugSwitch = document.getElementById('debug-switch');
-    if (debugSwitch) {
-        const isDebugEnabled = localStorage.getItem('debug-enabled') === 'true';
-        debugSwitch.checked = isDebugEnabled;
-        document.body.classList.toggle('debug-enabled', isDebugEnabled);
-        
-        setTimeout(adjustWindowHeight, 50);
-    
-        debugSwitch.addEventListener('change', async (e) => {
-            const isEnabled = e.target.checked;
-            document.body.classList.toggle('debug-enabled', isEnabled);
-            localStorage.setItem('debug-enabled', isEnabled);
+    try {
+        // Debug switch
+        const debugSwitch = document.getElementById('debug-switch');
+        if (debugSwitch) {
+            const isDebugEnabled = localStorage.getItem('debug-enabled') === 'true';
+            debugSwitch.checked = isDebugEnabled;
+            document.body.classList.toggle('debug-enabled', isDebugEnabled);
+            
             setTimeout(adjustWindowHeight, 50);
-        });
+        
+            debugSwitch.addEventListener('change', async (e) => {
+                const isEnabled = e.target.checked;
+                document.body.classList.toggle('debug-enabled', isEnabled);
+                localStorage.setItem('debug-enabled', isEnabled);
+                setTimeout(adjustWindowHeight, 50);
+            });
+        }
+
+        // Clear logs button
+        const clearLogsBtn = document.getElementById('clear-logs');
+        if (clearLogsBtn) {
+            clearLogsBtn.addEventListener('click', () => {
+                const debugLogs = document.getElementById('debug-logs');
+                if (debugLogs) {
+                    debugLogs.innerHTML = '';
+                    logToPanel('🧹 Logi wyczyszczone', 'success');
+                }
+            });
+        }
+
+        // Wallpaper upload
+        const wallpaperInput = document.getElementById('wallpaper-upload');
+        if (wallpaperInput) {
+            wallpaperInput.addEventListener('change', handleWallpaperUpload);
+        }
+
+        // Instructions button
+        const instructionsButton = document.getElementById('instructions-button');
+        const instructionsModal = document.getElementById('instructionsModal');
+        if (instructionsButton && instructionsModal && typeof bootstrap !== 'undefined') {
+            instructionsButton.addEventListener('click', () => {
+                const modal = bootstrap.Modal.getInstance(instructionsModal) || 
+                             new bootstrap.Modal(instructionsModal);
+                modal.show();
+                logToPanel('📋 Otwarto instrukcję', 'info');
+            });
+        }
+
+        // Query input and send button
+        const queryInput = document.getElementById('query');
+        const sendButton = document.getElementById('send');
+        if (queryInput && sendButton) {
+            queryInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendButton.click();
+                }
+            });
+
+            sendButton.addEventListener('click', handleQuerySubmit);
+        }
+
+        // Initialize store select
+        initializeStoreSelect();
+
+        // Inicjalizacja tabów
+        initializeTabs();
+
+        // Inicjalizacja przełącznika języka
+        initializeLanguageSwitcher();
+        
+        // Inicjalizacja przełącznika motywu
+        initializeThemeSwitcher();
+
+        // Inicjalizacja selektora użytkowników
+        await initializeUserSelector();
+
+        // Inicjalizacja przycisków statusu
+        initializeStatusButtons();
+        
+        // Pierwsze sprawdzenie statusów i aktualizacja liczników
+        await updateAllStatuses();
+
+        // Inicjalizacja linków statusów
+        initializeLeadStatusLinks();
+
+        // Resetuj stan debug mode przy starcie
+        document.body.classList.remove('debug-enabled');
+        if (debugSwitch) {
+            debugSwitch.checked = false;
+        }
+        await chrome.storage.local.set({ debugMode: false });
+
+    } catch (error) {
+        console.error('Error initializing UI components:', error);
+        logToPanel('❌ Błąd podczas inicjalizacji komponentów UI', 'error', error);
     }
-
-    // Clear logs button
-    const clearLogsBtn = document.getElementById('clear-logs');
-    if (clearLogsBtn) {
-        clearLogsBtn.addEventListener('click', () => {
-            const debugLogs = document.getElementById('debug-logs');
-            if (debugLogs) {
-                debugLogs.innerHTML = '';
-                logToPanel('🧹 Logi wyczyszczone', 'success');
-            }
-        });
-    }
-
-    // Wallpaper upload
-    const wallpaperInput = document.getElementById('wallpaper-upload');
-    if (wallpaperInput) {
-        wallpaperInput.addEventListener('change', handleWallpaperUpload);
-    }
-
-    // Instructions button
-    const instructionsButton = document.getElementById('instructions-button');
-    const instructionsModal = document.getElementById('instructionsModal');
-    if (instructionsButton && instructionsModal && typeof bootstrap !== 'undefined') {
-        instructionsButton.addEventListener('click', () => {
-            const modal = bootstrap.Modal.getInstance(instructionsModal) || 
-                         new bootstrap.Modal(instructionsModal);
-            modal.show();
-            logToPanel('📋 Otwarto instrukcję', 'info');
-        });
-    }
-
-    // Query input and send button
-    const queryInput = document.getElementById('query');
-    const sendButton = document.getElementById('send');
-    if (queryInput && sendButton) {
-        queryInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendButton.click();
-            }
-        });
-
-        sendButton.addEventListener('click', handleQuerySubmit);
-    }
-
-    // Initialize store select
-    initializeStoreSelect();
-
-    // Inicjalizacja tabów
-    initializeTabs();
-
-    // Inicjalizacja przełącznika języka
-    initializeLanguageSwitcher();
-    
-    // Inicjalizacja przełącznika motywu
-    initializeThemeSwitcher();
-
-    // Inicjalizacja selektora użytkowników
-    await initializeUserSelector();
 }
 
+// Funkcja inicjalizująca selektor użytkowników
 async function initializeUserSelector() {
     const userSelect = document.getElementById('user-select');
     if (!userSelect) return;
 
-    const users = await UserCardService.getAllUsers();
-    const currentUser = await UserCardService.loadCurrentUser();
+    try {
+        // Pobierz aktualnie wybranego użytkownika
+        const { selectedUserId } = await chrome.storage.local.get('selectedUserId');
 
-    // Wyczyść obecne opcje
-    userSelect.innerHTML = `<option value="" data-i18n="noUserSelected">Wybierz użytkownika</option>`;
+        // Wyczyść obecne opcje
+        userSelect.innerHTML = `<option value="" data-i18n="noUserSelected">${i18n.translate('noUserSelected')}</option>`;
 
-    // Dodaj opcje dla każdego użytkownika
-    Object.entries(users).forEach(([id, userData]) => {
-        const option = document.createElement('option');
-        option.value = id;
-        option.textContent = userData.fullName;
-        if (currentUser && currentUser.memberId === id) {
-            option.selected = true;
+        // Lista dostępnych użytkowników
+        const userIds = [
+            '2', '4', '5', '6', '7', '8', '9', '10', '11', '13', '14', '15', 
+            '17', '18', '19', '23', '24', '25', '26', '27', '29', '31', '32', 
+            '33', '34', '38', '39', '40', '42', '43', '47', '50', '55', '57', 
+            '58', '60', '62', '65', '67', '69', '70', '71', '72', '73', '76', 
+            '81', '82', '83', '84'
+        ];
+
+        // Pobierz dane wszystkich użytkowników
+        const users = [];
+        for (const userId of userIds) {
+            const response = await fetch(chrome.runtime.getURL(`users/${userId}.json`));
+            if (response.ok) {
+                const userData = await response.json();
+                users.push({ id: userId, ...userData });
+            }
         }
-        userSelect.appendChild(option);
-    });
 
-    // Obsługa zmiany użytkownika
-    userSelect.addEventListener('change', async (e) => {
-        const selectedId = e.target.value;
-        await UserCardService.setCurrentUser(selectedId);
-        await updateUserCard();
-    });
+        // Sortuj użytkowników alfabetycznie po fullName
+        users.sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+        // Dodaj posortowane opcje
+        users.forEach(user => {
+            const option = document.createElement('option');
+            option.value = user.id;
+            option.textContent = user.fullName;
+            if (selectedUserId === user.id) {
+                option.selected = true;
+                updateUserCard(user);
+            }
+            userSelect.appendChild(option);
+        });
+
+        // Obsługa zmiany użytkownika
+        userSelect.addEventListener('change', async (e) => {
+            const selectedId = e.target.value;
+            await chrome.storage.local.set({ selectedUserId: selectedId });
+            
+            if (selectedId) {
+                const selectedUser = users.find(u => u.id === selectedId);
+                if (selectedUser) {
+                    updateUserCard(selectedUser);
+                }
+            } else {
+                updateUserCard(null);
+            }
+
+            // Odśwież content script
+            chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+                chrome.tabs.sendMessage(tabs[0].id, { type: 'REFRESH_USER_DATA' });
+            });
+        });
+
+    } catch (error) {
+        console.error('Error initializing user selector:', error);
+        logToPanel('❌ Błąd podczas inicjalizacji selektora użytkowników', 'error', error);
+    }
+}
+
+// Funkcja aktualizująca kartę użytkownika
+async function updateUserCard(userData = null) {
+    const cardInner = document.querySelector('.user-card-inner');
+    const nameElement = document.querySelector('.user-card-front .user-name');
+    const qrElement = document.querySelector('.user-card-back .qr-code');
+    
+    try {
+        // Jeśli nie dostaliśmy danych użytkownika, spróbuj załadować z pamięci
+        if (!userData) {
+            const { selectedUserId } = await chrome.storage.local.get('selectedUserId');
+            if (selectedUserId) {
+                const response = await fetch(chrome.runtime.getURL(`users/${selectedUserId}.json`));
+                if (response.ok) {
+                    userData = await response.json();
+                }
+            }
+        }
+
+        // Jeśli nadal nie mamy danych użytkownika, pokaż stan domyślny
+        if (!userData) {
+            if (nameElement) {
+                nameElement.textContent = i18n.translate('noUserSelected');
+            }
+            if (qrElement) {
+                qrElement.src = chrome.runtime.getURL('assets/default-avatar.jpg');
+            }
+            if (cardInner) {
+                cardInner.classList.add('no-user');
+            }
+            return;
+        }
+
+        // Aktualizuj kartę danymi użytkownika
+        if (nameElement) {
+            nameElement.textContent = userData.fullName;
+        }
+        
+        if (qrElement && userData.qrCodeUrl) {
+            qrElement.src = `https://docs.google.com/thumbnail?id=${userData.qrCodeUrl}&sz=s1000`;
+            qrElement.style.maxWidth = 'none';
+            qrElement.style.width = '100%';
+        }
+        
+        if (cardInner) {
+            cardInner.classList.remove('no-user');
+        }
+
+        // Dodajemy obsługę animacji flip
+        const cardFlip = document.querySelector('.user-card-flip');
+        if (cardFlip) {
+            cardFlip.addEventListener('click', () => {
+                cardInner.style.transform = 
+                    cardInner.style.transform === 'rotateY(180deg)' ? 
+                    'rotateY(0)' : 'rotateY(180deg)';
+            });
+        }
+    } catch (error) {
+        console.error('Error updating user card:', error);
+        logToPanel('❌ Błąd aktualizacji karty użytkownika', 'error', error);
+    }
 }
 
 // Nowa funkcja do obsługi wysyłania zapytania
@@ -458,20 +594,12 @@ function hideAllMessages() {
 }
 
 function adjustWindowHeight() {
-    const isDebugEnabled = document.body.classList.contains('debug-enabled');
-    const height = isDebugEnabled ? 800 : 600;
-    
-    if (chrome?.windows?.getCurrent) {
-        chrome.windows.getCurrent(async (window) => {
-            try {
-                await chrome.windows.update(window.id, { height });
-            } catch (error) {
-                console.error('Error resizing window:', error);
-            }
-        });
+    const debugPanel = document.querySelector('.debug-panel');
+    if (debugPanel && document.body.classList.contains('debug-enabled')) {
+        const debugPanelHeight = debugPanel.offsetHeight;
+        document.body.style.height = `calc(var(--window-height) + ${debugPanelHeight/2}px)`;
     } else {
-        // Fallback dla trybu dev
-        document.body.style.height = `${height}px`;
+        document.body.style.height = 'var(--window-height)';
     }
 }
 
@@ -611,7 +739,7 @@ function handleError(error) {
 async function initializeStoreSelect() {
     const storeSelect = document.getElementById('store-select');
     if (!storeSelect) {
-        logToPanel('�� Nie znaleziono elementu store-select', 'error');
+        logToPanel(' Nie znaleziono elementu store-select', 'error');
         return;
     }
 
@@ -625,7 +753,7 @@ async function initializeStoreSelect() {
         // Add "All stores" option
         const allOption = document.createElement('option');
         allOption.value = 'ALL';
-        allOption.textContent = stores.find(s => s.id === 'ALL').name;
+        allOption.textContent = i18n.translate('allStores');
         allOption.setAttribute('data-i18n', 'allStores');
         storeSelect.appendChild(allOption);
         
@@ -683,7 +811,7 @@ async function initializeStoreSelect() {
 // Add this function after the imports and before other code
 async function fetchDarwinaData() {
     try {
-        logToPanel('�� Rozpoczynam pobieranie danych...', 'info');
+        logToPanel(' Rozpoczynam pobieranie danych...', 'info');
         
         const { selectedStore } = await chrome.storage.local.get('selectedStore');
         const store = selectedStore || 'ALL';
@@ -786,22 +914,31 @@ async function fetchDarwinaData() {
     }
 }
 
-// Dodaj funkcję inicjalizacji języka
+// Funkcja inicjalizująca przełącznik języka
 function initializeLanguageSwitcher() {
-    const languageSwitcher = document.getElementById('language-switcher');
-    if (!languageSwitcher) return;
-
-    const flags = languageSwitcher.querySelectorAll('.flag');
-    flags.forEach(flag => {
-        flag.addEventListener('click', async () => {
-            const lang = flag.getAttribute('data-lang');
-            if (!lang) return;
-
-            // Usuń aktywną klasę z wszystkich flag
-            flags.forEach(f => f.classList.remove('active'));
+    const languageButtons = document.querySelectorAll('[data-lang]');
+    
+    // Pobierz aktualny język z localStorage lub użyj domyślnego
+    const currentLang = localStorage.getItem('language') || 'polish';
+    
+    // Usuń klasę active ze wszystkich przycisków
+    languageButtons.forEach(btn => {
+        btn.classList.remove('active');
+        
+        // Dodaj klasę active do przycisku odpowiadającego aktualnemu językowi
+        if (btn.dataset.lang === currentLang) {
+            btn.classList.add('active');
+        }
+        
+        // Dodaj obsługę kliknięcia
+        btn.addEventListener('click', async function() {
+            const lang = this.dataset.lang;
             
-            // Dodaj aktywną klasę do wybranej flagi
-            flag.classList.add('active');
+            // Usuń klasę active ze wszystkich przycisków
+            languageButtons.forEach(b => b.classList.remove('active'));
+            
+            // Dodaj klasę active do klikniętego przycisku
+            this.classList.add('active');
             
             // Zapisz wybrany język
             localStorage.setItem('language', lang);
@@ -811,7 +948,10 @@ function initializeLanguageSwitcher() {
                 await i18n.init();
                 
                 // Zaktualizuj interfejs
-                updateInterface(i18n.translations);
+                updateInterface();
+                
+                // Odśwież tooltips
+                initializeTooltips();
                 
                 logToPanel(`🌍 Zmieniono język na: ${lang}`, 'success');
             } catch (error) {
@@ -820,6 +960,9 @@ function initializeLanguageSwitcher() {
             }
         });
     });
+
+    // Inicjalizacja tooltipów przy starcie
+    initializeTooltips();
 }
 
 // Dodaj funkcję inicjalizacji motywu
@@ -905,35 +1048,358 @@ function initializeTabs() {
     }
 }
 
-// Zaktualizuj funkcję updateUserCard
-async function updateUserCard() {
-    const userData = await UserCardService.loadCurrentUser();
-    const nameElement = document.querySelector('.user-name');
-    const qrElement = document.querySelector('.qr-code');
-    const cardInner = document.querySelector('.user-card-inner');
+// Inicjalizacja przycisków statusu
+function initializeStatusButtons() {
+    const runTestsBtn = document.getElementById('run-tests');
+    const refreshStatusBtn = document.getElementById('check-status');
 
-    if (!userData) {
-        if (nameElement) {
-            nameElement.textContent = 'Zaloguj się w DAPP';
-        }
-        if (qrElement) {
-            qrElement.src = chrome.runtime.getURL('assets/default-avatar.jpg');
-        }
-        if (cardInner) {
-            cardInner.classList.add('no-user');
-        }
-        return;
+    if (runTestsBtn) {
+        runTestsBtn.addEventListener('click', async () => {
+            await updateAllStatuses(true); // true = pełne testy
+        });
     }
 
-    if (nameElement) {
-        nameElement.textContent = userData.firstName;
+    if (refreshStatusBtn) {
+        refreshStatusBtn.addEventListener('click', async () => {
+            await updateAllStatuses(false); // false = szybkie sprawdzenie
+        });
     }
-    if (qrElement && userData.qrCodeUrl) {
-        // Konwertuj link do QR kodu na faktyczny obrazek QR
-        qrElement.src = userData.qrCodeUrl;
+}
+
+// Funkcja aktualizująca statusy
+async function updateAllStatuses(fullTest = false) {
+    try {
+        // Pokaż loader dla wszystkich statusów
+        ['api', 'auth', 'orders', 'cache'].forEach(service => {
+            const dot = document.getElementById(`${service}-status`);
+            if (dot) {
+                dot.className = 'status-dot';
+                dot.style.opacity = '0.5';
+            }
+        });
+
+        const statuses = {
+            'api-status': await checkApiStatus(),
+            'auth-status': await checkAuthStatus(),
+            'orders-status': await checkOrdersStatus(),
+            'cache-status': await checkCacheStatus()
+        };
+
+        // Aktualizuj kropki statusu
+        Object.entries(statuses).forEach(([id, status]) => {
+            const dot = document.getElementById(id);
+            if (dot) {
+                dot.className = `status-dot status-${status ? 'green' : 'red'}`;
+                dot.style.opacity = '1';
+            }
+        });
+
+        // Pokaż powiadomienie o zakończeniu testów
+        if (fullTest) {
+            logToPanel(i18n.translate('testsCompleted'), 'success');
+        }
+    } catch (error) {
+        logToPanel(i18n.translate('errorStatusCheck'), 'error', error);
     }
-    if (cardInner) {
-        cardInner.classList.remove('no-user');
+}
+
+// Funkcja inicjalizująca selector użytkowników
+function initializeUserSelect() {
+    const userSelect = document.getElementById('user-select');
+    if (!userSelect) return;
+
+    // Pobierz listę użytkowników
+    fetch('users/manifest.json')
+        .then(response => response.json())
+        .then(users => {
+            // Sortuj użytkowników alfabetycznie po nazwie
+            users.sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+            // Dodaj opcję domyślną
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.setAttribute('data-i18n', 'noUserSelected');
+            defaultOption.textContent = i18n.get('noUserSelected');
+            userSelect.appendChild(defaultOption);
+
+            // Dodaj posortowanych użytkowników
+            users.forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.id;
+                option.textContent = user.fullName;
+                userSelect.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.error('Błąd podczas ładowania listy użytkowników:', error);
+            logToPanel('Błąd podczas ładowania listy użytkowników', 'error', error);
+        });
+}
+
+// Funkcja aktualizująca liczniki z zapisem do pamięci
+async function updateLeadCounts(newCounts, oldCounts = {}) {
+    try {
+        // Zapisz nowe liczniki do pamięci tylko jeśli są różne od poprzednich
+        const { leadCounts: currentCounts } = await chrome.storage.local.get('leadCounts');
+        if (JSON.stringify(newCounts) !== JSON.stringify(currentCounts)) {
+            await chrome.storage.local.set({ leadCounts: newCounts });
+            
+            for (const [status, count] of Object.entries(newCounts)) {
+                const countElement = document.getElementById(`count-${status}`);
+                if (!countElement) continue;
+
+                // Zapisz poprzednią wartość
+                const previousCount = oldCounts[status] || 0;
+                
+                // Aktualizuj licznik
+                countElement.textContent = count;
+                countElement.classList.toggle('count-zero', count === 0);
+                countElement.classList.add('count-updated');
+                setTimeout(() => countElement.classList.remove('count-updated'), 1000);
+
+                // Sprawdź czy licznik statusu 1 lub 2 się zwiększył
+                if ((status === '1' || status === '2') && count > previousCount) {
+                    chrome.notifications.create(`status-update-${status}`, {
+                        type: 'basic',
+                        iconUrl: 'icon128.png',
+                        title: i18n.translate('statusUpdate'),
+                        message: i18n.translate('statusChangeFormat', {
+                            status: status,
+                            previous: previousCount,
+                            current: count
+                        }),
+                        priority: 1
+                    });
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error updating lead counts:', error);
+        logToPanel(i18n.translate('errorCounterUpdate'), 'error', error);
     }
+}
+
+// Funkcja ładująca liczniki z pamięci
+async function loadLeadCounts() {
+    try {
+        const { leadCounts } = await chrome.storage.local.get('leadCounts');
+        if (leadCounts) {
+            // Aktualizuj UI bez powiadomień
+            for (const [status, count] of Object.entries(leadCounts)) {
+                const countElement = document.getElementById(`count-${status}`);
+                if (countElement) {
+                    countElement.textContent = count;
+                    // Dodaj/usuń klasę count-zero w zależności od wartości
+                    countElement.classList.toggle('count-zero', count === 0);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading lead counts:', error);
+        logToPanel('❌ Błąd ładowania liczników', 'error', error);
+    }
+}
+
+// Funkcja weryfikująca hasło debug mode
+async function verifyDebugPassword() {
+    const password = prompt(i18n.translate('debugPasswordPrompt'), '');
+    return password === 'tango';
+}
+
+// Funkcja inicjalizująca przełącznik debug mode
+function initializeDebugSwitch() {
+    const debugSwitch = document.getElementById('debug-switch');
+    if (!debugSwitch) return;
+    
+    debugSwitch.checked = false;
+    document.body.classList.remove('debug-enabled');
+    chrome.storage.local.set({ debugMode: false });
+    
+    debugSwitch.addEventListener('change', async (e) => {
+        if (e.target.checked) {
+            if (!await checkDebugAccess()) {
+                e.target.checked = false;
+            }
+        } else {
+            document.body.classList.remove('debug-enabled');
+            await chrome.storage.local.set({ debugMode: false });
+            logToPanel(i18n.translate('debugDisabled'), 'info');
+        }
+    });
+}
+
+// Funkcja inicjalizująca tooltips
+function initializeTooltips() {
+    // Usuń stare tooltips
+    if (tooltipList.length > 0) {
+        tooltipList.forEach(tooltip => tooltip.dispose());
+        tooltipList = [];
+    }
+
+    // Zaktualizuj teksty tooltipów przed inicjalizacją
+    const statusElements = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    statusElements.forEach((el, index) => {
+        const statusKeys = ['submitted', 'confirmed', 'accepted', 'ready', 'overdue'];
+        const key = statusKeys[index];
+        if (key && i18n.translations?.leadStatuses?.[key]) {
+            el.setAttribute('title', i18n.translate(`leadStatuses.${key}`));
+        }
+    });
+
+    // Zainicjuj nowe tooltips
+    const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => 
+        new bootstrap.Tooltip(tooltipTriggerEl, {
+            boundary: document.body,
+            placement: 'right'
+        })
+    );
+}
+
+// Funkcja sprawdzająca dostęp do debug mode
+async function checkDebugAccess() {
+    const debugEnabled = document.body.classList.contains('debug-enabled');
+    if (!debugEnabled) {
+        if (await verifyDebugPassword()) {
+            document.body.classList.add('debug-enabled');
+            const debugSwitch = document.getElementById('debug-switch');
+            if (debugSwitch) {
+                debugSwitch.checked = true;
+            }
+            await chrome.storage.local.set({ debugMode: true });
+            logToPanel(i18n.translate('debugEnabled'), 'success');
+            return true;
+        } else {
+            alert(i18n.translate('debugPasswordIncorrect'));
+            return false;
+        }
+    }
+    return true;
+}
+
+// Modyfikacja obsługi kliknięcia w panel debug
+document.querySelector('.debug-panel')?.addEventListener('mouseenter', async (e) => {
+    if (!document.body.classList.contains('debug-enabled')) {
+        if (!await checkDebugAccess()) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+    }
+});
+
+// Funkcja generująca URL dla zamówień
+function generateOrdersUrl(status, storeId) {
+    const baseUrl = 'https://darwina.pl/adm/';
+    const params = new URLSearchParams({
+        'a': 'zamowienia',
+        'sk': '',
+        'opid': '0',
+        'pcid': '0',
+        'daid': storeId || '0',
+        'sztyp': 'pid',
+        'sztxt': '',
+        'ptid': '',
+        'dw': '0',
+        'dp': '',
+        'dk': ''
+    });
+
+    // Oblicz datę 14 dni wstecz
+    const date = new Date();
+    date.setDate(date.getDate() - 14);
+    const formattedDate = date.toISOString().split('T')[0];
+
+    // Dodaj odpowiednie parametry w zależności od statusu
+    switch (status) {
+        case 'submitted':
+            params.set('st', '1');
+            params.set('s[]', '1');
+            break;
+        case 'confirmed':
+            params.set('st', '2');
+            params.set('s[]', '2');
+            break;
+        case 'accepted':
+            params.set('st', '3');
+            params.set('s[]', '3');
+            break;
+        case 'ready':
+            params.set('st', '5');
+            params.set('s[]', '5');
+            params.set('dp', formattedDate); // Pokaż tylko zamówienia od 14 dni wstecz
+            break;
+        case 'overdue':
+            params.set('st', '5');
+            params.set('s[]', '5');
+            params.set('dk', formattedDate); // Pokaż tylko zamówienia starsze niż 14 dni
+            break;
+    }
+
+    return `${baseUrl}?${params.toString()}`;
+}
+
+// Dodaj obsługę kliknięcia dla wszystkich lead-status
+function initializeLeadStatusLinks() {
+    const statusMap = {
+        '1': 'submitted',
+        '2': 'confirmed',
+        '3': 'accepted',
+        'READY': 'ready',
+        'OVERDUE': 'overdue'
+    };
+
+    // Dodaj obsługę dla wszystkich statusów
+    document.querySelectorAll('.lead-status').forEach(statusElement => {
+        const dataStatus = statusElement.getAttribute('data-status');
+        const status = statusMap[dataStatus];
+        
+        if (status) {
+            statusElement.style.cursor = 'pointer';
+            statusElement.addEventListener('click', () => {
+                // Pobierz aktualnie wybrany sklep
+                const storeSelect = document.getElementById('store-select');
+                const selectedStoreId = storeSelect?.value === 'ALL' ? '0' : getStoreId(storeSelect?.value);
+                
+                // Wygeneruj i otwórz URL
+                const url = generateOrdersUrl(status, selectedStoreId);
+                window.open(url, '_blank');
+            });
+        }
+    });
+}
+
+// Funkcja pomocnicza do mapowania kodu sklepu na ID
+function getStoreId(storeCode) {
+    const storeMap = {
+        'EKO': '85',  // EkoPark Mokotów
+        'FIL': '59',  // Gocław - Fieldorfa
+        'FRA': '58',  // Francuska
+        'GU': '60',   // Galeria Ursynów
+        'HOK': '61',  // Przy Hiltonie
+        'HRU': '62',  // Przy Muzeum Powstania
+        'IKR': '63',  // Idzikowskiego
+        'KBT': '64',  // Kabaty przy Bazarku
+        'LND': '65',  // C.H. Land
+        'LUC': '66',  // Przy Hiltonie (Łucka)
+        'MAG': '67',  // MAG
+        'MCZ': '68',  // Centrum
+        'MOT': '69',  // Praga Południe
+        'NOW': '70',  // Przy Promenadzie
+        'OBR': '71',  // Służewiec
+        'PAN': '72',  // Rondo ONZ
+        'PLO': '73',  // Metro Płocka
+        'POW': '74',  // Artystyczny Żoliborz
+        'RAC': '75',  // Woronicza
+        'RAY': '76',  // Bemowo Chrzanów
+        'RKW': '77',  // Puławska
+        'RP': '78',   // Aleja Rzeczypospolitej
+        'SIK': '79',  // Stegny
+        'STO': '81',  // Stokłosy
+        'WDK': '82',  // Kabaty
+        'WIL': '83',  // Miasteczko Wilanów
+        'ŻEL': '84'   // Wola - Żelazna
+    };
+    return storeMap[storeCode] || '0'; // '0' dla 'ALL' lub nieznalezionego kodu
 }
 

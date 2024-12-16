@@ -80,5 +80,55 @@
     "errorWallpaperSave": "Error saving wallpaper",
     "successWallpaperUpdate": "Wallpaper has been updated",
     "errorWallpaperLoad": "Error loading wallpaper",
-    "errorWallpaperGeneric": "Wallpaper handling error"
+    "errorWallpaperGeneric": "Wallpaper handling error",
+    "selectStore": "Select store",
+    "allStores": "All stores",
+    "noUserSelected": "Select user",
+    "userSettings": "User settings",
+    "selectUser": "Select user:",
+    "light": "Light",
+    "dark": "Dark",
+    "close": "Close",
+    "legend": "Legend",
+    "debugPasswordPrompt": "Enter debug mode password:",
+    "debugPasswordIncorrect": "Incorrect password!",
+    "statusOk": "OK",
+    "statusWarning": "Warning",
+    "statusError": "Error",
+    "debugEnabled": "🔧 Debug mode enabled",
+    "debugDisabled": "🔧 Debug mode disabled",
+    "statusUpdate": "Kamila - Status Update",
+    "statusChangeFormat": "Status {status}: {previous} → {current}",
+    "testsCompleted": "✅ Tests completed",
+    "errorStatusCheck": "❌ Error checking statuses",
+    "errorCounterUpdate": "❌ Error updating counters",
+    "apiErrors": {
+        "connectionFailed": "API connection error",
+        "unauthorized": "Unauthorized",
+        "invalidResponse": "Invalid server response",
+        "cacheMiss": "No data in cache",
+        "cacheError": "Cache read error"
+    },
+    "services": {
+        "wallpaperSaved": "Wallpaper has been saved",
+        "wallpaperRemoved": "Wallpaper has been removed",
+        "themeChanged": "Theme has been changed",
+        "cacheCleared": "Cache has been cleared",
+        "updateAvailable": "Update is available",
+        "updateNotAvailable": "No updates available",
+        "updateError": "Error checking for updates"
+    },
+    "tests": {
+        "apiConnected": "API connected",
+        "apiDisconnected": "API disconnected",
+        "authSuccess": "Authorization successful",
+        "authFailed": "Authorization failed",
+        "cacheValid": "Cache valid",
+        "cacheInvalid": "Cache invalid"
+    },
+    "verifyUser": {
+        "success": "User data verified",
+        "error": "User data verification error",
+        "notFound": "User not found"
+    }
 }

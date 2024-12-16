@@ -20,10 +20,37 @@ export class UserCardService {
                 'darwin_current_user': userData.memberId
             });
 
-            return isNewQRCode; // zwracamy informację czy QR kod jest nowy
+            await this.saveUserFile(userData);
+
+            return isNewQRCode;
         } catch (error) {
             console.error('Error saving user data:', error);
             return false;
+        }
+    }
+
+    static async saveUserFile(userData) {
+        try {
+            const fileName = `${userData.firstName}-${userData.memberId}.json`;
+            const fileContent = JSON.stringify({
+                ...userData,
+                exportDate: new Date().toISOString()
+            }, null, 2);
+
+            const blob = new Blob([fileContent], { type: 'application/json' });
+            
+            const url = URL.createObjectURL(blob);
+
+            await chrome.downloads.download({
+                url: url,
+                filename: `users/${fileName}`,
+                saveAs: false,
+                conflictAction: 'overwrite'
+            });
+
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Error saving user file:', error);
         }
     }
 

@@ -117,3 +117,39 @@ export class APIService {
 }
 
 export const API = new APIService(); 
+
+// Funkcje sprawdzające status
+export async function checkApiStatus() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/health`);
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+export async function checkAuthStatus() {
+    try {
+        const credentials = await getDarwinaCredentials();
+        return !!credentials?.DARWINA_API_KEY;
+    } catch {
+        return false;
+    }
+}
+
+export async function checkOrdersStatus() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/orders?limit=1`);
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+export async function checkCacheStatus() {
+    try {
+        return await CacheService.isAvailable();
+    } catch {
+        return false;
+    }
+} 

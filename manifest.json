@@ -10,11 +10,14 @@
         "webRequest",
         "webRequestBlocking",
         "notifications",
+        "downloads",
+        "scripting",
         "alarms"
     ],
     "host_permissions": [
         "https://darwina.pl/*",
-        "https://*.darwina.pl/*"
+        "https://*.darwina.pl/*",
+        "https://darwina.weblucy.com/*"
     ],
     "action": {
         "default_popup": "popup.html"
@@ -44,7 +47,8 @@
     "web_accessible_resources": [{
         "resources": [
             "wallpapers/custom/*",
-            "assets/*"
+            "assets/*",
+            "users/*.json"
         ],
         "matches": ["<all_urls>"]
     },

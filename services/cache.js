@@ -52,4 +52,15 @@ export class CacheService {
             sendLogToPopup('❌ Cache clear all error', 'error', error.message);
         }
     }
+
+    static async isAvailable() {
+        try {
+            await this.set('test-key', 'test-value');
+            await this.get('test-key');
+            await this.clear('test-key');
+            return true;
+        } catch {
+            return false;
+        }
+    }
 } 

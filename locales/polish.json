@@ -80,5 +80,55 @@
     "errorWallpaperSave": "Błąd zapisywania tapety",
     "successWallpaperUpdate": "Tapeta została zaktualizowana",
     "errorWallpaperLoad": "Błąd ładowania tapety",
-    "errorWallpaperGeneric": "Błąd obsługi tapety"
+    "errorWallpaperGeneric": "Błąd obsługi tapety",
+    "selectStore": "Wybierz sklep",
+    "allStores": "Wszystkie sklepy",
+    "noUserSelected": "Wybierz użytkownika",
+    "userSettings": "Ustawienia użytkownika",
+    "selectUser": "Wybierz użytkownika:",
+    "light": "Jasny",
+    "dark": "Ciemny",
+    "close": "Zamknij",
+    "legend": "Legenda",
+    "debugPasswordPrompt": "Podaj hasło do trybu debugowania:",
+    "debugPasswordIncorrect": "Nieprawidłowe hasło!",
+    "statusOk": "OK",
+    "statusWarning": "Ostrzeżenie",
+    "statusError": "Błąd",
+    "debugEnabled": "🔧 Tryb debugowania włączony",
+    "debugDisabled": "🔧 Tryb debugowania wyłączony",
+    "statusUpdate": "Kamila - Aktualizacja statusów",
+    "statusChangeFormat": "Status {status}: {previous} → {current}",
+    "testsCompleted": "✅ Testy zakończone",
+    "errorStatusCheck": "❌ Błąd podczas sprawdzania statusów",
+    "errorCounterUpdate": "❌ Błąd podczas aktualizacji liczników",
+    "apiErrors": {
+        "connectionFailed": "Błąd połączenia z API",
+        "unauthorized": "Brak autoryzacji",
+        "invalidResponse": "Nieprawidłowa odpowiedź z serwera",
+        "cacheMiss": "Brak danych w cache",
+        "cacheError": "Błąd odczytu cache"
+    },
+    "services": {
+        "wallpaperSaved": "Tapeta została zapisana",
+        "wallpaperRemoved": "Tapeta została usunięta",
+        "themeChanged": "Motyw został zmieniony",
+        "cacheCleared": "Cache zostało wyczyszczone",
+        "updateAvailable": "Dostępna jest aktualizacja",
+        "updateNotAvailable": "Brak dostępnych aktualizacji",
+        "updateError": "Błąd podczas sprawdzania aktualizacji"
+    },
+    "tests": {
+        "apiConnected": "API połączone",
+        "apiDisconnected": "API rozłączone",
+        "authSuccess": "Autoryzacja poprawna",
+        "authFailed": "Autoryzacja niepoprawna",
+        "cacheValid": "Cache poprawne",
+        "cacheInvalid": "Cache niepoprawne"
+    },
+    "verifyUser": {
+        "success": "Dane użytkownika zweryfikowane",
+        "error": "Błąd weryfikacji danych użytkownika",
+        "notFound": "Nie znaleziono użytkownika"
+    }
 }

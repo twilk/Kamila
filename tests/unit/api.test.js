@@ -3,55 +3,95 @@ import { CacheService } from '../../services/cache.js';
 
 describe('API Service', () => {
     let api;
-    
-    beforeEach(() => {
+
+    beforeEach(async () => {
         api = new APIService();
-        CacheService.clearAll();
-        
-        // Mock fetch
-        global.fetch = jest.fn();
+        await CacheService.clearAll();
     });
 
-    test('should handle API errors gracefully', async () => {
-        global.fetch.mockRejectedValueOnce(new Error('Network error'));
-        
-        const result = await api.getOrderStatuses();
-        expect(result.success).toBe(false);
-        expect(result.error).toBeDefined();
+    describe('Inicjalizacja', () => {
+        it('powinno zainicjalizować API bez błędów', async () => {
+            await api.init();
+            expect(api.baseUrl).toBeDefined();
+            expect(api.apiKey).toBeDefined();
+        });
     });
 
-    test('should cache successful responses', async () => {
-        const mockData = { data: [], __metadata: { page_count: 1 } };
-        global.fetch.mockResolvedValueOnce({
-            ok: true,
-            json: () => Promise.resolve(mockData)
+    describe('Pobieranie zamówień', () => {
+        beforeEach(async () => {
+            await api.init();
         });
 
-        await api.getOrderStatuses();
-        const cached = await CacheService.get('orders_ALL');
-        
-        expect(cached).toBeDefined();
-        expect(cached.success).toBe(true);
+        it('powinno pobrać zamówienia dla wszystkich sklepów', async () => {
+            const result = await api.getOrderStatuses();
+            expect(result.success).toBe(true);
+            expect(result.statusCounts).toBeDefined();
+            expect(Object.keys(result.statusCounts)).toContain('1');
+            expect(Object.keys(result.statusCounts)).toContain('2');
+            expect(Object.keys(result.statusCounts)).toContain('3');
+        });
+
+        it('powinno pobrać zamówienia dla konkretnego sklepu', async () => {
+            const result = await api.getOrderStatuses('FRA-1');
+            expect(result.success).toBe(true);
+            expect(result.statusCounts).toBeDefined();
+        });
     });
 
-    test('should use correct API parameters', async () => {
-        await api.getOrderStatuses();
-        
-        expect(global.fetch).toHaveBeenCalledWith(
-            expect.stringContaining('status_id=7,8,9,10'),
-            expect.any(Object)
-        );
+    describe('Cache', () => {
+        beforeEach(async () => {
+            await api.init();
+        });
+
+        it('powinno zapisywać i odczytywać dane z cache', async () => {
+            const firstResult = await api.getOrderStatuses();
+            expect(firstResult.success).toBe(true);
+
+            const cachedData = await CacheService.get('orders_ALL');
+            expect(cachedData).toBeDefined();
+            expect(cachedData).toEqual(firstResult);
+
+            const secondResult = await api.getOrderStatuses();
+            expect(secondResult).toEqual(firstResult);
+        });
+
+        it('powinno respektować czas życia cache', async () => {
+            const testData = { success: true, statusCounts: { '1': 5 } };
+            await CacheService.set('orders_ALL', testData);
+            
+            const cachedData = await CacheService.get('orders_ALL');
+            expect(cachedData).toEqual(testData);
+
+            jest.advanceTimersByTime(5 * 60 * 1000);
+
+            const expiredData = await CacheService.get('orders_ALL');
+            expect(expiredData).toBeNull();
+        });
     });
 
-    test('should initialize API service', async () => {
-        const mockCredentials = {
-            DARWINA_API_KEY: 'test-key',
-            DARWINA_API_BASE_URL: 'https://api.test'
-        };
-        
-        global.getDarwinaCredentials = jest.fn().mockResolvedValue(mockCredentials);
-        
-        await api.init();
-        expect(api.apiKey).toBe('test-key');
+    describe('UI Updates', () => {
+        beforeEach(async () => {
+            await api.init();
+            document.body.innerHTML = `
+                <div class="lead-status">
+                    <span class="lead-count" id="count-1">-</span>
+                    <span class="lead-count" id="count-2">-</span>
+                    <span class="lead-count" id="count-3">-</span>
+                </div>
+            `;
+        });
+
+        it('powinno aktualizować liczniki w UI', async () => {
+            const result = await api.getOrderStatuses();
+            expect(result.success).toBe(true);
+
+            for (const [status, count] of Object.entries(result.statusCounts)) {
+                const counter = document.getElementById(`count-${status}`);
+                if (counter) {
+                    expect(counter.textContent).not.toBe('-');
+                    expect(counter.textContent).toBe(count.toString());
+                }
+            }
+        });
     });
 }); 

@@ -1,36 +1,43 @@
 import { CacheService } from '../../services/cache.js';
 
 describe('Cache Service', () => {
-    beforeEach(() => {
-        localStorage.clear();
+    beforeEach(async () => {
+        await CacheService.clearAll();
     });
 
-    test('should store and retrieve data', () => {
+    it('powinno zapisywać i odczytywać dane', async () => {
         const testData = { test: 'data' };
-        CacheService.set('test', testData);
-        
-        const retrieved = CacheService.get('test');
-        expect(retrieved).toEqual(testData);
+        await CacheService.set('test-key', testData);
+        const result = await CacheService.get('test-key');
+        expect(result).toEqual(testData);
     });
 
-    test('should expire after cache duration', async () => {
-        const testData = { test: 'data' };
-        CacheService.set('test', testData);
-        
-        // Simulate time passing
-        jest.advanceTimersByTime(5 * 60 * 1000); // 5 minutes
-        
-        const retrieved = CacheService.get('test');
-        expect(retrieved).toBeNull();
+    it('powinno zwracać null dla nieistniejących danych', async () => {
+        const result = await CacheService.get('nonexistent-key');
+        expect(result).toBeNull();
     });
 
-    test('should clear specific cache', () => {
-        CacheService.set('test1', { data: 1 });
-        CacheService.set('test2', { data: 2 });
+    it('powinno czyścić pojedynczy klucz', async () => {
+        await CacheService.set('test-key', { test: 'data' });
+        await CacheService.clear('test-key');
+        const result = await CacheService.get('test-key');
+        expect(result).toBeNull();
+    });
+
+    it('powinno czyścić wszystkie dane', async () => {
+        await CacheService.set('key1', 'data1');
+        await CacheService.set('key2', 'data2');
+        await CacheService.clearAll();
         
-        CacheService.clear('test1');
+        const result1 = await CacheService.get('key1');
+        const result2 = await CacheService.get('key2');
         
-        expect(CacheService.get('test1')).toBeNull();
-        expect(CacheService.get('test2')).toBeDefined();
+        expect(result1).toBeNull();
+        expect(result2).toBeNull();
+    });
+
+    it('powinno sprawdzać dostępność cache', async () => {
+        const isAvailable = await CacheService.isAvailable();
+        expect(isAvailable).toBe(true);
     });
 });
