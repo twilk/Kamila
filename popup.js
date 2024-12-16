@@ -93,22 +93,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Pierwsze pobranie danych
         console.log('📡 Starting initial data fetch...');
         await fetchDarwinaData();
-        initStatusClickHandlers();
+
+        // Bezpieczna inicjalizacja komponentów UI
+        initializeUIComponents();
         
-        // Ustaw interwał odświeżania
-        console.log('⏰ Setting up refresh interval:', REFRESH_INTERVAL);
-        const refreshInterval = setInterval(async () => {
-            console.log('⏰ Refresh interval triggered');
-            await fetchDarwinaData();
-        }, REFRESH_INTERVAL);
-
-        // Dodaj czyszczenie interwału przy zamknięciu popup
-        window.addEventListener('unload', () => {
-            clearInterval(refreshInterval);
-            console.log('🛑 Cleared refresh interval');
-        });
-
-        // Inicjalizacja języka - musi być pierwsza!
+        // Inicjalizacja języka
         i18n.updateDataI18n();
         updateInterface(i18n.translations);
         logToPanel('✅ Język zainicjalizowany', 'success');
@@ -116,405 +105,123 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Inicjalizacja tooltipów Bootstrap
         initTooltips();
 
-        // Obsługa przełącznika debug
-        const debugSwitch = document.getElementById('debug-switch');
-        if (debugSwitch) {
-            const isDebugEnabled = localStorage.getItem('debug-enabled') === 'true';
-            debugSwitch.checked = isDebugEnabled;
-            document.body.classList.toggle('debug-enabled', isDebugEnabled);
-            
-            // Daj czas na inicjalizację UI
-            setTimeout(adjustWindowHeight, 50);
-        
-            debugSwitch.addEventListener('change', async (e) => {
-                const isEnabled = e.target.checked;
-                document.body.classList.toggle('debug-enabled', isEnabled);
-                localStorage.setItem('debug-enabled', isEnabled);
-                setTimeout(adjustWindowHeight, 50);
-            });
-        }
-        
+    } catch (error) {
+        logToPanel('❌ Błąd inicjalizacji', 'error', error.message);
+    }
+});
 
-        // Obsługa czyszczenia logów
-        document.getElementById('clear-logs')?.addEventListener('click', () => {
+// Nowa funkcja do bezpiecznej inicjalizacji komponentów UI
+function initializeUIComponents() {
+    // Debug switch
+    const debugSwitch = document.getElementById('debug-switch');
+    if (debugSwitch) {
+        const isDebugEnabled = localStorage.getItem('debug-enabled') === 'true';
+        debugSwitch.checked = isDebugEnabled;
+        document.body.classList.toggle('debug-enabled', isDebugEnabled);
+        
+        setTimeout(adjustWindowHeight, 50);
+    
+        debugSwitch.addEventListener('change', async (e) => {
+            const isEnabled = e.target.checked;
+            document.body.classList.toggle('debug-enabled', isEnabled);
+            localStorage.setItem('debug-enabled', isEnabled);
+            setTimeout(adjustWindowHeight, 50);
+        });
+    }
+
+    // Clear logs button
+    const clearLogsBtn = document.getElementById('clear-logs');
+    if (clearLogsBtn) {
+        clearLogsBtn.addEventListener('click', () => {
             const debugLogs = document.getElementById('debug-logs');
             if (debugLogs) {
                 debugLogs.innerHTML = '';
                 logToPanel('🧹 Logi wyczyszczone', 'success');
             }
         });
-
-        // Reszta inicjalizacji...
-        const tabs = document.querySelectorAll('.nav-link');
-        logToPanel(`📑 Znaleziono ${tabs.length} zakładek`);
-        
-        // Obsługa zakładek
-        tabs.forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                e.preventDefault();
-                logToPanel(`🔄 Przełączanie na zakładkę: ${tab.textContent.trim()}`, 'info');
-                
-                // 1. Dezaktywuj wszystkie zakładki i panele
-                tabs.forEach(t => {
-                    t.classList.remove('active');
-                    const panel = document.querySelector(t.getAttribute('data-target'));
-                    if (panel) {
-                        panel.classList.remove('active', 'show');
-                    }
-                });
-                
-                // 2. Aktywuj kliknięty tab i jego panel
-                tab.classList.add('active');
-                const targetPanel = document.querySelector(tab.getAttribute('data-target'));
-                if (targetPanel) {
-                    targetPanel.classList.add('active', 'show');
-                    logToPanel(`✅ Aktywowano panel: ${tab.getAttribute('data-target')}`, 'success');
-                } else {
-                    logToPanel(`❌ Nie znaleziono panelu: ${tab.getAttribute('data-target')}`, 'error');
-                }
-            });
-        });
-
-        // Obsługa motywu
-        const themeRadios = document.querySelectorAll('input[name="theme"]');
-        themeRadios.forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                const isDark = e.target.value === 'dark';
-                document.body.classList.remove('light-theme', 'dark-theme');
-                document.body.classList.add(isDark ? 'dark-theme' : 'light-theme');
-                localStorage.setItem('theme', e.target.value);
-                logToPanel(`🎨 Zmieniono motyw na: ${isDark ? 'ciemny' : 'jasny'}`, 'success');
-                
-                // Odśwież tooltips po zmianie motywu
-                initTooltips();
-            });
-        });
-
-        // Wczytaj zapisany motyw przy starcie
-        const savedTheme = localStorage.getItem('theme') || 'light';
-        document.body.classList.remove('light-theme', 'dark-theme');
-        document.body.classList.add(savedTheme === 'dark' ? 'dark-theme' : 'light-theme');
-        const themeInput = document.querySelector(`input[name="theme"][value="${savedTheme}"]`);
-        if (themeInput) {
-            themeInput.checked = true;
-        }
-
-        // Obsługa języków
-        const flags = document.querySelectorAll('.flag');
-        flags.forEach(flag => {
-            flag.addEventListener('click', async (e) => {
-                const lang = e.target.getAttribute('data-lang');
-                try {
-                    // Zapisz wybrany język
-                    localStorage.setItem('language', lang);
-                    
-                    // Załaduj tłumaczenia dla nowego języka
-                    await i18n.init();
-                    
-                    // Zaktualizuj interfejs i flagi
-                    i18n.updateDataI18n();
-                    updateInterface(i18n.translations);
-                    // Aktualizuj aktywną flagę
-                    document.querySelectorAll('.flag').forEach(f => {
-                        f.classList.toggle('active', f.getAttribute('data-lang') === lang);
-                    });
-                    
-                    logToPanel(`✅ Język zmieniony na: ${lang}`, 'success');
-                } catch (error) {
-                    logToPanel(`❌ Błąd zmiany języka: ${error.message}`, 'error');
-                }
-            });
-        });
-
-        // Obsługa statusów
-        const checkStatusButton = document.getElementById('check-status');
-        if (checkStatusButton) {
-            checkStatusButton.addEventListener('click', async () => {
-                logToPanel('🔄 Sprawdzanie statusów...', 'info');
-                try {
-                    const statuses = await API.checkStatus();
-                    Object.entries(statuses).forEach(([service, status]) => {
-                        const dot = document.getElementById(`${service}-status`);
-                        if (dot) {
-                            dot.className = `status-dot status-${status}`;
-                            logToPanel(`✅ Status ${service}: ${status}`, 'success');
-                        }
-                    });
-                } catch (error) {
-                    logToPanel('❌ Błąd sprawdzania statusów', 'error');
-                }
-            });
-        }
-
-        // Obsługa testów
-        const runTestsButton = document.getElementById('run-tests');
-        if (runTestsButton) {
-            runTestsButton.addEventListener('click', async () => {
-                logToPanel('🔍 Uruchamianie testów...', 'info');
-                runTestsButton.disabled = true;
-                checkStatusButton.disabled = true;
-                
-                try {
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    logToPanel('✅ Testy zakończone pomyślnie', 'success');
-                } catch (error) {
-                    logToPanel('❌ Błąd podczas testów', 'error');
-                } finally {
-                    runTestsButton.disabled = false;
-                    checkStatusButton.disabled = false;
-                }
-            });
-        }
-
-        // Obsługa przesyłania tapet
-        const wallpaperInput = document.getElementById('wallpaper-upload');
-        wallpaperInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            // Sprawdź rozmiar (max 2MB)
-            if (file.size > 2 * 1024 * 1024) {
-                logToPanel(i18n.translate('errorFileSize'), 'error');
-                return;
-            }
-
-            // Rozszerzona lista obsługiwanych formatów
-            const validTypes = [
-                'image/jpeg', 'image/jpg', 'image/pjpeg',
-                'image/png', 'image/gif', 'image/webp',
-                'image/bmp', 'image/tiff'
-            ];
-
-            if (!validTypes.includes(file.type)) {
-                logToPanel(i18n.translate('errorFileType').replace('{type}', file.type), 'error');
-                return;
-            }
-
-            try {
-                const formData = new FormData();
-                formData.append('wallpaper', file);
-
-                const response = await chrome.runtime.sendMessage({
-                    type: 'SAVE_WALLPAPER',
-                    data: formData,
-                    mimeType: file.type
-                });
-
-                if (response.success) {
-                    handleWallpaper(response.url);
-                } else {
-                    throw new Error(response.error);
-                }
-            } catch (error) {
-                logToPanel(i18n.translate('errorWallpaperSave'), 'error', error);
-            }
-        });
-
-        // Inicjalizacja tapety
-        const savedWallpaper = localStorage.getItem('wallpaper');
-        if (savedWallpaper) {
-            handleWallpaper(savedWallpaper, true);
-        }
-
-        // Funkcja do pobierania danych z API DARWINA
-        async function fetchDarwinaData() {
-            try {
-                const lastFetchTime = localStorage.getItem('last_fetch_time');
-                const now = Date.now();
-                
-                // Jeśli minęło mniej niż minutę, użyj cache
-                if (lastFetchTime && now - parseInt(lastFetchTime) < REFRESH_INTERVAL) {
-                    const cachedData = await CacheService.get(CACHE_KEY);
-                    if (cachedData) {
-                        updateUI(cachedData);
-                        return;
-                    }
-                }
-
-                // Pobierz nowe dane
-                refreshCount++;
-                const { selectedStore } = await chrome.storage.local.get('selectedStore');
-                const response = await chrome.runtime.sendMessage({
-                    type: 'FETCH_DARWINA_DATA',
-                    selectedStore: selectedStore || 'ALL'
-                });
-
-                if (response.success) {
-                    updateUI(response);
-                    localStorage.setItem('last_fetch_time', now.toString());
-                } else {
-                    throw new Error(response.error);
-                }
-            } catch (error) {
-                handleError(error);
-            }
-        }
-
-        // Funkcja aktualizacji UI
-        function updateUI(data) {
-            const { statusCounts } = data;
-            
-            // Resetuj wszystkie liczniki
-            document.querySelectorAll('.lead-count').forEach(counter => {
-                counter.textContent = '0';
-                counter.classList.remove('count-error');
-                counter.classList.add('count-zero');
-            });
-            
-            // Mapowanie statusów z API na elementy UI
-            const statusMapping = {
-                '1': '[data-status="1"]',      // Złożone (SUBMITTED)
-                '2': '[data-status="2"]',      // Potwierdzone przez Klienta (CONFIRMED)
-                '3': '[data-status="3"]',      // Przyjęte do realizacji (ACCEPTED)
-                'READY': '[data-status="READY"]',      // Gotowe do odbioru (< 2 tygodnie)
-                'OVERDUE': '[data-status="OVERDUE"]'   // Przeterminowane (>= 2 tygodnie)
-            };
-
-            // Aktualizacja liczników
-            Object.entries(statusCounts).forEach(([status, count]) => {
-                // Znajdź odpowiedni selektor dla statusu
-                const selector = statusMapping[status];
-                if (selector) {
-                    const element = document.querySelector(`${selector} .lead-count`);
-                    if (element && count > 0) {
-                        element.textContent = count;
-                        element.classList.remove('count-zero');
-                        logToPanel(`📊 Status ${status}: ${count}`, 'info');
-                    }
-                }
-            });
-
-            // Dodaj tooltip z dokładną datą aktualizacji
-            const timestamp = new Date().toLocaleString();
-            document.querySelectorAll('.lead-status').forEach(status => {
-                const count = status.querySelector('.lead-count').textContent;
-                const statusName = status.getAttribute('data-status');
-                status.setAttribute('title', 
-                    `Status: ${statusName}\n` +
-                    `Liczba zamówień: ${count}\n` +
-                    `Ostatnia aktualizacja: ${timestamp}`
-                );
-            });
-
-            logToPanel('✅ Dane zaktualizowane', 'success');
-            logToPanel('📊 Wszystkie statusy:', 'info', statusCounts);
-        }
-
-        // Funkcja obsługująca kliknięcie w status
-        async function handleStatusClick() {
-            try {
-                logToPanel('🔄 Ręczne odświeżanie statusów...', 'info');
-                await fetchDarwinaData();
-                // Dodaj efekt wizualny potwierdzający odświeżenie
-                this.classList.add('refreshed');
-                setTimeout(() => this.classList.remove('refreshed'), 1000);
-            } catch (error) {
-                logToPanel('❌ Błąd podczas ręcznego odświeżania', 'error', error.message);
-            }
-        }
-
-        // Dodaj po inicjalizacji fetchDarwinaData
-        function initStatusClickHandlers() {
-            document.querySelectorAll('.lead-status').forEach(element => {
-                element.removeEventListener('click', handleStatusClick);
-                element.addEventListener('click', handleStatusClick);
-            });
-            logToPanel('✅ Zainicjalizowano obsługę kliknięć na statusy', 'success');
-        }
-
-        // Obsługa przycisku instrukcji
-        const instructionsButton = document.getElementById('instructions-button');
-        const instructionsModal = document.getElementById('instructionsModal');
-        
-        console.log('Instructions elements:', {
-            button: instructionsButton,
-            modal: instructionsModal,
-            bootstrap: typeof bootstrap !== 'undefined'
-        });
-        
-        if (instructionsButton && instructionsModal) {
-            instructionsButton.addEventListener('click', () => {
-                console.log('Instructions button clicked');
-                if (typeof bootstrap === 'undefined') {
-                    logToPanel('❌ Bootstrap nie jest załadowany', 'error');
-                    return;
-                }
-
-                // Sprawdź czy modal już istnieje
-                let modal = bootstrap.Modal.getInstance(instructionsModal);
-                if (!modal) {
-                    modal = new bootstrap.Modal(instructionsModal);
-                }
-                modal.show();
-                logToPanel('📋 Otwarto instrukcję', 'info');
-            });
-        }
-
-        // Obsługa zmiany sklepu
-        const storeSelect = document.getElementById('store-select');
-        if (storeSelect) {
-            // Załaduj listę sklepów
-            import('./config/stores.js').then(({ stores }) => {
-                // Wyczyść obecne opcje
-                storeSelect.innerHTML = '';
-                
-                // Dodaj opcję "Wszystkie sklepy"
-                const allOption = document.createElement('option');
-                allOption.value = 'ALL';
-                allOption.textContent = stores.find(s => s.id === 'ALL').name;
-                allOption.setAttribute('data-i18n', 'allStores');
-                storeSelect.appendChild(allOption);
-                
-                // Dodaj pozostałe sklepy, używając dokładnie danych ze stores.js
-                stores
-                    .filter(store => store.id !== 'ALL')
-                    .forEach(store => {
-                        const option = document.createElement('option');
-                        option.value = store.id;
-                        option.textContent = `${store.name} - ${store.address}`;
-                        storeSelect.appendChild(option);
-                    });
-
-                // Załaduj zapisany wybór
-                chrome.storage.local.get('selectedStore', ({ selectedStore }) => {
-                    storeSelect.value = selectedStore || 'ALL';
-                    });
-            });
-
-            // Dodaj obsługę zmiany
-            storeSelect.addEventListener('change', async (e) => {
-                try {
-                    const selectedStore = e.target.value;
-                    
-                    // Wyczyść cache
-                    await CacheService.clear(CACHE_KEY);
-                    // Usuń timestamp ostatniego odświeżenia
-                    localStorage.removeItem('last_fetch_time');
-                    
-                    // Zapisz wybrany sklep
-                    await chrome.storage.local.set({ selectedStore });
-                    
-                    // Oznacz liczniki jako ładujące się
-                    document.querySelectorAll('.lead-count').forEach(counter => {
-                        counter.textContent = '...';
-                        counter.classList.remove('count-error', 'count-zero');
-                    });
-                    
-                    logToPanel('🏪 Zmieniono sklep na: ' + selectedStore, 'info');
-                    
-                    // Wymuś natychmiastowe pobranie nowych danych
-                    await fetchDarwinaData();
-                    
-                } catch (error) {
-                    logToPanel('❌ Błąd podczas zmiany sklepu', 'error', error.message);
-                    handleError(error);
-                }
-            });
-        }
-    } catch (error) {
-        logToPanel('❌ Błąd inicjalizacji', 'error', error.message);
     }
-});
+
+    // Wallpaper upload
+    const wallpaperInput = document.getElementById('wallpaper-upload');
+    if (wallpaperInput) {
+        wallpaperInput.addEventListener('change', handleWallpaperUpload);
+    }
+
+    // Instructions button
+    const instructionsButton = document.getElementById('instructions-button');
+    const instructionsModal = document.getElementById('instructionsModal');
+    if (instructionsButton && instructionsModal && typeof bootstrap !== 'undefined') {
+        instructionsButton.addEventListener('click', () => {
+            const modal = bootstrap.Modal.getInstance(instructionsModal) || 
+                         new bootstrap.Modal(instructionsModal);
+            modal.show();
+            logToPanel('📋 Otwarto instrukcję', 'info');
+        });
+    }
+
+    // Query input and send button
+    const queryInput = document.getElementById('query');
+    const sendButton = document.getElementById('send');
+    if (queryInput && sendButton) {
+        queryInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendButton.click();
+            }
+        });
+
+        sendButton.addEventListener('click', handleQuerySubmit);
+    }
+
+    // Initialize store select
+    initializeStoreSelect();
+
+    // Inicjalizacja tabów
+    initializeTabs();
+
+    // Inicjalizacja przełącznika języka
+    initializeLanguageSwitcher();
+    
+    // Inicjalizacja przełącznika motywu
+    initializeThemeSwitcher();
+}
+
+// Nowa funkcja do obsługi wysyłania zapytania
+async function handleQuerySubmit() {
+    const query = document.getElementById('query')?.value.trim();
+    
+    if (!query) {
+        showMessage('error', 'errorEmptyQuery');
+        return;
+    }
+
+    hideAllMessages();
+    showMessage('loading', 'loading');
+
+    try {
+        // TODO: Implementacja wysyłania zapytania do API
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Symulacja opóźnienia
+        hideAllMessages();
+    } catch (error) {
+        hideMessage('loading');
+        showMessage('error', 'errorConnection');
+        logToPanel('❌ Błąd wysyłania zapytania', 'error', error);
+    }
+}
+
+// Nowa funkcja do obsługi przesyłania tapet
+async function handleWallpaperUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Sprawdź rozmiar (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+        logToPanel(i18n.translate('errorFileSize'), 'error');
+        return;
+    }
+
+    // ... reszta kodu obsługi tapety ...
+}
 
 // Bezpieczna aktualizacja elementu
 function safeUpdateElement(selector, updateFn) {
@@ -706,29 +413,6 @@ function hideAllMessages() {
     });
 }
 
-// Obsługa wysyłania zapytania
-document.getElementById('send')?.addEventListener('click', async () => {
-    const query = document.getElementById('query').value.trim();
-    
-    if (!query) {
-        showMessage('error', 'errorEmptyQuery');
-        return;
-    }
-
-    hideAllMessages();
-    showMessage('loading', 'loading');
-
-    try {
-        // TODO: Implementacja wysyłania zapytania do API
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Symulacja opóźnienia
-        hideAllMessages();
-    } catch (error) {
-        hideMessage('loading');
-        showMessage('error', 'errorConnection');
-        logToPanel('❌ Błąd wysyłania zapytania', 'error', error);
-    }
-});
-
 function adjustWindowHeight() {
     const isDebugEnabled = document.body.classList.contains('debug-enabled');
     const height = isDebugEnabled ? 800 : 600;
@@ -865,46 +549,315 @@ function createOrderElement(order) {
     return orderDiv;
 }
 
-// Funkcja do wyświetlania szczegółów zamówienia
-function showOrderDetails(order) {
-    // Przykład użycia istniejącego modalu
-    const modal = document.getElementById('leadDetailsModal');
-    const modalBody = modal.querySelector('.modal-body');
-    
-    modalBody.innerHTML = `
-        <div class="order-details-full">
-            <h6>Szczegóły zamówienia #${order.id}</h6>
-            <p><strong>Data utworzenia:</strong> ${new Date(order.created_at).toLocaleString()}</p>
-            <p><strong>Status:</strong> ${order.status}</p>
-            <p><strong>Klient:</strong> ${order.customer_name}</p>
-            <p><strong>Email:</strong> ${order.customer_email}</p>
-            <p><strong>Telefon:</strong> ${order.customer_phone}</p>
-            <p><strong>Wartość zamówienia:</strong> ${order.total_value} PLN</p>
-            <div class="order-items-list">
-                <h6>Produkty:</h6>
-                <ul>
-                    ${order.items.map(item => `
-                        <li>${item.name} - ${item.quantity} szt. - ${item.price} PLN</li>
-                    `).join('')}
-                </ul>
-            </div>
-        </div>
-    `;
-    
-    // Pokaż modal używając Bootstrap
-    const bootstrapModal = new bootstrap.Modal(modal);
-    bootstrapModal.show();
-}
-
 // Dodaj funkcję handleError
 function handleError(error) {
-    console.error('❌ Error:', error);
-    logToPanel('❌ Błąd pobierania danych z DARWINA API', 'error', error.message);
+    console.error('Error:', error); // Zachowujemy szczegółowy log w konsoli
+
+    // Dla użytkownika pokazujemy uproszczoną wersję
+    logToPanel('❌ Wystąpił błąd podczas pobierania danych', 'error');
     
-    // W przypadku błędu, oznacz wszystkie liczniki jako niedostępne
+    // Oznacz liczniki jako niedostępne
     document.querySelectorAll('.lead-count').forEach(counter => {
         counter.textContent = '-';
         counter.classList.add('count-error');
     });
+}
+
+// Add this new function to handle store select initialization
+async function initializeStoreSelect() {
+    const storeSelect = document.getElementById('store-select');
+    if (!storeSelect) {
+        logToPanel('�� Nie znaleziono elementu store-select', 'error');
+        return;
+    }
+
+    try {
+        // Import stores dynamically
+        const { stores } = await import('./config/stores.js');
+        
+        // Clear existing options
+        storeSelect.innerHTML = '';
+        
+        // Add "All stores" option
+        const allOption = document.createElement('option');
+        allOption.value = 'ALL';
+        allOption.textContent = stores.find(s => s.id === 'ALL').name;
+        allOption.setAttribute('data-i18n', 'allStores');
+        storeSelect.appendChild(allOption);
+        
+        // Add remaining stores
+        stores
+            .filter(store => store.id !== 'ALL')
+            .forEach(store => {
+                const option = document.createElement('option');
+                option.value = store.id;
+                option.textContent = `${store.name} - ${store.address}`;
+                storeSelect.appendChild(option);
+            });
+
+        // Load saved selection
+        const { selectedStore } = await chrome.storage.local.get('selectedStore');
+        storeSelect.value = selectedStore || 'ALL';
+
+        // Add change handler
+        storeSelect.addEventListener('change', async (e) => {
+            try {
+                const selectedStore = e.target.value;
+                
+                // Clear cache
+                await CacheService.clear(CACHE_KEY);
+                // Remove last refresh timestamp
+                localStorage.removeItem('last_fetch_time');
+                
+                // Save selected store
+                await chrome.storage.local.set({ selectedStore });
+                
+                // Mark counters as loading
+                document.querySelectorAll('.lead-count').forEach(counter => {
+                    counter.textContent = '...';
+                    counter.classList.remove('count-error', 'count-zero');
+                });
+                
+                logToPanel('🏪 Zmieniono sklep na: ' + selectedStore, 'info');
+                
+                // Force immediate data refresh
+                await fetchDarwinaData();
+                
+            } catch (error) {
+                logToPanel('❌ Błąd podczas zmiany sklepu', 'error', error.message);
+                handleError(error);
+            }
+        });
+
+        logToPanel('✅ Zainicjalizowano wybór sklepu', 'success');
+    } catch (error) {
+        logToPanel('❌ Błąd inicjalizacji wyboru sklepu', 'error', error.message);
+        handleError(error);
+    }
+}
+
+// Add this function after the imports and before other code
+async function fetchDarwinaData() {
+    try {
+        logToPanel('�� Rozpoczynam pobieranie danych...', 'info');
+        
+        const { selectedStore } = await chrome.storage.local.get('selectedStore');
+        const store = selectedStore || 'ALL';
+        
+        const lastFetchTime = localStorage.getItem('last_fetch_time');
+        const now = Date.now();
+        
+        if (lastFetchTime && (now - parseInt(lastFetchTime)) < REFRESH_INTERVAL) {
+            logToPanel('⏳ Dane są aktualne, używam zapisanej wersji', 'info');
+            return;
+        }
+
+        // Show loaders in counters
+        document.querySelectorAll('.lead-count').forEach(counter => {
+            showLoader(counter);
+            counter.classList.remove('count-error', 'count-zero');
+        });
+
+        const response = await chrome.runtime.sendMessage({
+            type: 'FETCH_DARWINA_DATA',
+            selectedStore: store
+        });
+
+        if (!response || response.error) {
+            throw new Error(response?.error || 'Nie udało się pobrać danych');
+        }
+
+        // Update counters with actual values
+        if (response.counts) {
+            logToPanel('📊 Aktualizuję liczniki zamówień...', 'info');
+            
+            // Define expected status types
+            const expectedStatuses = ['submitted', 'confirmed', 'accepted', 'ready', 'overdue'];
+            
+            // Initialize all counters to 0 first
+            expectedStatuses.forEach(status => {
+                const counter = document.getElementById(`count-${status}`);
+                if (counter) {
+                    counter.textContent = '0';
+                    counter.classList.add('count-zero');
+                    counter.classList.remove('count-error');
+                }
+            });
+            
+            // Update counters with actual values
+            Object.entries(response.counts).forEach(([status, count]) => {
+                // Handle special case for READY and OVERDUE statuses
+                if (status === 'READY' || status === 'OVERDUE') {
+                    const targetStatus = status.toLowerCase();
+                    const counter = document.getElementById(`count-${targetStatus}`);
+                    if (counter) {
+                        const numericCount = parseInt(count, 10);
+                        if (isNaN(numericCount)) {
+                            logToPanel(`⚠️ Nieprawidłowa wartość dla statusu ${targetStatus}`, 'error');
+                            counter.textContent = '0';
+                            counter.classList.add('count-error');
+                            return;
+                        }
+                        
+                        counter.textContent = numericCount.toString();
+                        counter.classList.toggle('count-zero', numericCount === 0);
+                        counter.classList.remove('count-error');
+                    }
+                } else {
+                    const counter = document.getElementById(`count-${status}`);
+                    if (counter) {
+                        const numericCount = parseInt(count, 10);
+                        if (isNaN(numericCount)) {
+                            logToPanel(`⚠️ Nieprawidłowa wartość dla statusu ${status}`, 'error');
+                            counter.textContent = '0';
+                            counter.classList.add('count-error');
+                            return;
+                        }
+                        
+                        counter.textContent = numericCount.toString();
+                        counter.classList.toggle('count-zero', numericCount === 0);
+                        counter.classList.remove('count-error');
+                    }
+                }
+            });
+
+            // Calculate total from numeric values
+            const total = Object.values(response.counts)
+                .map(count => parseInt(count, 10))
+                .filter(count => !isNaN(count))
+                .reduce((a, b) => a + b, 0);
+                
+            logToPanel(`📦 Znaleziono ${total} zamówień w wybranym sklepie`, 'success');
+        }
+
+        localStorage.setItem('last_fetch_time', now.toString());
+        refreshCount++;
+
+        const storeName = store === 'ALL' ? 'wszystkich sklepów' : `sklepu ${store}`;
+        logToPanel(`🔄 Zakończono pobieranie danych dla ${storeName}`, 'success');
+
+    } catch (error) {
+        handleError(error);
+        throw error;
+    }
+}
+
+// Dodaj funkcję inicjalizacji języka
+function initializeLanguageSwitcher() {
+    const languageSwitcher = document.getElementById('language-switcher');
+    if (!languageSwitcher) return;
+
+    const flags = languageSwitcher.querySelectorAll('.flag');
+    flags.forEach(flag => {
+        flag.addEventListener('click', async () => {
+            const lang = flag.getAttribute('data-lang');
+            if (!lang) return;
+
+            // Usuń aktywną klasę z wszystkich flag
+            flags.forEach(f => f.classList.remove('active'));
+            
+            // Dodaj aktywną klasę do wybranej flagi
+            flag.classList.add('active');
+            
+            // Zapisz wybrany język
+            localStorage.setItem('language', lang);
+            
+            try {
+                // Załaduj nowe tłumaczenia
+                await i18n.init();
+                
+                // Zaktualizuj interfejs
+                updateInterface(i18n.translations);
+                
+                logToPanel(`🌍 Zmieniono język na: ${lang}`, 'success');
+            } catch (error) {
+                logToPanel('❌ Błąd podczas zmiany języka', 'error');
+                console.error('Language switch error:', error);
+            }
+        });
+    });
+}
+
+// Dodaj funkcję inicjalizacji motywu
+function initializeThemeSwitcher() {
+    const lightTheme = document.getElementById('light-theme');
+    const darkTheme = document.getElementById('dark-theme');
+    
+    if (!lightTheme || !darkTheme) return;
+
+    // Ustaw początkowy stan
+    const currentTheme = localStorage.getItem('theme') || 'light';
+    document.body.classList.toggle('dark-theme', currentTheme === 'dark');
+    
+    if (currentTheme === 'dark') {
+        darkTheme.checked = true;
+    } else {
+        lightTheme.checked = true;
+    }
+
+    // Obsługa zmiany motywu
+    function handleThemeChange(theme) {
+        document.body.classList.toggle('dark-theme', theme === 'dark');
+        localStorage.setItem('theme', theme);
+        logToPanel(`🎨 Zmieniono motyw na: ${theme === 'dark' ? 'ciemny' : 'jasny'}`, 'success');
+    }
+
+    lightTheme.addEventListener('change', () => handleThemeChange('light'));
+    darkTheme.addEventListener('change', () => handleThemeChange('dark'));
+}
+
+// Modify the function that updates counters to use the loader
+function showLoader(counter) {
+    counter.innerHTML = `
+        <div class="loader-wrapper">
+            <div class="loader-circle"></div>
+            <div class="loader-circle"></div>
+            <div class="loader-circle"></div>
+            <div class="loader-shadow"></div>
+            <div class="loader-shadow"></div>
+            <div class="loader-shadow"></div>
+        </div>
+    `;
+}
+
+// Dodaj tę funkcję do initializeUIComponents
+function initializeTabs() {
+    const tabLinks = document.querySelectorAll('.nav-link');
+    const tabContents = document.querySelectorAll('.tab-pane');
+    
+    tabLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            
+            // Usuń aktywną klasę ze wszystkich tabów
+            tabLinks.forEach(tab => tab.classList.remove('active'));
+            tabContents.forEach(content => content.classList.remove('show', 'active'));
+            
+            // Dodaj aktywną klasę do wybranego taba
+            link.classList.add('active');
+            
+            // Pokaż odpowiednią zawartość
+            const targetId = link.getAttribute('data-target');
+            const targetContent = document.querySelector(targetId);
+            if (targetContent) {
+                targetContent.classList.add('show', 'active');
+            }
+            
+            // Zapisz aktywny tab
+            localStorage.setItem('activeTab', targetId);
+            
+            // Dostosuj wysokość okna
+            setTimeout(adjustWindowHeight, 50);
+        });
+    });
+
+    // Przywróć ostatnio wybrany tab
+    const lastActiveTab = localStorage.getItem('activeTab');
+    if (lastActiveTab) {
+        const tabToActivate = document.querySelector(`[data-target="${lastActiveTab}"]`);
+        if (tabToActivate) {
+            tabToActivate.click();
+        }
+    }
 }
 

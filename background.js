@@ -57,8 +57,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'FETCH_DARWINA_DATA') {
         (async () => {
             try {
+                const cacheKey = getCacheKey(message.selectedStore);
                 // Najpierw sprawdź cache
-                const cachedData = await CacheService.get(CACHE_KEY);
+                const cachedData = await CacheService.get(cacheKey);
                 if (cachedData) {
                     sendLogToPopup('📦 Zwracam dane z cache', 'info');
                     sendResponse(cachedData);
@@ -83,12 +84,10 @@ async function fetchDarwinaData(darwinaConfig, selectedStore) {
     let allOrders = [];
     
     // Definiujemy grupy statusów
-    const statusGroups = [
-        '1',            // Złożone
-        '2',            // Potwierdzone
-        '3',            // Przyjęte do realizacji
-        '5'             // Gotowe do odbioru
-    ];
+    const statusGroups = ['1', '2', '3', '5']; // Używamy stringów dla API
+
+    // Log the status groups we're fetching
+    sendLogToPopup('📋 Pobieranie danych dla statusów:', 'info', statusGroups);
 
     // Dla każdej grupy statusów wykonaj osobne zapytanie
     for (const statusGroup of statusGroups) {
@@ -146,10 +145,7 @@ async function fetchDarwinaData(darwinaConfig, selectedStore) {
 
             if (data.data && Array.isArray(data.data)) {
                 allOrders = [...allOrders, ...data.data];
-                sendLogToPopup(`✅ Pobrano stronę dla statusu ${statusGroup}`, 'success', {
-                    page: currentPage,
-                    ordersCount: data.data.length
-                });
+                sendLogToPopup(`📦 Pobrano dane (strona ${currentPage}/${totalPages})`, 'info');
             }
 
             currentPage++;
@@ -159,75 +155,102 @@ async function fetchDarwinaData(darwinaConfig, selectedStore) {
     // Przetwórz wszystkie zebrane zamówienia
     const statusCounts = processOrders(allOrders);
 
-    return {
+    const result = {
         success: true,
-        statusCounts,
+        counts: {
+            '1': statusCounts['1'] || 0,
+            '2': statusCounts['2'] || 0,
+            '3': statusCounts['3'] || 0,
+            'READY': statusCounts['READY'] || 0,
+            'OVERDUE': statusCounts['OVERDUE'] || 0
+        },
         totalOrders: allOrders.length,
         store: selectedStore || 'ALL'
     };
+
+    // Add debug logging for final result
+    sendLogToPopup('🔍 Końcowy wynik:', 'info', result);
+
+    return result;
 }
 
 // Funkcja do przetwarzania zamówień i liczenia statusów
 function processOrders(orders) {
     const twoWeeksAgo = new Date(Date.now() - 14 * 86400000);
+    const totalOrders = orders.length;
     
-    sendLogToPopup('🔍 Rozpoczynam analizę zamówień:', 'info', {
-        totalOrders: orders.length,
-        uniqueStatuses: [...new Set(orders.map(o => o.status_id))].sort(),
-        firstOrder: orders[0] // Zobaczmy pełne dane pierwszego zamówienia
-    });
+    sendLogToPopup(`📊 Rozpoczynam analizę ${totalOrders} zamówień`, 'info');
+    let processedCount = 0;
 
     const statusCounts = orders.reduce((acc, order) => {
-        const status = order.status_id;
-        // Używamy pola date z API
-        const orderDate = order.date ? new Date(order.date.replace(' ', 'T')) : null;
+        processedCount++;
+        if (processedCount % 10 === 0) {
+            sendLogToPopup(`🔄 Przetworzono ${processedCount}/${totalOrders} zamówień`, 'info');
+        }
 
-        if (!orderDate) {
-            sendLogToPopup('⚠️ Brak daty w zamówieniu:', 'warning', {
-                orderId: order.order_id,
-                date: order.date
-            });
+        const status = order.status_id;
+        
+        // Dla statusu READY (5) używamy ready_date lub status_change_date
+        const orderDate = status === '5' ? 
+            (order.ready_date || order.status_change_date) : 
+            order.date;
+            
+        const parsedDate = orderDate ? new Date(orderDate.replace(' ', 'T')) : null;
+
+        if (status === '5' && !parsedDate) {
+            sendLogToPopup(`⚠️ Brak daty dla zamówienia gotowego do odbioru ${order.id}`, 'warning');
             return acc;
         }
 
         if (status) {
             const parsedStatus = parseInt(status);
-            sendLogToPopup('📊 Przetwarzam zamówienie:', 'info', {
-                orderId: order.order_id,
-                orderNumber: order.order_number,
-                status: status,
-                statusName: order.status_name,
-                date: order.date,
-                parsedDate: orderDate.toISOString(),
-                isOlderThanTwoWeeks: orderDate < twoWeeksAgo
-            });
-
             switch (parsedStatus) {
-                case API_CONFIG.DARWINA.STATUS_CODES.SUBMITTED:
+                case 1: // SUBMITTED
                     acc['1'] = (acc['1'] || 0) + 1;
+                    sendLogToPopup(`📝 Zamówienie ${order.id} - status: Złożone`, 'debug');
                     break;
-                case API_CONFIG.DARWINA.STATUS_CODES.CONFIRMED:
+                case 2: // CONFIRMED
                     acc['2'] = (acc['2'] || 0) + 1;
+                    sendLogToPopup(`✓ Zamówienie ${order.id} - status: Potwierdzone`, 'debug');
                     break;
-                case API_CONFIG.DARWINA.STATUS_CODES.ACCEPTED_STORE:
+                case 3: // ACCEPTED_STORE
                     acc['3'] = (acc['3'] || 0) + 1;
+                    sendLogToPopup(`🏪 Zamówienie ${order.id} - status: Przyjęte`, 'debug');
                     break;
-                case API_CONFIG.DARWINA.STATUS_CODES.READY:
-                    if (orderDate < twoWeeksAgo) {
+                case 5: // READY
+                    if (parsedDate < twoWeeksAgo) {
                         acc['OVERDUE'] = (acc['OVERDUE'] || 0) + 1;
+                        sendLogToPopup(`⏳ Zamówienie ${order.id} oznaczone jako przeterminowane (data: ${orderDate})`, 'debug');
                     } else {
                         acc['READY'] = (acc['READY'] || 0) + 1;
+                        sendLogToPopup(`📦 Zamówienie ${order.id} - status: Gotowe do odbioru`, 'debug');
                     }
                     break;
                 default:
-                    sendLogToPopup('⚠️ Nieznany status', 'warning', { 
-                        status: status,
-                        statusName: order.status_name 
-                    });
+                    sendLogToPopup(`⚠️ Nieznany status ${parsedStatus} dla zamówienia ${order.id}`, 'warning');
             }
         }
         return acc;
     }, {});
+
+    // Log końcowych wyników
+    const results = {
+        '1': statusCounts['1'] || 0,
+        '2': statusCounts['2'] || 0,
+        '3': statusCounts['3'] || 0,
+        'READY': statusCounts['READY'] || 0,
+        'OVERDUE': statusCounts['OVERDUE'] || 0
+    };
+
+    // Add debug logging for each status
+    sendLogToPopup('🔍 Debug statusów:', 'info', {
+        rawCounts: statusCounts,
+        processedCounts: results,
+        totalOrders: totalOrders
+    });
+
+    sendLogToPopup(`📊 Podsumowanie statusów:`, 'info', results);
+    sendLogToPopup(`✅ Zakończono analizę wszystkich ${totalOrders} zamówień`, 'success');
 
     return statusCounts;
 }

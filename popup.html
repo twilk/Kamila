@@ -55,26 +55,34 @@
             </div>
 
             <div class="col-10">
-                <ul class="nav nav-tabs">
-                    <li class="nav-item">
-                        <button class="nav-link active" data-target="#chat" data-i18n="chat">Chat</button>
+                <ul class="nav nav-tabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" data-target="#chat" type="button" role="tab">
+                            <span data-i18n="chat">Chat</span>
+                        </button>
                     </li>
-                    <li class="nav-item">
-                        <button class="nav-link" data-target="#settings" data-i18n="settings">Ustawienia</button>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" data-target="#settings" type="button" role="tab">
+                            <span data-i18n="settings">Ustawienia</span>
+                        </button>
                     </li>
-                    <li class="nav-item">
-                        <button class="nav-link" data-target="#about" data-i18n="about">About</button>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" data-target="#about" type="button" role="tab">
+                            <span data-i18n="about">O aplikacji</span>
+                        </button>
                     </li>
-                    <li class="nav-item">
-                        <button class="nav-link" data-target="#status" data-i18n="status">Status</button>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" data-target="#status" type="button" role="tab">
+                            <span data-i18n="status">Status</span>
+                        </button>
                     </li>
                 </ul>
 
                 <div class="tab-content">
-                    <div class="tab-pane active show" id="chat">
+                    <div class="tab-pane fade show active" id="chat" role="tabpanel">
                         <label for="query" data-i18n="queryLabel">Twoje zapytanie:</label>
                         <input type="text" id="query" class="form-control" data-i18n-placeholder="queryPlaceholder" placeholder="Wpisz swoje pytanie...">
-                        <button id="send" class="btn btn-primary mt-2" data-i18n="send">Wyślij</button>
+                        <button id="send" class="btn btn-primary mt-2" data-i18n="send" disabled>Wyślij</button>
                         
                         <!-- Komunikaty błędów i ładowania -->
                         <div class="messages mt-3">
@@ -86,7 +94,7 @@
                         <div id="response" class="mt-3"></div>
                     </div>
 
-                    <div class="tab-pane" id="settings">
+                    <div class="tab-pane fade" id="settings" role="tabpanel">
                         <h5 data-i18n="settings">Ustawienia</h5>
                         
                         <!-- Motyw -->
@@ -112,25 +120,25 @@
                         </div>
                         
                         <!-- Tło -->
-                        <div class="settings-section">
+                        <div class="settings-section d-none">
                             <h6 data-i18n="background">Tło</h6>
                             <div class="wallpaper-controls">
-                                <div class="wallpaper-input-group">
-                                    <label class="btn btn-outline-primary btn-sm mb-2 w-100" for="wallpaper-upload">
-                                        <i class="fas fa-image"></i> <span data-i18n="chooseWallpaper">Wybierz plik</span>
+                                <div class="wallpaper-input-group disabled">
+                                    <input type="file" id="wallpaper-input" accept="image/*" disabled>
+                                    <label for="wallpaper-input" class="btn btn-secondary" data-i18n="addCustomWallpaper" disabled>
+                                        Dodaj własną tapetę
                                     </label>
-                                    <input type="file" id="wallpaper-upload" accept="image/*" class="d-none">
                                 </div>
                                 <div class="wallpaper-actions">
-                                    <button id="remove-wallpaper" class="btn btn-outline-danger btn-sm w-100">
-                                        <i class="fas fa-trash-alt"></i> <span data-i18n="removeWallpaper">Usuń tło</span>
+                                    <button id="remove-wallpaper" class="btn btn-danger" data-i18n="removeWallpaper" disabled>
+                                        Usuń tło
                                     </button>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="tab-pane" id="about">
+                    <div class="tab-pane fade" id="about" role="tabpanel">
                         <h5 data-i18n="about">O aplikacji</h5>
                         <p data-i18n="creator">Twórca: Tomasz Wilk</p>
                         <p data-i18n="purpose">Cel: Automatyzacja procesów obsługi klienta i zarządzania zamówieniami w DARWINA.PL</p>
@@ -142,7 +150,7 @@
                         <div id="instructions" class="mt-3 d-none"></div>
                     </div>
 
-                    <div class="tab-pane" id="status">
+                    <div class="tab-pane fade" id="status" role="tabpanel">
                         <div class="p-3">
                             <h5 data-i18n="serviceStatus">Status usług</h5>
                             <div class="services-status">
@@ -250,9 +258,9 @@
     </div>
 
     <div class="debug-panel">
-        <div class="debug-header">
+        <div class="debug-header d-flex justify-content-between align-items-center">
             <span data-i18n="debugPanelTitle">Panel debugowania</span>
-            <button id="clear-logs" class="btn btn-sm btn-outline-secondary" data-i18n="debugPanelClear">Wyczyść</button>
+            <button id="clear-logs" class="btn btn-sm btn-outline-secondary" data-i18n="clear">Wyczyść</button>
         </div>
         <div id="debug-logs" class="debug-content">
             <div class="log-entry log-empty" data-i18n="debugPanelEmpty">Brak logów</div>

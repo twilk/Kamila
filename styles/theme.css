@@ -1,0 +1,85 @@
+:root {
+  /* Kolory podstawowe */
+  --wine-primary: #722F37;     /* Bordowy jak wino */
+  --wine-secondary: #A4343A;   /* Ciemniejszy czerwony */
+  --wine-accent: #D4AF37;      /* Złoty akcent */
+  
+  /* Tło i tekst */
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F8F9FA;
+  --text-primary: #1A1A1A;
+  --text-secondary: #666666;
+  
+  /* Karty statusów */
+  --status-border: #E4E7EC;
+  --status-hover: #F5F7FA;
+  --status-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+[data-theme='dark'] {
+  --bg-primary: #1E2028;
+  --bg-secondary: #2E323C;
+  --text-primary: #FFFFFF;
+  --text-secondary: #A0A0A0;
+  --status-border: #3E4251;
+  --status-hover: #2A2D36;
+}
+
+/* Karty statusów */
+.lead-status {
+  background: var(--bg-primary);
+  border: 1px solid var(--status-border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 0.5rem;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.lead-status:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--status-shadow);
+  border-color: var(--wine-accent);
+}
+
+/* Liczniki */
+.lead-count {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--wine-primary);
+}
+
+/* Select sklepu */
+.store-selector select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--status-border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: all 0.3s;
+}
+
+.store-selector select:hover {
+  border-color: var(--wine-accent);
+}
+
+/* Przyciski */
+.btn-primary {
+  background: var(--wine-primary);
+  border-color: var(--wine-primary);
+}
+
+.btn-primary:hover {
+  background: var(--wine-secondary);
+  border-color: var(--wine-secondary);
+}
+
+@keyframes refresh-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.refreshing {
+    animation: refresh-spin 1s linear infinite;
+} 
