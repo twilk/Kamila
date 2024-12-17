@@ -1,16 +1,26 @@
 import { API_BASE_URL, API_CONFIG, getDarwinaCredentials, sendLogToPopup } from '../config/api.js';
 
 export async function checkStatus() {
-    const darwinaConfig = await getDarwinaCredentials();
-    const response = await fetch(`${darwinaConfig.DARWINA_API_BASE_URL}/status`, {
-        headers: {
-            'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`
+    try {
+        const darwinaConfig = await getDarwinaCredentials();
+        const response = await fetch(`${darwinaConfig.DARWINA_API_BASE_URL}/status`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`API Error: ${response.status}`);
         }
-    });
-    if (!response.ok) {
-        throw new Error('Failed to check status');
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Status check failed:', error);
+        return { status: 'error', message: error.message };
     }
-    return await response.json();
 }
 
 export class APIService {
@@ -33,11 +43,11 @@ export class APIService {
     async getOrderStatuses(selectedStore = 'ALL') {
         try {
             await this.init();
-
+            
             const now = new Date();
             const yesterday = new Date(now - 24 * 60 * 60 * 1000);
             
-            const cacheKey = `orders_${selectedStore}`;
+            const cacheKey = `darwina_orders_data_${selectedStore}`;
             const cachedData = await CacheService.get(cacheKey);
             if (cachedData) {
                 sendLogToPopup('📦 Użyto danych z cache', 'info');
@@ -95,15 +105,9 @@ export class APIService {
             }
 
             sendLogToPopup(`📊 Łącznie pobrano ${allOrders.length} zamówień`, 'info');
-            // Zlicz statusy
-            const statusCounts = allOrders.reduce((acc, order) => {
-                if (selectedStore === 'ALL' || order.delivery_name?.startsWith(selectedStore)) {
-                    const statusId = order.status_id.toString();
-                    acc[statusId] = (acc[statusId] || 0) + 1;
-                }
-                return acc;
-            }, {});
-
+            // Używamy jednej wspólnej funkcji do przetwarzania statusów
+            const statusCounts = this.processOrderStatuses(allOrders, selectedStore);
+            
             const result = { success: true, statusCounts };
             await CacheService.set(cacheKey, result);
             sendLogToPopup('✅ Dane zapisane w cache', 'success');
@@ -114,6 +118,28 @@ export class APIService {
             return { success: false, error: error.message };
         }
     }
+
+    processOrderStatuses(orders, selectedStore) {
+        return orders.reduce((acc, order) => {
+            if (selectedStore === 'ALL' || order.delivery_name?.startsWith(selectedStore)) {
+                if (order.status_id === '5') {
+                    const twoWeeksAgo = new Date();
+                    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+                    const orderDate = new Date(order.ready_date || order.status_change_date);
+                    
+                    if (orderDate >= twoWeeksAgo) {
+                        acc['READY'] = (acc['READY'] || 0) + 1;
+                    } else {
+                        acc['OVERDUE'] = (acc['OVERDUE'] || 0) + 1;
+                    }
+                } else {
+                    const statusId = order.status_id.toString();
+                    acc[statusId] = (acc[statusId] || 0) + 1;
+                }
+            }
+            return acc;
+        }, {});
+    }
 }
 
 export const API = new APIService(); 
@@ -121,9 +147,18 @@ export const API = new APIService();
 // Funkcje sprawdzające status
 export async function checkApiStatus() {
     try {
-        const response = await fetch(`${API_BASE_URL}/health`);
+        const darwinaConfig = await getDarwinaCredentials();
+        const response = await fetch(`${darwinaConfig.DARWINA_API_BASE_URL}/status`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            }
+        });
         return response.ok;
-    } catch {
+    } catch (error) {
+        console.error('API status check failed:', error);
         return false;
     }
 }
@@ -139,9 +174,17 @@ export async function checkAuthStatus() {
 
 export async function checkOrdersStatus() {
     try {
-        const response = await fetch(`${API_BASE_URL}/orders?limit=1`);
+        const darwinaConfig = await getDarwinaCredentials();
+        const response = await fetch(`${darwinaConfig.DARWINA_API_BASE_URL}/orders?limit=1`, {
+            headers: {
+                'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            }
+        });
         return response.ok;
-    } catch {
+    } catch (error) {
+        console.error('Orders status check failed:', error);
         return false;
     }
 }

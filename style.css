@@ -941,8 +941,8 @@ body.debug-enabled {
 
 .input {
     min-height: 50px;
-    width: 100%;
-    max-width: 600px; /* Zwiększamy max-width dla lepszej użyteczności */
+    width: 80%;
+    max-width: 500px; /* Zwiększamy max-width dla lepszej użyteczności */
     padding: 0 1rem;
     color: var(--light-text);
     font-size: 15px;
