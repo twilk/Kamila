@@ -29,28 +29,29 @@ export class UserCardService {
         }
     }
 
-    static async saveUserFile(userData) {
+    static async saveUserFile(data, filename) {
         try {
-            const fileName = `${userData.firstName}-${userData.memberId}.json`;
-            const fileContent = JSON.stringify({
-                ...userData,
-                exportDate: new Date().toISOString()
-            }, null, 2);
+            if (typeof window === 'undefined' || !window.Blob) {
+                throw new Error('Brak wsparcia dla Blob API');
+            }
 
-            const blob = new Blob([fileContent], { type: 'application/json' });
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
             
-            const url = URL.createObjectURL(blob);
-
-            await chrome.downloads.download({
-                url: url,
-                filename: `users/${fileName}`,
-                saveAs: false,
-                conflictAction: 'overwrite'
-            });
-
-            URL.revokeObjectURL(url);
+            const url = window.URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            window.URL.revokeObjectURL(url);
+            
+            return true;
         } catch (error) {
             console.error('Error saving user file:', error);
+            return false;
         }
     }
 

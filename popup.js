@@ -21,6 +21,15 @@ let tooltipList = [];
 const REFRESH_INTERVAL = 60000;
 let refreshCount = 0;
 
+// Przenieś STATUS_MAP na początek pliku jako stałą
+export const STATUS_MAP = {
+    'submitted': { id: '1', darwinaId: '1', icon: '📤', label: 'Złożone' },
+    'confirmed': { id: '2', darwinaId: '2', icon: '✅', label: 'Potwierdzone' },
+    'accepted': { id: '3', darwinaId: '3', icon: '📦', label: 'Przyjęte' },
+    'ready': { id: 'READY', darwinaId: '5', icon: '📬', label: 'Gotowe' },
+    'overdue': { id: 'OVERDUE', darwinaId: '5', icon: '⏳', label: 'Przeterminowane' }
+};
+
 // Funkcja logowania
 function logToPanel(message, type = 'info', data = null) {
     // Formatuj timestamp w formacie [HH:MM:SS]
@@ -57,19 +66,18 @@ function logToPanel(message, type = 'info', data = null) {
     
     // Log do panelu debugowego
     const debugLogs = document.getElementById('debug-logs');
-    if (debugLogs) {
-        // Usuń komunikat o braku logów jeśli istnieje
-        const emptyLog = debugLogs.querySelector('.log-entry.log-empty');
-        if (emptyLog) {
-            emptyLog.remove();
-        }
+    if (!debugLogs) return;
 
-        const logEntry = document.createElement('div');
-        logEntry.className = `log-entry log-${type}`;
-        logEntry.innerHTML = `[${timestamp}] ${logMessage}`;
-        debugLogs.appendChild(logEntry);
-        debugLogs.scrollTop = debugLogs.scrollHeight;
+    const emptyLog = debugLogs.querySelector('.log-entry.log-empty');
+    if (emptyLog) {
+        emptyLog.remove();
     }
+
+    const logEntry = document.createElement('div');
+    logEntry.className = `log-entry log-${type}`;
+    logEntry.innerHTML = `[${timestamp}] ${logMessage}`;
+    debugLogs.appendChild(logEntry);
+    debugLogs.scrollTop = debugLogs.scrollHeight;
 }
 
 // Dodaj obsługę logów z background.js
@@ -225,11 +233,14 @@ async function initializeUIComponents() {
         if (debugSwitch) {
             debugSwitch.checked = false;
         }
-        await chrome.storage.local.set({ debugMode: false });
+        await chrome.storage.local.set({ debugMode: false }).catch(error => {
+            console.error('Error setting debug mode:', error);
+            logToPanel('❌ Błąd ustawiania trybu debug', 'error', error);
+        });
 
     } catch (error) {
         console.error('Error initializing UI components:', error);
-        logToPanel('❌ Błąd podczas inicjalizacji komponentów UI', 'error', error);
+        logToPanel('❌ Błąd inicjalizacji komponentów UI', 'error', error);
     }
 }
 
@@ -531,11 +542,11 @@ function updateInterface(translations) {
     }
 
     // Aktualizacja tooltipów po zmianie języka
-    initTooltips();
+    initializeTooltips();
 }
 
 // Inicjalizacja tooltipów
-function initTooltips() {
+function initializeTooltips() {
     try {
         if (typeof bootstrap === 'undefined') {
             throw new Error('Bootstrap nie jest załadowany');
@@ -550,23 +561,30 @@ function initTooltips() {
                     // Ignoruj błędy przy usuwaniu tooltipów
                 }
             });
+            tooltipList = [];
         }
-        
-        // Inicjalizuj nowe
-        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-        tooltipList = [...tooltipTriggerList].map(el => {
-            try {
-                return new bootstrap.Tooltip(el, {
-                    animation: true,
-                    delay: { show: 100, hide: 100 },
-                    placement: 'auto',
-                    trigger: 'hover focus'
-                });
-            } catch (e) {
-                logToPanel('❌ Błąd inicjalizacji tooltipa', 'error', e);
-                return null;
+
+        // Zaktualizuj teksty tooltipów przed inicjalizacją
+        const statusElements = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        statusElements.forEach((el, index) => {
+            const statusKeys = ['submitted', 'confirmed', 'accepted', 'ready', 'overdue'];
+            const key = statusKeys[index];
+            if (key && i18n.translations?.leadStatuses?.[key]) {
+                el.setAttribute('title', i18n.translate(`leadStatuses.${key}`));
             }
-        }).filter(Boolean);
+        });
+
+        // Inicjalizuj nowe tooltips
+        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => 
+            new bootstrap.Tooltip(tooltipTriggerEl, {
+                animation: true,
+                delay: { show: 100, hide: 100 },
+                boundary: document.body,
+                placement: 'right',
+                trigger: 'hover focus'
+            })
+        );
     } catch (error) {
         logToPanel('❌ Błąd inicjalizacji tooltipów', 'error', error);
     }
@@ -723,15 +741,12 @@ function createOrderElement(order) {
 }
 
 // Dodaj funkcję handleError
-function handleError(error) {
-    console.error('Error:', error); // Zachowujemy szczegółowy log w konsoli
-
-    // Dla użytkownika pokazujemy uproszczoną wersję
-    logToPanel('❌ Wystąpił błąd podczas pobierania danych', 'error');
+function handleError(error, type = 'error') {
+    console.error(`[${type}]`, error);
+    logToPanel(`❌ ${error.message}`, type, error);
     
-    // Oznacz liczniki jako niedostępne
     document.querySelectorAll('.lead-count').forEach(counter => {
-        counter.textContent = '-';
+        counter.textContent = '0';
         counter.classList.add('count-error');
     });
 }
@@ -859,38 +874,30 @@ async function fetchDarwinaData() {
             
             // Update counters with actual values
             Object.entries(response.counts).forEach(([status, count]) => {
-                // Handle special case for READY and OVERDUE statuses
-                if (status === 'READY' || status === 'OVERDUE') {
-                    const targetStatus = status.toLowerCase();
-                    const counter = document.getElementById(`count-${targetStatus}`);
-                    if (counter) {
-                        const numericCount = parseInt(count, 10);
-                        if (isNaN(numericCount)) {
-                            logToPanel(`⚠️ Nieprawidłowa wartość dla statusu ${targetStatus}`, 'error');
-                            counter.textContent = '0';
-                            counter.classList.add('count-error');
-                            return;
-                        }
-                        
-                        counter.textContent = numericCount.toString();
-                        counter.classList.toggle('count-zero', numericCount === 0);
-                        counter.classList.remove('count-error');
+                const statusEntry = Object.entries(STATUS_MAP).find(([_, config]) => 
+                    config.darwinaId === status || config.id === status
+                );
+                
+                if (!statusEntry) {
+                    console.warn(`Nieznany status: ${status}`);
+                    return;
+                }
+                
+                const [statusKey, config] = statusEntry;
+                const counter = document.getElementById(`count-${config.id}`);
+
+                if (counter) {
+                    const numericCount = parseInt(count, 10);
+                    if (isNaN(numericCount)) {
+                        logToPanel(`⚠️ Nieprawidłowa wartość dla statusu ${statusKey}`, 'error');
+                        counter.textContent = '0';
+                        counter.classList.add('count-error');
+                        return;
                     }
-                } else {
-                    const counter = document.getElementById(`count-${status}`);
-                    if (counter) {
-                        const numericCount = parseInt(count, 10);
-                        if (isNaN(numericCount)) {
-                            logToPanel(`⚠️ Nieprawidłowa wartość dla statusu ${status}`, 'error');
-                            counter.textContent = '0';
-                            counter.classList.add('count-error');
-                            return;
-                        }
-                        
-                        counter.textContent = numericCount.toString();
-                        counter.classList.toggle('count-zero', numericCount === 0);
-                        counter.classList.remove('count-error');
-                    }
+                    
+                    counter.textContent = numericCount.toString();
+                    counter.classList.toggle('count-zero', numericCount === 0);
+                    counter.classList.remove('count-error');
                 }
             });
 
@@ -1024,7 +1031,7 @@ function initializeTabs() {
             // Dodaj aktywną klasę do wybranego taba
             link.classList.add('active');
             
-            // Pokaż odpowiednią zawartość
+            // Pokaż odpowiedni zawartość
             const targetId = link.getAttribute('data-target');
             const targetContent = document.querySelector(targetId);
             if (targetContent) {
@@ -1056,13 +1063,13 @@ function initializeStatusButtons() {
 
     if (runTestsBtn) {
         runTestsBtn.addEventListener('click', async () => {
-            await updateAllStatuses(true); // true = pełne testy
+            await updateAllStatuses(true);
         });
     }
 
     if (refreshStatusBtn) {
         refreshStatusBtn.addEventListener('click', async () => {
-            await updateAllStatuses(false); // false = szybkie sprawdzenie
+            await updateAllStatuses(false);
         });
     }
 }
@@ -1185,13 +1192,25 @@ async function loadLeadCounts() {
     try {
         const { leadCounts } = await chrome.storage.local.get('leadCounts');
         if (leadCounts) {
-            // Aktualizuj UI bez powiadomień
             for (const [status, count] of Object.entries(leadCounts)) {
-                const countElement = document.getElementById(`count-${status}`);
+                // Znajdź odpowiedni element licznika na podstawie statusu
+                const statusEntry = Object.entries(STATUS_MAP).find(([_, config]) => 
+                    config.darwinaId === status || config.id === status
+                );
+                
+                if (!statusEntry) {
+                    console.warn(`Nieznany status: ${status}`);
+                    continue;
+                }
+                
+                const [statusKey, config] = statusEntry;
+                const countElement = document.getElementById(`count-${config.id}`);
+
                 if (countElement) {
                     countElement.textContent = count;
-                    // Dodaj/usuń klasę count-zero w zależności od wartości
                     countElement.classList.toggle('count-zero', count === 0);
+                    // Dodaj tooltip z etykietą
+                    countElement.parentElement.setAttribute('title', `${config.label}: ${count}`);
                 }
             }
         }
@@ -1227,34 +1246,6 @@ function initializeDebugSwitch() {
             logToPanel(i18n.translate('debugDisabled'), 'info');
         }
     });
-}
-
-// Funkcja inicjalizująca tooltips
-function initializeTooltips() {
-    // Usuń stare tooltips
-    if (tooltipList.length > 0) {
-        tooltipList.forEach(tooltip => tooltip.dispose());
-        tooltipList = [];
-    }
-
-    // Zaktualizuj teksty tooltipów przed inicjalizacją
-    const statusElements = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-    statusElements.forEach((el, index) => {
-        const statusKeys = ['submitted', 'confirmed', 'accepted', 'ready', 'overdue'];
-        const key = statusKeys[index];
-        if (key && i18n.translations?.leadStatuses?.[key]) {
-            el.setAttribute('title', i18n.translate(`leadStatuses.${key}`));
-        }
-    });
-
-    // Zainicjuj nowe tooltips
-    const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-    tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => 
-        new bootstrap.Tooltip(tooltipTriggerEl, {
-            boundary: document.body,
-            placement: 'right'
-        })
-    );
 }
 
 // Funkcja sprawdzająca dostęp do debug mode
@@ -1342,36 +1333,20 @@ function generateOrdersUrl(status, storeId) {
 
 // Dodaj obsługę kliknięcia dla wszystkich lead-status
 function initializeLeadStatusLinks() {
-    const statusMap = {
-        '1': 'submitted',
-        '2': 'confirmed',
-        '3': 'accepted',
-        'READY': 'ready',
-        'OVERDUE': 'overdue'
-    };
-
-    // Dodaj obsługę dla wszystkich statusów
     document.querySelectorAll('.lead-status').forEach(statusElement => {
         const dataStatus = statusElement.getAttribute('data-status');
-        const status = statusMap[dataStatus];
+        const statusEntry = Object.entries(STATUS_MAP).find(([_, config]) => config.id === dataStatus);
+        const status = statusEntry ? statusEntry[0] : null;
         
         if (status) {
             statusElement.style.cursor = 'pointer';
+            statusElement.setAttribute('title', STATUS_MAP[status].label);
+            
             statusElement.addEventListener('click', () => {
-                // Pobierz aktualnie wybrany sklep
                 const storeSelect = document.getElementById('store-select');
                 const selectedStore = storeSelect?.value;
-                
-                // Logowanie dla debugowania
-                console.log('Selected store:', selectedStore);
-                console.log('Store ID:', getStoreId(selectedStore));
-                
                 const selectedStoreId = selectedStore === 'ALL' ? '0' : getStoreId(selectedStore);
-                
-                // Logowanie wygenerowanego URL
                 const url = generateOrdersUrl(status, selectedStoreId);
-                console.log('Generated URL:', url);
-                
                 window.open(url, '_blank');
             });
         }
