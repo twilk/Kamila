@@ -1,0 +1,42 @@
+@import 'animations.css';
+
+:root {
+    --primary: #495057;
+    --secondary: #6c757d;
+}
+
+body {
+    @extend .theme-transition;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+.custom-theme-panel {
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform;
+}
+
+.custom-theme-panel.show {
+    transform: translateX(0);
+}
+
+.theme-panel-overlay {
+    opacity: 0;
+    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: opacity;
+    visibility: hidden;
+}
+
+.theme-panel-overlay.show {
+    opacity: 0.5;
+    visibility: visible;
+}
+
+button:focus,
+input:focus,
+select:focus {
+    @extend .focus-ring;
+    outline: none;
+    box-shadow: 0 0 0 2px var(--primary);
+}

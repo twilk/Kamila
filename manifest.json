@@ -1,64 +1,49 @@
 {
     "manifest_version": 3,
-    "name": "Kamila",
-    "version": "1.0.0",
-    "description": "Inteligentny asystent dla pracowników DARWINA.PL",
+    "name": "KAMILA",
+    "version": "1.2.0",
+    "description": "Intelligent Assistant for DARWINA.PL",
     "permissions": [
         "storage",
         "tabs",
-        "windows",
-        "webRequest",
-        "webRequestBlocking",
-        "notifications",
-        "downloads",
-        "scripting",
-        "alarms"
+        "webRequest"
     ],
     "host_permissions": [
-        "https://darwina.pl/*",
-        "https://*.darwina.pl/*",
-        "https://darwina.weblucy.com/*"
+        "https://api.darwina.pl/*"
     ],
     "action": {
-        "default_popup": "popup.html"
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+        }
     },
-    "icons": {
-        "16": "icon16.png",
-        "48": "icon48.png",
-        "128": "icon128.png"
-    },
+    "content_scripts": [
+        {
+            "matches": ["https://*.darwina.pl/*"],
+            "css": [
+                "styles/theme.css",
+                "styles/animations.css",
+                "styles/style.css"
+            ],
+            "js": ["content.js"]
+        }
+    ],
     "background": {
         "service_worker": "background.js",
         "type": "module"
     },
-    "content_security_policy": {
-        "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://darwina.pl https://*.darwina.pl;"
-    },
-    "content_scripts": [{
-        "matches": [
-            "<all_urls>",
-            "https://darwina.weblucy.com/raporty*"
-        ],
-        "js": [
-            "content_scripts/userDataCollector.js"
-        ],
-        "type": "module"
-    }],
     "web_accessible_resources": [{
         "resources": [
-            "wallpapers/custom/*",
-            "assets/*",
-            "users/*.json"
+            "styles/*.css",
+            "locales/*.json"
         ],
-        "matches": ["<all_urls>"]
-    },
-    {
-        "resources": [
-            "config/credentials.json",
-            "config/delivery.js",
-            "config/stores.js",
-            "config/api.js"
-        ],
-        "matches": ["<all_urls>"]
-    }]
+        "matches": ["https://*.darwina.pl/*"]
+    }],
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    }
 }

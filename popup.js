@@ -206,7 +206,7 @@ async function initializeUIComponents() {
         initializeLanguageSwitcher();
         
         // Inicjalizacja przełącznika motywu
-        initializeThemeSwitcher();
+        initializeTheme();
 
         // Inicjalizacja selektora użytkowników
         await initializeUserSelector();
@@ -722,7 +722,7 @@ function createOrderElement(order) {
     return orderDiv;
 }
 
-// Dodaj funkcję handleError
+// Dodaj funkcj handleError
 function handleError(error) {
     console.error('Error:', error); // Zachowujemy szczegółowy log w konsoli
 
@@ -954,7 +954,7 @@ function initializeLanguageSwitcher() {
                 // Odśwież tooltips
                 initializeTooltips();
                 
-                logToPanel(`🌍 Zmieniono język na: ${lang}`, 'success');
+                logToPanel(`�� Zmieniono język na: ${lang}`, 'success');
             } catch (error) {
                 logToPanel('❌ Błąd podczas zmiany języka', 'error');
                 console.error('Language switch error:', error);
@@ -967,31 +967,105 @@ function initializeLanguageSwitcher() {
 }
 
 // Dodaj funkcję inicjalizacji motywu
-function initializeThemeSwitcher() {
-    const lightTheme = document.getElementById('light-theme');
-    const darkTheme = document.getElementById('dark-theme');
+function initializeTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    const themeRadios = document.querySelectorAll('input[name="theme"]');
+    const editBtn = document.getElementById('edit-theme');
+    const panel = document.querySelector('.custom-theme-panel');
+    const overlay = document.getElementById('theme-panel-overlay');
+    const primaryColor = document.getElementById('primary-color');
+    const secondaryColor = document.getElementById('secondary-color');
+    const resetBtn = document.getElementById('reset-theme');
+    const saveBtn = document.getElementById('save-theme');
     
-    if (!lightTheme || !darkTheme) return;
-
-    // Ustaw początkowy stan
-    const currentTheme = localStorage.getItem('theme') || 'light';
-    document.body.classList.toggle('dark-theme', currentTheme === 'dark');
+    // Load saved colors
+    const savedColors = JSON.parse(localStorage.getItem('customColors') || '{}');
+    if (primaryColor) primaryColor.value = savedColors.primary || '#495057';
+    if (secondaryColor) secondaryColor.value = savedColors.secondary || '#6c757d';
     
-    if (currentTheme === 'dark') {
-        darkTheme.checked = true;
-    } else {
-        lightTheme.checked = true;
+    // Apply custom colors if theme is custom
+    if (savedTheme === 'custom' && savedColors) {
+        document.documentElement.style.setProperty('--primary', savedColors.primary || '#495057');
+        document.documentElement.style.setProperty('--secondary', savedColors.secondary || '#6c757d');
     }
-
-    // Obsługa zmiany motywu
-    function handleThemeChange(theme) {
-        document.body.classList.toggle('dark-theme', theme === 'dark');
-        localStorage.setItem('theme', theme);
-        logToPanel(`🎨 Zmieniono motyw na: ${theme === 'dark' ? 'ciemny' : 'jasny'}`, 'success');
+    
+    // Save colors
+    function saveColors() {
+        const colors = {
+            primary: primaryColor.value,
+            secondary: secondaryColor.value
+        };
+        localStorage.setItem('customColors', JSON.stringify(colors));
+        document.documentElement.style.setProperty('--primary', colors.primary);
+        document.documentElement.style.setProperty('--secondary', colors.secondary);
+        logToPanel(i18n.translate('customTheme.saved'), 'success');
+        togglePanel();
     }
-
-    lightTheme.addEventListener('change', () => handleThemeChange('light'));
-    darkTheme.addEventListener('change', () => handleThemeChange('dark'));
+    
+    // Reset colors
+    function resetColors() {
+        primaryColor.value = '#495057';
+        secondaryColor.value = '#6c757d';
+        saveColors();
+        logToPanel(i18n.translate('customTheme.reset'), 'info');
+    }
+    
+    // Event listeners for color controls
+    if (saveBtn) saveBtn.addEventListener('click', saveColors);
+    if (resetBtn) resetBtn.addEventListener('click', resetColors);
+    
+    // Ustaw zapisany motyw
+    toggleTheme(savedTheme);
+    
+    // Zaznacz odpowiedni radio button
+    themeRadios.forEach(radio => {
+        if (radio.value === savedTheme) {
+            radio.checked = true;
+        }
+        
+        // Dodaj event listener
+        radio.addEventListener('change', (e) => {
+            toggleTheme(e.target.value);
+            // Update edit button visibility
+            if (editBtn) {
+                editBtn.classList.toggle('visible', e.target.value === 'custom');
+            }
+        });
+    });
+    
+    // Panel functionality
+    if (editBtn && panel && overlay) {
+        // Toggle panel
+        function togglePanel() {
+            panel.classList.toggle('show');
+            overlay.classList.toggle('show');
+            
+            // Focus management
+            if (panel.classList.contains('show')) {
+                panel.addEventListener('keydown', handleFocusTrap);
+                // Focus first input
+                const firstInput = panel.querySelector('input, button');
+                if (firstInput) firstInput.focus();
+            } else {
+                panel.removeEventListener('keydown', handleFocusTrap);
+                // Return focus to edit button
+                editBtn.focus();
+            }
+        }
+        
+        // Event listeners
+        editBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            togglePanel();
+        });
+        
+        overlay.addEventListener('click', togglePanel);
+    }
+    
+    // Set initial edit button state
+    if (editBtn) {
+        editBtn.classList.toggle('visible', savedTheme === 'custom');
+    }
 }
 
 // Modify the function that updates counters to use the loader
@@ -1382,5 +1456,29 @@ function initializeLeadStatusLinks() {
 function getStoreId(storeCode) {
     const store = stores.find(s => s.id === storeCode);
     return store ? store.deliveryId.toString() : '0';
+}
+
+function toggleTheme(theme) {
+    document.body.classList.remove('light-theme', 'dark-theme');
+    document.body.classList.add(`${theme}-theme`);
+    localStorage.setItem('theme', theme);
+    logToPanel(`🎨 Zmieniono motyw na: ${theme}`, 'info');
+}
+
+// Add focus trap
+function handleFocusTrap(e) {
+    if (e.key === 'Tab') {
+        const focusableElements = panel.querySelectorAll('button, input, select, textarea');
+        const firstFocusable = focusableElements[0];
+        const lastFocusable = focusableElements[focusableElements.length - 1];
+        
+        if (e.shiftKey && document.activeElement === firstFocusable) {
+            e.preventDefault();
+            lastFocusable.focus();
+        } else if (!e.shiftKey && document.activeElement === lastFocusable) {
+            e.preventDefault();
+            firstFocusable.focus();
+        }
+    }
 }
 

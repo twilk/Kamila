@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title data-i18n="appTitle">Kamila</title>
     <link href="lib/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="styles/style.css">
+    <link rel="stylesheet" href="styles/theme.css">
+    <link rel="stylesheet" href="styles/animations.css">
     <style>
         html {
             border-radius: 12px;
@@ -125,14 +127,50 @@
                         
                         <!-- Motyw -->
                         <div class="settings-section">
-                            <h6 data-i18n="theme">Motyw</h6>
+                            <h6 data-i18n="theme" id="theme-section-title">Motyw</h6>
+                            <div role="radiogroup" 
+                                 aria-labelledby="theme-section-title"
+                                 class="theme-options">
                             <div>
-                                <input type="radio" id="light-theme" name="theme" value="light" checked>
+                                    <input type="radio" 
+                                           class="form-check-input" 
+                                           id="light-theme" 
+                                           name="theme" 
+                                           value="light"
+                                           aria-describedby="light-theme-desc">
                                 <label for="light-theme" data-i18n="light">Jasny</label>
+                                    <span id="light-theme-desc" class="visually-hidden">
+                                        Jasny motyw z jasnymi kolorami tła i ciemnym tekstem
+                                    </span>
                             </div>
                             <div>
-                                <input type="radio" id="dark-theme" name="theme" value="dark">
+                                    <input type="radio" 
+                                           class="form-check-input" 
+                                           id="dark-theme" 
+                                           name="theme" 
+                                           value="dark"
+                                           aria-describedby="dark-theme-desc">
                                 <label for="dark-theme" data-i18n="dark">Ciemny</label>
+                                    <span id="dark-theme-desc" class="visually-hidden">
+                                        Ciemny motyw z ciemnymi kolorami tła i jasnym tekstem
+                                    </span>
+                            </div>
+                            <div>
+                                    <input type="radio" 
+                                           class="form-check-input" 
+                                           id="custom-theme" 
+                                           name="theme" 
+                                           value="custom"
+                                           aria-describedby="custom-theme-desc">
+                                <label for="custom-theme">Custom</label>
+                                    <span id="custom-theme-desc" class="visually-hidden">
+                                        Własny motyw z możliwością dostosowania kolorów
+                                    </span>
+                                    <button id="edit-theme" 
+                                            class="btn btn-sm btn-secondary edit-theme-btn"
+                                            aria-expanded="false"
+                                            aria-controls="theme-panel">Edytuj</button>
+                                </div>
                             </div>
                         </div>
                         
@@ -315,6 +353,59 @@
     </div>
 
     <div id="orders-container" class="orders-container"></div>
+
+    <!-- Custom theme panel -->
+    <div class="custom-theme-panel" 
+         role="dialog" 
+         aria-labelledby="theme-panel-title"
+         aria-modal="true"
+         id="theme-panel"
+         aria-live="polite">
+        <h5 id="theme-panel-title" data-i18n="customTheme.title">Dostosuj motyw</h5>
+        <div class="theme-controls">
+            <!-- Colors -->
+            <div class="control-group" role="group" aria-labelledby="colors-group-label">
+                <label id="colors-group-label" data-i18n="customTheme.colors">Kolory główne</label>
+                <div class="color-inputs">
+                    <div class="color-input">
+                        <label for="primary-color" data-i18n="customTheme.primaryColor">Kolor podstawowy</label>
+                        <input type="color" 
+                               id="primary-color" 
+                               name="primary"
+                               aria-describedby="primary-color-desc">
+                        <span id="primary-color-desc" class="visually-hidden">
+                            Wybierz kolor podstawowy dla motywu
+                        </span>
+                    </div>
+                    <div class="color-input">
+                        <label for="secondary-color" data-i18n="customTheme.secondaryColor">Kolor dodatkowy</label>
+                        <input type="color" 
+                               id="secondary-color" 
+                               name="secondary"
+                               aria-describedby="secondary-color-desc">
+                        <span id="secondary-color-desc" class="visually-hidden">
+                            Wybierz kolor dodatkowy dla motywu
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Buttons -->
+            <div class="panel-buttons" role="group" aria-label="Akcje motywu">
+                <button id="reset-theme" 
+                        class="btn btn-outline-secondary" 
+                        data-i18n="actions.reset"
+                        aria-label="Resetuj kolory do domyślnych">Reset</button>
+                <button id="save-theme" 
+                        class="btn btn-primary" 
+                        data-i18n="actions.save"
+                        aria-label="Zapisz wybrane kolory">Zapisz</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Theme panel overlay -->
+    <div id="theme-panel-overlay" class="theme-panel-overlay"></div>
 
     <script src="lib/bootstrap.bundle.min.js" defer></script>
     <script type="module" src="popup.js"></script>
