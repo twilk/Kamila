@@ -1,41 +1,39 @@
-import { I18nService } from '../../services/i18n.js';
+import { i18n } from '../../services/i18n.js';
 
-describe('I18n Service', () => {
-    let i18n;
-    
+describe('I18nService', () => {
     beforeEach(() => {
+        // Reset localStorage
         localStorage.clear();
-        i18n = new I18nService();
-        global.fetch = jest.fn();
+        
+        // Reset i18n instance
+        i18n.translations = {};
+        i18n.currentLanguage = 'polish';
+        i18n.initialized = false;
     });
 
-    test('should initialize with default language', () => {
-        expect(i18n.currentLanguage).toBe('polish');
-    });
-
-    test('should load translations', async () => {
-        const mockTranslations = { test: 'Test translation' };
-        global.fetch.mockResolvedValueOnce({
-            ok: true,
-            json: () => Promise.resolve(mockTranslations)
-        });
-
+    test('should initialize with default language', async () => {
         await i18n.init();
-        expect(i18n.translations).toEqual(mockTranslations);
+        expect(i18n.currentLanguage).toBe('polish');
+        expect(i18n.initialized).toBe(true);
     });
 
-    test('should handle missing translations', () => {
-        expect(i18n.translate('missing.key')).toBe('missing.key');
+    test('should handle missing translations gracefully', () => {
+        const key = 'nonexistent.key';
+        const translation = i18n.translate(key);
+        expect(translation).toBe(key);
     });
 
-    test('should update DOM elements with translations', async () => {
-        document.body.innerHTML = '<div data-i18n="test">Old text</div>';
-        const mockTranslations = { test: 'New text' };
+    test('should validate language before switching', async () => {
+        await expect(i18n.setLanguage('invalid')).rejects.toThrow('Unsupported language');
+    });
+
+    test('should use fallback translations on error', async () => {
+        // Mock fetch to fail
+        global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
         
-        i18n.translations = mockTranslations;
-        i18n.updateDataI18n();
+        await i18n.init();
         
-        expect(document.querySelector('[data-i18n="test"]').textContent)
-            .toBe('New text');
+        expect(i18n.translate('error')).toBe('Error');
+        expect(i18n.translate('loading')).toBe('Loading...');
     });
 }); 

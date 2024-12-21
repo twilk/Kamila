@@ -1,0 +1,85 @@
+.user-card-flip {
+    perspective: 1000px;
+    width: 250px;
+    height: 150px;
+}
+
+.user-card-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+}
+
+.user-card-flip.flipped .user-card-inner {
+    transform: rotateY(180deg);
+}
+
+.user-card-front,
+.user-card-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    border-radius: 10px;
+    background: var(--bs-body-bg);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.user-card-back {
+    transform: rotateY(180deg);
+}
+
+.qr-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: white;
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+.qr-code {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.qr-loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--bs-gray-600);
+}
+
+.qr-error {
+    color: var(--bs-danger);
+    text-align: center;
+    padding: 1rem;
+}
+
+.switch-user-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    color: var(--bs-primary);
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.switch-user-btn:hover {
+    background-color: var(--bs-gray-200);
+} 

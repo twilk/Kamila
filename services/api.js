@@ -1,4 +1,5 @@
 import { API_BASE_URL, API_CONFIG, getDarwinaCredentials, sendLogToPopup } from '../config/api.js';
+import { NotificationService } from './notification.service.js';
 
 export async function checkStatus() {
     const darwinaConfig = await getDarwinaCredentials();
@@ -40,7 +41,7 @@ export class APIService {
             const cacheKey = `orders_${selectedStore}`;
             const cachedData = await CacheService.get(cacheKey);
             if (cachedData) {
-                sendLogToPopup('📦 Użyto danych z cache', 'info');
+                sendLogToPopup('�� Użyto danych z cache', 'info');
                 return cachedData;
             }
 
@@ -113,6 +114,100 @@ export class APIService {
             sendLogToPopup('❌ API Error', 'error', error.message);
             return { success: false, error: error.message };
         }
+    }
+
+    static async fetchOrders(selectedStore) {
+        try {
+            const response = await this.request('/orders', {
+                params: { store: selectedStore }
+            });
+
+            // Sprawdź nowe zamówienia
+            const newOrders = this.checkForNewOrders(response.data);
+            if (newOrders.length > 0) {
+                await NotificationService.notify({
+                    title: i18n.translate('notifications.newOrders.title'),
+                    message: i18n.translate('notifications.newOrders.message', {
+                        count: newOrders.length
+                    }),
+                    type: 'info',
+                    data: { orders: newOrders }
+                });
+            }
+
+            return response;
+        } catch (error) {
+            await NotificationService.notify({
+                title: i18n.translate('notifications.apiError.title'),
+                message: i18n.translate('notifications.apiError.message', {
+                    context: 'pobierania zamówień',
+                    error: error.message
+                }),
+                type: 'error'
+            });
+            throw error;
+        }
+    }
+
+    static async checkForNewOrders(orders) {
+        try {
+            const lastCheck = await chrome.storage.local.get('lastOrderCheck');
+            const lastCheckTime = lastCheck.lastOrderCheck || 0;
+            const newOrders = orders.filter(order => {
+                const orderTime = new Date(order.created_at).getTime();
+                return orderTime > lastCheckTime;
+            });
+
+            await chrome.storage.local.set({ 
+                lastOrderCheck: Date.now(),
+                lastOrderIds: orders.map(o => o.id)
+            });
+
+            return newOrders;
+        } catch (error) {
+            console.error('Error checking for new orders:', error);
+            return [];
+        }
+    }
+
+    static async handleStatusChange(orderId, newStatus) {
+        try {
+            const response = await this.request(`/orders/${orderId}/status`, {
+                method: 'PUT',
+                data: { status: newStatus }
+            });
+
+            await NotificationService.notify({
+                title: i18n.translate('notifications.statusUpdate.title'),
+                message: i18n.translate('notifications.statusUpdate.message', {
+                    orderId,
+                    status: this.getStatusName(newStatus)
+                }),
+                type: 'success'
+            });
+
+            return response;
+        } catch (error) {
+            await NotificationService.notify({
+                title: i18n.translate('notifications.apiError.title'),
+                message: i18n.translate('notifications.apiError.message', {
+                    context: 'zmiany statusu',
+                    error: error.message
+                }),
+                type: 'error'
+            });
+            throw error;
+        }
+    }
+
+    static getStatusName(statusId) {
+        const statusMap = {
+            1: 'Złożone',
+            2: 'Potwierdzone',
+            3: 'Przyjęte do realizacji',
+            5: 'Gotowe do odbioru'
+        };
+        return statusMap[statusId] || 'Nieznany';
     }
 }
 

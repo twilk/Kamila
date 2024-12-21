@@ -1,85 +1,217 @@
+/**
+ * Podstawowe style motywów
+ */
 :root {
-  /* Kolory podstawowe */
-  --wine-primary: #722F37;     /* Bordowy jak wino */
-  --wine-secondary: #A4343A;   /* Ciemniejszy czerwony */
-  --wine-accent: #D4AF37;      /* Złoty akcent */
-  
-  /* Tło i tekst */
-  --bg-primary: #FFFFFF;
-  --bg-secondary: #F8F9FA;
-  --text-primary: #1A1A1A;
-  --text-secondary: #666666;
-  
-  /* Karty statusów */
-  --status-border: #E4E7EC;
-  --status-hover: #F5F7FA;
-  --status-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    /* Kolory domyślne */
+    --primary: #495057;
+    --secondary: #6c757d;
+    --background: #ffffff;
+    --text: #212529;
+    --border: #dee2e6;
+    --shadow: rgba(0, 0, 0, 0.15);
+    
+    /* Zmienne systemowe */
+    --bg-color: var(--background);
+    --text-color: var(--text);
+    --text-primary: var(--text);
+    --border-radius: 0.25rem;
+    --focus-ring-color: var(--primary);
+    --focus-ring-width: 2px;
+    
+    /* Kolory dla stanów */
+    --hover: rgba(0, 0, 0, 0.05);
+    --active: rgba(0, 0, 0, 0.1);
+    --focus: rgba(0, 123, 255, 0.25);
+    
+    /* Animacje */
+    --transition-speed: 0.3s;
+    --transition-timing: cubic-bezier(0.4, 0, 0.2, 1);
+    
+    /* Panel */
+    --panel-width: 300px;
+    --panel-padding: 1.5rem;
+    --panel-z-index: 1000;
 }
 
-[data-theme='dark'] {
-  --bg-primary: #1E2028;
-  --bg-secondary: #2E323C;
-  --text-primary: #FFFFFF;
-  --text-secondary: #A0A0A0;
-  --status-border: #3E4251;
-  --status-hover: #2A2D36;
+/* Jasny motyw */
+.light-theme {
+    --background: #ffffff;
+    --text: #212529;
+    --border: #dee2e6;
+    --shadow: rgba(0, 0, 0, 0.15);
+    
+    /* Panel motywu */
+    --panel-bg: #ffffff;
+    --panel-text: #212529;
+    --panel-border: #dee2e6;
+    --panel-shadow: rgba(0, 0, 0, 0.15);
+    
+    /* Przyciski */
+    --btn-bg: #f8f9fa;
+    --btn-text: #212529;
+    --btn-border: #dee2e6;
+    --btn-hover: #e9ecef;
+    --btn-active: #dde0e3;
 }
 
-/* Karty statusów */
-.lead-status {
-  background: var(--bg-primary);
-  border: 1px solid var(--status-border);
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 0.5rem;
-  transition: all 0.3s ease;
-  cursor: pointer;
+/* Ciemny motyw */
+.dark-theme {
+    --background: #212529;
+    --text: #f8f9fa;
+    --border: #495057;
+    --shadow: rgba(0, 0, 0, 0.25);
+    
+    /* Panel motywu */
+    --panel-bg: #343a40;
+    --panel-text: #f8f9fa;
+    --panel-border: #495057;
+    --panel-shadow: rgba(0, 0, 0, 0.25);
+    
+    /* Przyciski */
+    --btn-bg: #495057;
+    --btn-text: #f8f9fa;
+    --btn-border: #6c757d;
+    --btn-hover: #5a6268;
+    --btn-active: #6c757d;
 }
 
-.lead-status:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--status-shadow);
-  border-color: var(--wine-accent);
+/* Panel motywu */
+.theme-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: var(--panel-width);
+    padding: var(--panel-padding);
+    background: var(--panel-bg);
+    color: var(--panel-text);
+    border-left: 1px solid var(--panel-border);
+    box-shadow: 0 0 10px var(--panel-shadow);
+    z-index: var(--panel-z-index);
+    
+    /* Optymalizacja wydajności */
+    transform: translateX(100%);
+    transition: transform var(--transition-speed) var(--transition-timing);
+    will-change: transform;
 }
 
-/* Liczniki */
-.lead-count {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--wine-primary);
+.theme-panel.show {
+    transform: translateX(0);
 }
 
-/* Select sklepu */
-.store-selector select {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid var(--status-border);
-  border-radius: 6px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  transition: all 0.3s;
+/* Overlay panelu */
+.theme-panel-overlay {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--transition-speed) var(--transition-timing),
+                visibility var(--transition-speed) var(--transition-timing);
 }
 
-.store-selector select:hover {
-  border-color: var(--wine-accent);
+.theme-panel-overlay.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Kontrolki motywu */
+.theme-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.color-inputs {
+    display: grid;
+    gap: 1rem;
+}
+
+.color-input {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
 }
 
 /* Przyciski */
-.btn-primary {
-  background: var(--wine-primary);
-  border-color: var(--wine-primary);
+.panel-buttons {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: auto;
 }
 
-.btn-primary:hover {
-  background: var(--wine-secondary);
-  border-color: var(--wine-secondary);
+/* Dostępność */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
-@keyframes refresh-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+/* Focus */
+:focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: 2px;
 }
 
-.refreshing {
-    animation: refresh-spin 1s linear infinite;
+/* Animacje */
+.theme-transition {
+    transition: background-color var(--transition-speed) var(--transition-timing),
+                color var(--transition-speed) var(--transition-timing);
+}
+
+/* Language switcher */
+#language-switcher {
+    display: flex;
+    gap: 0.5rem;
+    background: var(--bg-color);
+    border-radius: var(--border-radius);
+}
+
+.flag {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--border-radius);
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all var(--transition-speed) var(--transition-timing);
+}
+
+.flag:hover {
+    background: var(--hover);
+}
+
+.flag.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+/* Flagi */
+.flag[data-lang="polish"] {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.flag[data-lang="ukrainian"] {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 } 

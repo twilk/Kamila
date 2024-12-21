@@ -67,7 +67,7 @@
     "debugPanelSuccess": "ОК: {message}",
     "debugPanelInfo": "Інфо: {message}",
     "debugPanelWarn": "Попередження: {message}",
-    "appTitle": "Каміла",
+    "appTitle": "KAMILA - Інтелектуальний помічник",
     "debugTitle": "Налагодження",
     "updateVersionInfo": "Доступна нова версія {version}",
     "updateAvailable": "Доступне оновлення",
@@ -82,7 +82,7 @@
     "allStores": "Всі магазини",
     "noUserSelected": "Виберіть користувача",
     "userSettings": "Налаштування користувача",
-    "selectUser": "Виберіть користувача:",
+    "selectUser": "Вибер��ть користувача:",
     "light": "Світла",
     "dark": "Темна",
     "close": "Закрити",
@@ -127,5 +127,39 @@
         "success": "Дані користувача перевірено",
         "error": "Помилка перевірки даних користувача",
         "notFound": "Користувача не знайдено"
+    },
+    "errors": {
+        "windowResize": "Помилка зміни розміру вікна"
+    },
+    "customTheme": {
+        "title": "Налаштувати тему",
+        "colors": "Основні кольори",
+        "primaryColor": "Основний колір",
+        "secondaryColor": "Додатковий колір",
+        "save": "Зберегти",
+        "saved": "Кольори теми збережено",
+        "edit": "Редагувати тему"
+    },
+    "actions": {
+        "reset": "Скинути",
+        "save": "Зберегти",
+        "edit": "Редагувати",
+        "close": "Закрити"
+    },
+    "screenReader": {
+        "themeDescriptions": {
+            "light": "Світла тема зі світлим фоном і темним текстом",
+            "dark": "Темна тема з темним фоном і світлим текстом",
+            "custom": "Користувацька тема з можливістю налаштування кольорів"
+        },
+        "panelOpened": "Панель теми відкрита",
+        "panelClosed": "Панель теми закрита",
+        "colorChanged": "Змінено колір {type} на {value}"
+    },
+    "debugPanel": {
+        "info": "ℹ️",
+        "error": "❌",
+        "success": "✅",
+        "warning": "⚠️"
     }
 }

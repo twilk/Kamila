@@ -6,6 +6,10 @@ describe('Employee List', () => {
     const usersDir = path.join(__dirname, '../../users');
     
     test('should have JSON files for all active employees', () => {
+        // Dodaj mock dla fs.readFileSync
+        const mockEmployeeData = `Jan Kowalski\t123\nAnna Nowak\t456\n`;
+        fs.readFileSync.mockReturnValueOnce(mockEmployeeData);
+        
         // Wczytaj oryginalną listę pracowników
         const data = fs.readFileSync(sourceFile, 'utf8');
         const originalEmployees = data

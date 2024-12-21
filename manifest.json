@@ -1,15 +1,15 @@
 {
     "manifest_version": 3,
     "name": "KAMILA",
-    "version": "1.2.0",
-    "description": "Intelligent Assistant for DARWINA.PL",
+    "version": "1.0.0",
+    "description": "Inteligentny Asystent DARWINA.PL",
     "permissions": [
         "storage",
-        "tabs",
-        "webRequest"
+        "alarms",
+        "notifications"
     ],
     "host_permissions": [
-        "https://api.darwina.pl/*"
+        "*://*.darwina.pl/*"
     ],
     "action": {
         "default_popup": "popup.html",
@@ -19,27 +19,36 @@
             "128": "icons/icon128.png"
         }
     },
-    "content_scripts": [
-        {
-            "matches": ["https://*.darwina.pl/*"],
-            "css": [
-                "styles/theme.css",
-                "styles/animations.css",
-                "styles/style.css"
-            ],
-            "js": ["content.js"]
-        }
-    ],
     "background": {
         "service_worker": "background.js",
         "type": "module"
     },
+    "content_scripts": [{
+        "matches": ["*://*.darwina.pl/*"],
+        "css": [
+            "styles/theme.css",
+            "styles/animations.css",
+            "styles/style.css",
+            "styles/content.css"
+        ],
+        "js": ["content.js"]
+    }],
     "web_accessible_resources": [{
         "resources": [
-            "styles/*.css",
-            "locales/*.json"
+            "styles/theme.css",
+            "styles/animations.css",
+            "styles/style.css",
+            "styles/content.css",
+            "styles/performance-panel.css",
+            "config/*",
+            "services/*",
+            "components/*",
+            "locales/*",
+            "lib/*",
+            "icons/*",
+            "assets/*"
         ],
-        "matches": ["https://*.darwina.pl/*"]
+        "matches": ["*://*.darwina.pl/*", "<all_urls>"]
     }],
     "icons": {
         "16": "icons/icon16.png",

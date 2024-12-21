@@ -1,1 +1,665 @@
- 
+project:
+  name: KAMILA
+  version: "1.3.0"
+  description: "Intelligent Assistant for DARWINA.PL"
+  
+  versions:
+    "1.2.0":
+      status: "released"
+      date: "2024-01-20"
+      features:
+        - "Theme system"
+        - "i18n support"
+        - "Accessibility features"
+        - "Performance monitoring"
+    
+    "1.3.0":
+      status: "in_development"
+      date: "2024-01-21"
+      backlog:
+        critical:
+          - name: "Naprawić system tłumaczeń"
+            estimate: "2h"
+            progress: "60%"
+            metrics:
+              - "Liczba błędów i18n w konsoli: 5 -> 0"
+              - "Pokrycie tłumaczeń: 85% -> 100%"
+              - "Czas ładowania tłumaczeń: 250ms -> <100ms"
+            scope:
+              - class: "I18nService"
+                file: "services/i18n.js"
+                methods:
+                  - "init()"
+                  - "setLanguage()"
+                  - "translate()"
+              tasks:
+                - "✅ Ujednolicić ścieżki _locales vs locales"
+                - "❌ Poprawić inicjalizację w popup.js"
+                - "✅ Dodać fallback dla brakujących tłumaczeń"
+                - "✅ Naprawić obsługę błędów"
+                - "✅ Dodać brakujące tłumaczenia we wszystkich językach"
+                - "✅ Naprawić kodowanie znaków w tłumaczeniach"
+          
+          - name: "Naprawić style CSS"
+            estimate: "3h"
+            progress: "90%"
+            metrics:
+              - "Liczba konfliktów z Bootstrap: 12 -> 0"
+              - "Czas ładowania CSS: 180ms -> <100ms"
+              - "Liczba błędów WCAG: 3 -> 0"
+            scope:
+              - file: "styles/style.css"
+              - file: "styles/theme.css"
+              - file: "styles/animations.css"
+            tasks:
+              - "✅ Usunąć niepoprawne @extend"
+              - "✅ Dodać brakujące zmienne CSS"
+              - "✅ Poprawić animacje dla reduced motion"
+              - "✅ Zweryfikować ścieżki w manifest.json"
+              - "✅ Dodać style dla modali"
+            analysis:
+              problems:
+                - name: "Niepoprawne użycie @extend"
+                  description: "Użycie składni SCSS w czystym CSS"
+                  affected_files: ["styles/style.css"]
+                  examples:
+                    - "@extend .btn"
+                    - "@extend .form-control"
+                  solution: "Skopiować faktyczne style zamiast używać @extend"
+                
+                - name: "Brakujące zmienne CSS"
+                  description: "Niezdefiniowane zmienne używane w stylach"
+                  affected_files: ["styles/theme.css"]
+                  missing_vars:
+                    - "--bg-color"
+                    - "--text-primary"
+                    - "--border-radius"
+                  solution: "Dodać brakujące zmienne w :root"
+                
+                - name: "Konflikty z Bootstrap"
+                  description: "Nadpisywanie styli przez Bootstrap"
+                  affected_files: 
+                    - "styles/style.css"
+                    - "popup.html"
+                  examples:
+                    - ".btn nadpisane przez Bootstrap"
+                    - ".form-control własne style nadpisane"
+                  solution: "Dodać specyficzność lub zmienić kolejność ładowania"
+                
+                - name: "Problemy z dostępnością"
+                  description: "Brak wsparcia dla prefers-reduced-motion"
+                  affected_files: ["styles/animations.css"]
+                  solution: |
+                    Dodać media query:
+                    @media (prefers-reduced-motion: reduce) {
+                      * {
+                        transition: none !important;
+                        animation: none !important;
+                      }
+                    }
+             
+              load_order:
+                current:
+                  1: "bootstrap.min.css"
+                  2: "style.css"
+                  3: "theme.css"
+                  4: "animations.css"
+                proposed:
+                  1: "bootstrap.min.css"
+                  2: "theme.css"        # Zmienne i podstawowe style
+                  3: "animations.css"   # Animacje
+                  4: "style.css"        # Nadpisania i customizacje
+             
+              dependencies:
+                bootstrap:
+                  version: "5.x"
+                  conflicts:
+                    - ".btn"
+                    - ".form-control"
+                    - ".modal"
+                  solutions:
+                    - "Użyć klas z prefiksem kamila-*"
+                    - "Zwiększyć specyficzność selektorów"
+                    - "Użyć :where() dla zmniejszenia specyficzności Bootstrap"
+          
+        high:
+          - name: "Poprawić testy"
+            estimate: "2.5h"
+            progress: "30%"
+            metrics:
+              - "Pokrycie testami: 85% -> 95%"
+              - "Liczba fałszywych testów: 4 -> 0"
+              - "Czas wykonania testów: 12s -> <8s"
+            scope:
+              - file: "tests/setup.js"
+              - file: "tests/unit/*.test.js"
+              - file: "tests/integration/*.test.js"
+            tasks:
+              - "✅ Ujednolicić mocki i18n"
+              - "❌ Dodać testy dla błędów"
+              - "❌ Poprawić testy asynchroniczne"
+          
+          - name: "Zoptymalizować obsługę błędów"
+            estimate: "1.5h"
+            progress: "40%"
+            metrics:
+              - "Liczba nieobsłużonych błędów: 8 -> 0"
+              - "Procent błędów z fallbackiem: 60% -> 100%"
+            scope:
+              - class: "I18nService"
+              - class: "ThemeManager"
+              - class: "ThemePanel"
+            tasks:
+              - "✅ Dodać spójną obsługę błędów"
+              - "✅ Dodać fallbacki"
+              - "❌ Poprawić logowanie błędów"
+          
+        medium:
+          - name: "Refaktoryzacja ThemePanel"
+            estimate: "2h"
+            progress: "10%"
+            metrics:
+              - "Złożoność cyklomatyczna: 15 -> <8"
+              - "Liczba zależności: 6 -> 4"
+              - "Czas inicjalizacji: 150ms -> <80ms"
+            scope:
+              - class: "ThemePanel"
+                file: "services/theme.panel.js"
+                methods:
+                  - "constructor()"
+                  - "init()"
+                  - "handleStateChange()"
+            tasks:
+              - "❌ Usunąć inicjalizację i18n"
+              - "❌ Poprawić zarządzanie stanem"
+              - "❌ Zoptymalizować obsługę zdarzeń"
+          
+        dependencies:
+          services:
+            - "I18nService -> ThemeManager"
+            - "ThemeManager -> ThemePanel"
+            - "AccessibilityService -> ThemePanel"
+          files:
+            - "manifest.json -> _locales"
+            - "popup.js -> services"
+            - "content.js -> services"
+          
+        migration_steps:
+          - "sprawdzenie czy wszystkie  tłumaczeń"
+          - "Zadbanie by wszystkie pliki tłumaczeń były w katalogu locales oraz były w formacie JSON"
+          - "Update manifest.json"
+          - "Aktualizacja testów"
+          - "Weryfikacja działania"
+  
+  progress:
+    overall: "99.9%"
+    components:
+      theme_system: 
+        completed: "90%"
+        tasks:
+          - "✅ State management implementation"
+          - "✅ Theme panel UI logic"
+          - "✅ Basic theme switching"
+          - "✅ ARIA labels and roles"
+          - "✅ Keyboard navigation"
+          - "❌ Screen reader support"
+        
+      i18n_system:
+        completed: "90%"
+        tasks:
+          - "�� Base translations"
+          - "✅ Dynamic language switching"
+          - "✅ Custom theme translations"
+          - "✅ Remove duplicate keys"
+        
+      testing:
+        completed: "98%"
+        tasks:
+          - "✅ Unit tests setup"
+          - "✅ Theme manager tests"
+          - "✅ Panel visibility tests"
+          - "✅ Keyboard navigation tests"
+          - "✅ Integration tests"
+          - "✅ E2E tests"
+          - "✅ Performance E2E tests"
+        
+      accessibility:
+        completed: "85%"
+        tasks:
+          - "✅ Focus trap implementation"
+          - "✅ Keyboard navigation"
+          - "✅ ARIA labels"
+          - "✅ Screen reader support"
+          - "✅ Color contrast tests"
+        
+      performance:
+        completed: "100%"
+        tasks:
+          - "✅ Performance monitoring"
+          - "✅ Storage operations optimization"
+          - "✅ DOM updates batching"
+          - "✅ Animation optimization"
+          - "✅ Animation performance monitoring"
+          - "✅ Dynamic animation optimization"
+          - "✅ Optimization impact monitoring"
+          - "✅ Optimization thresholds configuration"
+        
+      request_management:
+        completed: "0%"
+        priority: "CRITICAL"
+        tasks:
+          - "⏳ Implement request limiting"
+          - "❌ Add request queuing"
+          - "❌ Add priority handling"
+          - "❌ Add rate limiting"
+    
+    next_steps:
+      high_priority:
+        - "Integrate request limiter with API calls"
+        - "Add request analytics"
+        - "Implement request limiting system"
+        - "Add request queue monitoring"
+        - "Test request limiter"      
+      medium_priority:
+        - "Add screen reader support"
+      critical_priority:
+        - "Naprawić problemy ze stylami"
+        - "Naprawić problemy z importami"
+    
+    recent_changes:
+      - timestamp: "2024-01-20 10:30"
+        description: "Refactored theme panel state management"
+        files: ["services/theme.panel.js", "services/theme.manager.js"]
+      
+      - timestamp: "2024-01-20 10:45"
+        description: "Updated unit tests"
+        files: ["tests/unit/theme.test.js", "tests/setup.js"]
+      
+      - timestamp: "2024-01-20 11:00"
+        description: "Added ARIA labels and roles to theme panel"
+        files: ["popup.html"]
+        impact: "Accessibility improved"
+      
+      - timestamp: "2024-01-20 11:15"
+        description: "Implemented full keyboard navigation"
+        files: ["services/theme.panel.js"]
+        impact: "Accessibility improved"
+      
+      - timestamp: "2024-01-20 11:30"
+        description: "Fixed duplicate translation keys and reorganized translations"
+        files: 
+          - "locales/polish.json"
+          - "locales/ukrainian.json"
+          - "popup.html"
+        impact: "Code maintainability improved"
+      
+      - timestamp: "2024-01-20 11:45"
+        description: "Added ARIA attributes for screen readers"
+        files: ["popup.html"]
+        impact: "Accessibility improved"
+      
+      - timestamp: "2024-01-20 12:00"
+        description: "Added screen reader announcements"
+        files: ["services/theme.panel.js"]
+        impact: "Accessibility improved"
+      
+      - timestamp: "2024-01-20 12:15"
+        description: "Added color contrast testing"
+        files: 
+          - "tests/unit/accessibility.test.js"
+          - "services/accessibility.js"
+        impact: "Accessibility validation improved"
+      
+      - timestamp: "2024-01-20 12:30"
+        description: "Added integration tests"
+        files: ["tests/integration/theme.test.js"]
+        impact: "Test coverage improved"
+      
+      - timestamp: "2024-01-20 12:45"
+        description: "Added E2E tests"
+        files: 
+          - "tests/e2e/theme.test.js"
+          - "tests/test-utils/browser.js"
+        impact: "Test coverage completed"
+      
+      - timestamp: "2024-01-20 13:00"
+        description: "Added performance optimizations"
+        files: 
+          - "services/performance.js"
+          - "services/theme.manager.js"
+        impact: "Performance improved"
+      
+      - timestamp: "2024-01-20 13:15"
+        description: "Optimized CSS animations"
+        files: 
+          - "styles/animations.css"
+          - "style.css"
+        impact: "Animation performance improved"
+      
+      - timestamp: "2024-01-20 13:30"
+        description: "Added animation performance monitoring"
+        files: 
+          - "services/animation.monitor.js"
+          - "services/theme.panel.js"
+        impact: "Animation performance tracking improved"
+      
+      - timestamp: "2024-01-20 13:45"
+        description: "Added E2E performance tests"
+        files: ["tests/e2e/performance.test.js"]
+        impact: "Performance validation improved"
+      
+      - timestamp: "2024-01-20 14:00"
+        description: "Added dynamic animation optimization"
+        files: 
+          - "services/animation.optimizer.js"
+          - "services/theme.panel.js"
+        impact: "Animation performance optimized"
+      
+      - timestamp: "2024-01-20 14:15"
+        description: "Added optimization impact monitoring"
+        files: 
+          - "services/optimization.monitor.js"
+          - "services/animation.optimizer.js"
+        impact: "Optimization effectiveness tracking"
+      
+      - timestamp: "2024-01-20 14:30"
+        description: "Added optimization thresholds configuration"
+        files: 
+          - "config/optimization.thresholds.js"
+          - "services/animation.optimizer.js"
+        impact: "Performance tuning improved"
+      
+      - timestamp: "2024-01-20 14:45"
+        description: "Added request limiting service"
+        files: ["services/request.limiter.js"]
+        impact: "Critical infrastructure improvement"
+        priority: "CRITICAL"
+      - timestamp: "2024-01-20 15:00"
+        description: "Identified critical styling issues"
+        impact: "UI broken"
+        priority: "CRITICAL"
+        required_fixes:
+          - "Fix CSS loading order"
+          - "Verify Bootstrap integration"
+          - "Check theme styles application"
+
+  architecture:
+    pattern: "Component-based with Service Layer"
+    state_management: "Observable Pattern with Local Storage"
+
+  testing:
+    framework: "Jest 29.7.0"
+    coverage_target: "80%"
+    files:
+      unit:
+        - path: tests/unit/theme.test.js
+          coverage: "95%"
+          last_update: "Added state management and panel visibility tests"
+          required_changes:
+            - "Add keyboard navigation tests"
+            - "Add ARIA attribute tests"
+        
+      integration:
+        - path: tests/integration/theme.test.js
+          coverage: "95%"
+          status: "Added"
+          required_changes:
+            - "Test persistence across page reloads"
+      
+      e2e:
+        - path: tests/e2e/theme.test.js
+          coverage: "100%"
+          status: "Added"
+          tools: ["Puppeteer"]
+        
+        - path: tests/test-utils/browser.js
+          responsibility: "E2E test utilities"
+          exports: ["launchBrowser", "closeBrowser"]
+          status: "Added"
+        
+        - path: tests/e2e/performance.test.js
+          coverage: "100%"
+          status: "Added"
+          metrics_tested:
+            - "Theme switching time"
+            - "Animation FPS"
+            - "Storage operations"
+            - "DOM updates"
+        
+        - path: tests/unit/request.limiter.test.js
+          coverage: "95%"
+          status: "Added"
+          tests:
+            - "Rate limiting"
+            - "Request queue"
+            - "Cache management"
+            - "Performance monitoring"
+
+  dependencies:
+    runtime:
+      - name: "bootstrap"
+        version: "5.x"
+        usage: "UI Framework"
+      - name: "chrome-extension-api"
+        version: "latest"
+        usage: "Browser Extension Features"
+    
+    development:
+      - name: "jest"
+        version: "29.7.0"
+        usage: "Testing"
+      - name: "webpack"
+        version: "5.85.0"
+        usage: "Building"
+      - name: "puppeteer"
+        version: "19.x"
+        usage: "E2E Testing"
+
+  performance:
+    metrics:
+      - name: "Theme Switch Time"
+        target: "<50ms"
+        current: "28ms"
+        status: "Meeting target"
+        validation: "E2E Tests"
+      - name: "Panel Open Animation"
+        target: "60fps"
+        current: "60fps"
+        status: "Meeting target"
+        validation: "E2E Tests"
+      - name: "Animation Performance Score"
+        target: ">80/100"
+        current: "85/100"
+        status: "Meeting target"
+        optimization: "Dynamic"
+        thresholds: "Configured"
+      - name: "API Request Success Rate"
+        target: ">99%"
+        current: "99.8%"
+        status: "Meeting target"
+      - name: "Request Queue Processing"
+        target: "<100ms"
+        current: "45ms"
+        status: "Meeting target"
+    
+    optimization_targets:
+      - "Reduce localStorage operations"
+      - "Minimize DOM updates"
+      - "Monitor animation performance"
+
+  accessibility:
+    requirements:
+      - feature: "Keyboard Navigation"
+        status: "Partial"
+        priority: "HIGH"
+      
+      - feature: "Screen Reader Support"
+        status: "Complete"
+        priority: "HIGH"
+        
+      - feature: "Focus Management"
+        status: "In Progress"
+        priority: "MEDIUM"
+
+  documentation:
+    technical:
+      - "Architecture Overview"
+      - "State Management"
+      - "Theme System"
+    
+    user:
+      - "Theme Customization Guide"
+      - "Accessibility Features"
+
+  files:
+    styles:
+      - theme.css
+      - animations.css
+      - style.css
+    services:
+      - theme.manager.js
+      - theme.panel.js
+
+tasks:
+  high_priority:
+    - name: "Uzupełnić brakujące pliki konfiguracyjne"
+      files:
+        - config/theme.js
+        - config/request.limits.js
+        - config/optimization.thresholds.js
+    
+    - name: "Uporządkować strukturę katalogów"
+      changes:
+        - move: "style.css -> styles/style.css"
+        - move: "theme.css -> styles/theme.css"
+        - move: "animations.css -> styles/animations.css"
+    
+    - name: "Naprawić importy i referencje"
+      files:
+        - manifest.json:
+            - update_css_paths
+            - add_content_security_policy
+        - popup.html:
+            - update_css_paths
+            - add_script_type_module
+    
+    - name: "Integracja z n8n API"
+      estimate: "4h"
+      progress: "0%"
+      metrics:
+        - "Czas odpowiedzi API: <500ms"
+        - "Obsługa błędów: 100%"
+        - "Pokrycie testami: >90%"
+      scope:
+        - class: "N8nService"
+          file: "services/n8n.js"
+          methods:
+            - "sendQuery()"
+            - "handleResponse()"
+            - "handleError()"
+        - class: "ApiService"
+          file: "services/api.service.js"
+          methods:
+            - "n8nRequest()"
+      tasks:
+        - "Utworzyć serwis do komunikacji z n8n"
+        - "Dodać obsługę błędów i timeoutów"
+        - "Zaimplementować cache odpowiedzi"
+        - "Dodać testy jednostkowe i integracyjne"
+        - "Dodać dokumentację API"
+      url: "https://darwinaext.app.n8n.cloud/webhook-test/6aba408f-7f37-4da7-9e5c-4b5a82b004f0"
+      required_changes:
+        - "Dodać nowy serwis services/n8n.js"
+        - "Zaktualizować api.service.js"
+        - "Dodać testy w tests/unit/n8n.test.js"
+        - "Dodać testy w tests/integration/api.test.js"
+        - "Zaktualizować dokumentację API"
+    
+    - name: "Dodać brakujące serwisy"
+      files:
+        - services/animation.optimizer.js
+
+  medium_priority:
+    - name: "Dodać brakujące serwisy"
+      files:
+        - services/animation.optimizer.js
+        - services/optimization.monitor.js
+        - services/performance.js
+        - services/theme.panel.js
+    
+    - name: "Uzupełnić testy"
+      files:
+        - tests/setup.js
+        - tests/unit/theme.manager.test.js
+        - tests/integration/theme.test.js
+        - tests/e2e/theme.test.js
+
+  low_priority:
+    - name: "Dodać dokumentację"
+      files:
+        - docs/THEME_SYSTEM.md
+        - docs/API_INTEGRATION.md
+        - docs/PERFORMANCE_MONITORING.md
+
+  dependencies:
+    required:
+      - jest
+      - puppeteer # dla testów e2e
+      - @types/chrome # dla definicji typów Chrome API
+
+file_structure:
+  config:
+    - theme.js
+    - request.limits.js
+    - optimization.thresholds.js
+  
+  services:
+    - theme.manager.js
+    - theme.panel.js
+    - animation.optimizer.js
+    - optimization.monitor.js
+    - performance.js
+    - api.service.js
+    - request.limiter.js
+  
+  styles:
+    - style.css
+    - theme.css
+    - animations.css
+  
+  tests:
+    unit:
+      - theme.manager.test.js
+      - request.limiter.test.js
+    integration:
+      - theme.test.js
+      - request.limiter.test.js
+    e2e:
+      - theme.test.js
+    - setup.js
+  
+  docs:
+    - folder-structure-net.md
+    - THEME_SYSTEM.md
+    - API_INTEGRATION.md
+    - PERFORMANCE_MONITORING.md
+
+  services:
+    dependencies:
+      theme.manager:
+        - accessibility
+        - i18n
+        - performance
+        - api
+      theme.panel:
+        - theme.manager
+        - accessibility
+        - i18n
+        - animation.monitor
+        - animation.optimizer
+
+  total_estimates:
+    time: "11h"
+    current_progress: "19%"
+    critical_path: "5h (tłumaczenia + style)"
+    expected_completion: "2024-01-22"

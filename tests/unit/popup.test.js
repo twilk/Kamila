@@ -39,6 +39,17 @@ describe('Popup UI', () => {
                 show: jest.fn()
             }))
         };
+
+        // Reset i18n state before each test
+        i18n.initialized = true;
+        i18n.translations = {
+            debugPanel: {
+                info: 'ℹ️',
+                error: '❌',
+                success: '✅',
+                warning: '⚠️'
+            }
+        };
     });
 
     test('should change theme', () => {
@@ -292,5 +303,115 @@ describe('Popup UI', () => {
         
         const logs = document.querySelectorAll('.log-entry');
         expect(logs.length).toBe(1);
+    });
+
+    test('should initialize i18n before UI', async () => {
+        await initializeUI();
+        expect(i18n.init).toHaveBeenCalledBefore(initializeUIComponents);
+    });
+
+    test('should handle i18n initialization failure', async () => {
+        i18n.init.mockRejectedValueOnce(new Error('Failed to load translations'));
+        
+        await initializeUI();
+        
+        expect(logToPanel).toHaveBeenCalledWith(
+            'Error: {message}',
+            'error',
+            expect.any(Error)
+        );
+    });
+
+    test('should use fallback prefixes when i18n is not initialized', async () => {
+        i18n.initialized = false;
+        i18n.translations = {};
+        
+        logToPanel('Test message', 'info');
+        
+        expect(document.querySelector('.log-entry').innerHTML)
+            .toContain('ℹ️ Test message');
+    });
+
+    describe('Error Handling', () => {
+        test('should show error container when showError is called', () => {
+            showError('Test error message');
+            
+            const errorContainer = document.querySelector('.error-container');
+            expect(errorContainer).toBeInTheDocument();
+            expect(errorContainer.textContent).toBe('Test error message');
+            expect(errorContainer.classList.contains('show')).toBe(true);
+        });
+
+        test('should automatically hide error after 5 seconds', () => {
+            jest.useFakeTimers();
+            
+            showError('Test error message');
+            const errorContainer = document.querySelector('.error-container');
+            
+            expect(errorContainer.classList.contains('show')).toBe(true);
+            
+            jest.advanceTimersByTime(5000);
+            
+            expect(errorContainer.classList.contains('show')).toBe(false);
+            
+            jest.useRealTimers();
+        });
+
+        test('should handle error when creating error container fails', () => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+            document.body.appendChild = jest.fn().mockImplementation(() => {
+                throw new Error('Failed to append');
+            });
+            
+            showError('Test error message');
+            
+            expect(consoleSpy).toHaveBeenCalledWith(
+                'Failed to show error:',
+                expect.any(Error)
+            );
+            
+            consoleSpy.mockRestore();
+        });
+    });
+
+    describe('Initialization', () => {
+        test('should initialize i18n before UI', async () => {
+            await initializeUI();
+            expect(i18n.init).toHaveBeenCalledBefore(initializeUIComponents);
+        });
+
+        test('should handle i18n initialization failure', async () => {
+            i18n.init.mockRejectedValueOnce(new Error('Failed to load translations'));
+            
+            await initializeUI();
+            
+            expect(logToPanel).toHaveBeenCalledWith(
+                'Error: {message}',
+                'error',
+                expect.any(Error)
+            );
+        });
+
+        test('should use fallback prefixes when i18n is not initialized', async () => {
+            i18n.initialized = false;
+            i18n.translations = {};
+            
+            logToPanel('Test message', 'info');
+            
+            expect(document.querySelector('.log-entry').innerHTML)
+                .toContain('ℹ️ Test message');
+        });
+
+        test('should handle missing API credentials', async () => {
+            getDarwinaCredentials.mockResolvedValueOnce({});
+            
+            await initializeUI();
+            
+            expect(logToPanel).toHaveBeenCalledWith(
+                'Error: {message}',
+                'error',
+                expect.any(Error)
+            );
+        });
     });
 }); 

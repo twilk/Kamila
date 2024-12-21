@@ -130,5 +130,34 @@
         "success": "User data verified",
         "error": "User data verification error",
         "notFound": "User not found"
+    },
+    "errors": {
+        "windowResize": "Window resize error"
+    },
+    "customTheme": {
+        "title": "Customize theme",
+        "colors": "Main colors",
+        "primaryColor": "Primary color",
+        "secondaryColor": "Secondary color",
+        "reset": "Reset",
+        "save": "Save",
+        "saved": "🎨 Theme colors saved",
+        "reset": "🔄 Theme colors reset"
+    },
+    "screenReader": {
+        "themeDescriptions": {
+            "light": "Light theme with bright background and dark text",
+            "dark": "Dark theme with dark background and light text",
+            "custom": "Custom theme with color customization"
+        },
+        "panelOpened": "Theme panel opened",
+        "panelClosed": "Theme panel closed",
+        "colorChanged": "Changed {type} color to {value}"
+    },
+    "debugPanel": {
+        "info": "ℹ️",
+        "error": "❌",
+        "success": "✅",
+        "warning": "⚠️"
     }
 }

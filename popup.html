@@ -3,11 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title data-i18n="appTitle">Kamila</title>
+    <title>KAMILA</title>
     <link href="lib/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="styles/style.css">
-    <link rel="stylesheet" href="styles/theme.css">
-    <link rel="stylesheet" href="styles/animations.css">
+    <link href="styles/theme.css" rel="stylesheet">
+    <link href="styles/animations.css" rel="stylesheet">
+    <link href="styles/style.css" rel="stylesheet">
+    <link href="styles/performance-panel.css" rel="stylesheet">
+    <link href="styles/content.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
     <style>
         html {
             border-radius: 12px;
@@ -46,7 +49,7 @@
         <div class="row">
             <div class="col-2">
                 <div class="store-selector mb-3">
-                    <select id="store-select" class="form-select form-select-sm" data-i18n-placeholder="selectStore">
+                    <select id="store-select" class="kamila-form-select" data-i18n-placeholder="selectStore">
                         <!-- Lista sklepów będzie generowana dynamicznie z stores.js -->
                     </select>
                 </div>
@@ -73,24 +76,48 @@
             <div class="col-10">
                 <ul class="nav nav-tabs" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active" data-target="#chat" type="button" role="tab">
-                            <span data-i18n="chat">Chat</span>
-                        </button>
+                        <button class="nav-link active" 
+                                id="chat-tab" 
+                                data-bs-toggle="tab"
+                                data-bs-target="#chat"
+                                type="button" 
+                                role="tab" 
+                                aria-controls="chat" 
+                                aria-selected="true" 
+                                data-i18n="chat">Chat</button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" data-target="#settings" type="button" role="tab">
-                            <span data-i18n="settings">Ustawienia</span>
-                        </button>
+                        <button class="nav-link" 
+                                id="settings-tab" 
+                                data-bs-toggle="tab"
+                                data-bs-target="#settings"
+                                type="button" 
+                                role="tab" 
+                                aria-controls="settings" 
+                                aria-selected="false" 
+                                data-i18n="settings">Ustawienia</button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" data-target="#about" type="button" role="tab">
-                            <span data-i18n="about">O aplikacji</span>
-                        </button>
+                        <button class="nav-link" 
+                                id="about-tab" 
+                                data-bs-toggle="tab"
+                                data-bs-target="#about"
+                                type="button" 
+                                role="tab" 
+                                aria-controls="about" 
+                                aria-selected="false" 
+                                data-i18n="about">O aplikacji</button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" data-target="#status" type="button" role="tab">
-                            <span data-i18n="status">Status</span>
-                        </button>
+                        <button class="nav-link" 
+                                id="status-tab" 
+                                data-bs-toggle="tab"
+                                data-bs-target="#status"
+                                type="button" 
+                                role="tab" 
+                                aria-controls="status" 
+                                aria-selected="false" 
+                                data-i18n="status">Status</button>
                     </li>
                 </ul>
 
@@ -128,57 +155,18 @@
                         <!-- Motyw -->
                         <div class="settings-section">
                             <h6 data-i18n="theme" id="theme-section-title">Motyw</h6>
-                            <div role="radiogroup" 
-                                 aria-labelledby="theme-section-title"
-                                 class="theme-options">
-                            <div>
-                                    <input type="radio" 
-                                           class="form-check-input" 
-                                           id="light-theme" 
-                                           name="theme" 
-                                           value="light"
-                                           aria-describedby="light-theme-desc">
-                                <label for="light-theme" data-i18n="light">Jasny</label>
-                                    <span id="light-theme-desc" class="visually-hidden">
-                                        Jasny motyw z jasnymi kolorami tła i ciemnym tekstem
-                                    </span>
-                            </div>
-                            <div>
-                                    <input type="radio" 
-                                           class="form-check-input" 
-                                           id="dark-theme" 
-                                           name="theme" 
-                                           value="dark"
-                                           aria-describedby="dark-theme-desc">
-                                <label for="dark-theme" data-i18n="dark">Ciemny</label>
-                                    <span id="dark-theme-desc" class="visually-hidden">
-                                        Ciemny motyw z ciemnymi kolorami tła i jasnym tekstem
-                                    </span>
-                            </div>
-                            <div>
-                                    <input type="radio" 
-                                           class="form-check-input" 
-                                           id="custom-theme" 
-                                           name="theme" 
-                                           value="custom"
-                                           aria-describedby="custom-theme-desc">
-                                <label for="custom-theme">Custom</label>
-                                    <span id="custom-theme-desc" class="visually-hidden">
-                                        Własny motyw z możliwością dostosowania kolorów
-                                    </span>
-                                    <button id="edit-theme" 
-                                            class="btn btn-sm btn-secondary edit-theme-btn"
-                                            aria-expanded="false"
-                                            aria-controls="theme-panel">Edytuj</button>
-                                </div>
+                            <div class="theme-options">
+                                <button data-theme="light" class="theme-btn">Jasny</button>
+                                <button data-theme="dark" class="theme-btn">Ciemny</button>
+                                <button data-theme="custom" class="theme-btn">Własny</button>
                             </div>
                         </div>
                         
                         <!-- Debug -->
                         <div class="settings-section">
                             <h6 data-i18n="debugTitle">Debug</h6>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="debug-switch" checked>
+                            <div class="kamila-form-check">
+                                <input class="kamila-form-check-input" type="checkbox" id="debug-switch" checked>
                                 <label class="form-check-label" for="debug-switch" data-i18n="debugMode">Tryb debugowania</label>
                             </div>
                         </div>
@@ -189,12 +177,12 @@
                             <div class="wallpaper-controls">
                                 <div class="wallpaper-input-group disabled">
                                     <input type="file" id="wallpaper-input" accept="image/*" disabled>
-                                    <label for="wallpaper-input" class="btn btn-secondary" data-i18n="addCustomWallpaper" disabled>
+                                    <label for="wallpaper-input" class="kamila-btn kamila-btn-outline" data-i18n="addCustomWallpaper" disabled>
                                         Dodaj własną tapetę
                                     </label>
                                 </div>
                                 <div class="wallpaper-actions">
-                                    <button id="remove-wallpaper" class="btn btn-danger" data-i18n="removeWallpaper" disabled>
+                                    <button id="remove-wallpaper" class="kamila-btn kamila-btn-danger" data-i18n="removeWallpaper" disabled>
                                         Usuń tło
                                     </button>
                                 </div>
@@ -311,8 +299,8 @@
                     <div id="updateNotes" class="mt-3"></div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" id="cancelUpdate" data-i18n="cancel">Anuluj</button>
-                    <button type="button" class="btn btn-primary" id="confirmUpdate" data-i18n="update">Aktualizuj</button>
+                    <button type="button" class="kamila-btn kamila-btn-outline" id="cancelUpdate" data-i18n="cancel">Anuluj</button>
+                    <button type="button" class="kamila-btn kamila-btn-primary" id="confirmUpdate" data-i18n="update">Aktualizuj</button>
                 </div>
             </div>
         </div>
@@ -336,7 +324,7 @@
                     </ol>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="close">Zamknij</button>
+                    <button type="button" class="kamila-btn kamila-btn-outline" data-bs-dismiss="modal" data-i18n="close">Zamknij</button>
                 </div>
             </div>
         </div>
@@ -345,7 +333,7 @@
     <div class="debug-panel">
         <div class="debug-header d-flex justify-content-between align-items-center">
             <span data-i18n="debugPanelTitle">Panel debugowania</span>
-            <button id="clear-logs" class="btn btn-sm btn-outline-secondary" data-i18n="clear">Wyczyść</button>
+            <button id="clear-logs" class="kamila-btn kamila-btn-outline kamila-btn-sm" data-i18n="clear">Wyczyść</button>
         </div>
         <div id="debug-logs" class="debug-content">
             <div class="log-entry log-empty" data-i18n="debugPanelEmpty">Brak logów</div>
@@ -393,11 +381,11 @@
             <!-- Buttons -->
             <div class="panel-buttons" role="group" aria-label="Akcje motywu">
                 <button id="reset-theme" 
-                        class="btn btn-outline-secondary" 
+                        class="kamila-btn kamila-btn-outline" 
                         data-i18n="actions.reset"
                         aria-label="Resetuj kolory do domyślnych">Reset</button>
                 <button id="save-theme" 
-                        class="btn btn-primary" 
+                        class="kamila-btn kamila-btn-primary" 
                         data-i18n="actions.save"
                         aria-label="Zapisz wybrane kolory">Zapisz</button>
             </div>

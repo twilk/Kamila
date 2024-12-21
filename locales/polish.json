@@ -107,7 +107,11 @@
         "unauthorized": "Brak autoryzacji",
         "invalidResponse": "Nieprawidłowa odpowiedź z serwera",
         "cacheMiss": "Brak danych w cache",
-        "cacheError": "Błąd odczytu cache"
+        "cacheError": "Błąd odczytu cache",
+        "rateLimitExceeded": "Przekroczono limit zapytań API",
+        "requestTimeout": "Przekroczono czas oczekiwania na odpowiedź",
+        "requestQueueFull": "Kolejka zapytań jest pełna",
+        "requestFailed": "Zapytanie nie powiodło się"
     },
     "services": {
         "wallpaperSaved": "Tapeta została zapisana",
@@ -116,7 +120,11 @@
         "cacheCleared": "Cache zostało wyczyszczone",
         "updateAvailable": "Dostępna jest aktualizacja",
         "updateNotAvailable": "Brak dostępnych aktualizacji",
-        "updateError": "Błąd podczas sprawdzania aktualizacji"
+        "updateError": "Błąd podczas sprawdzania aktualizacji",
+        "requestQueued": "Zapytanie dodane do kolejki",
+        "requestRetrying": "Ponawiam zapytanie...",
+        "requestPrioritized": "Zapytanie priorytetowe w toku",
+        "requestCached": "Użyto danych z pamięci podręcznej"
     },
     "tests": {
         "apiConnected": "API połączone",
@@ -124,11 +132,45 @@
         "authSuccess": "Autoryzacja poprawna",
         "authFailed": "Autoryzacja niepoprawna",
         "cacheValid": "Cache poprawne",
-        "cacheInvalid": "Cache niepoprawne"
+        "cacheInvalid": "Cache niepoprawne",
+        "rateLimitTest": "Test limitów zapytań",
+        "queueTest": "Test kolejki zapytań",
+        "priorityTest": "Test priorytetów zapytań"
     },
     "verifyUser": {
         "success": "Dane użytkownika zweryfikowane",
         "error": "Błąd weryfikacji danych użytkownika",
         "notFound": "Nie znaleziono użytkownika"
+    },
+    "customTheme": {
+        "title": "Dostosuj motyw",
+        "colors": "Kolory główne",
+        "primaryColor": "Kolor podstawowy",
+        "secondaryColor": "Kolor dodatkowy",
+        "save": "Zapisz",
+        "saved": "Zapisano kolory motywu",
+        "edit": "Edytuj motyw"
+    },
+    "actions": {
+        "reset": "Resetuj",
+        "save": "Zapisz",
+        "edit": "Edytuj",
+        "close": "Zamknij"
+    },
+    "errors": {
+        "windowResize": "Błąd zmiany rozmiaru okna"
+    },
+    "screenReader": {
+        "themeDescriptions": {
+            "light": "Jasny motyw z jasnymi kolorami tła i ciemnym tekstem",
+            "dark": "Ciemny motyw z ciemnymi kolorami tła i jasnym tekstem",
+            "custom": "Własny motyw z możliwością dostosowania kolorów"
+        }
+    },
+    "debugPanel": {
+        "info": "ℹ️",
+        "error": "❌",
+        "success": "✅",
+        "warning": "⚠️"
     }
 }

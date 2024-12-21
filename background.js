@@ -3,6 +3,11 @@ import { CacheService } from './services/cache.js';
 import { API_CONFIG } from './config/api.js';
 import { stores } from './config/stores.js';
 import { UserCardService } from './services/userCard.js';
+import { performanceHandler } from './performance-handler';
+import { CACHE_CONFIG } from './config/cache.config.js';
+import { N8nService } from './services/n8n.service.js';
+import { NotificationService } from './services/notification.service.js';
+import { i18n } from './locales/i18n.js';
 
 const FETCH_INTERVAL = 5; // minutes
 const CACHE_KEY = 'darwina_orders_data';
@@ -33,6 +38,20 @@ chrome.alarms.onAlarm.addListener((alarm) => {
                 chrome.storage.local.set({ [lastFetchKey]: now });
             }
         });
+    }
+    if (alarm.name === 'cacheCleanup') {
+        CacheService.cleanup();
+    }
+    if (alarm.name === 'n8nStatusCheck') {
+        N8nService.checkStatus()
+            .then(status => {
+                if (!status.ok) {
+                    console.warn('N8N service status check failed:', status);
+                }
+            })
+            .catch(error => {
+                console.error('N8N status check error:', error);
+            });
     }
 });
 
@@ -81,6 +100,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'USER_DATA_COLLECTED') {
         handleUserData(message.payload);
     }
+    if (message.type === 'N8N_WORKFLOW') {
+        (async () => {
+            try {
+                const result = await N8nService.triggerWorkflow(message.data);
+                sendResponse({ success: true, data: result });
+            } catch (error) {
+                console.error('N8N workflow error:', error);
+                sendResponse({ success: false, error: error.message });
+            }
+        })();
+        return true; // Keep message channel open
+    }
+    switch (message.type) {
+        case 'PERFORMANCE_METRIC':
+            performanceHandler.handleMetric(message.payload);
+            break;
+            
+        case 'PERFORMANCE_VIOLATION':
+            performanceHandler.handleViolation(message.payload);
+            break;
+            
+        case 'GET_PERFORMANCE_REPORT':
+            sendResponse(performanceHandler.getReport());
+            break;
+    }
+    return true;
 });
 
 // Funkcja do pobierania danych z API
@@ -189,7 +234,7 @@ function processOrders(orders) {
     const statusCounts = orders.reduce((acc, order) => {
         processedCount++;
         if (processedCount % 10 === 0) {
-            sendLogToPopup(`🔄 Przetworzono ${processedCount}/${totalOrders} zamówień`, 'info');
+            sendLogToPopup(`�� Przetworzono ${processedCount}/${totalOrders} zamówień`, 'info');
         }
 
         const status = order.status_id;
@@ -315,4 +360,39 @@ chrome.notifications.onClicked.addListener((notificationId) => {
         chrome.action.openPopup();
     }
 });
+
+// Dodaj obsługę powiadomień dla różnych zdarzeń
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name === 'fetchData') {
+        // ... istniejący kod ...
+        
+        // Dodaj powiadomienie o nowych zamówieniach
+        if (data.newOrders && data.newOrders.length > 0) {
+            await NotificationService.notify({
+                title: i18n.translate('notifications.newOrders.title'),
+                message: i18n.translate('notifications.newOrders.message', {
+                    count: data.newOrders.length
+                }),
+                type: 'info',
+                data: { orders: data.newOrders }
+            });
+        }
+    }
+});
+
+// Obsługa błędów API
+async function handleApiError(error, context) {
+    console.error(`API Error (${context}):`, error);
+    
+    await NotificationService.notify({
+        title: i18n.translate('notifications.apiError.title'),
+        message: i18n.translate('notifications.apiError.message', {
+            context,
+            error: error.message
+        }),
+        type: 'error',
+        priority: 'high',
+        data: { error, context }
+    });
+}
   

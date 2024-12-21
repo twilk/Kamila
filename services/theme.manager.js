@@ -1,23 +1,31 @@
-import { DEFAULT_COLORS } from '../config/theme.js';
-import { THEME_CONFIG } from '../config/theme.js';
-import { PerformanceMonitor } from './performance.js';
+import { DEFAULT_COLORS, THEME_CONFIG } from '../config/theme.js';
+import { performanceMonitor } from './performance.js';
 import { apiService } from './api.service.js';
 import { REQUEST_LIMITS } from '../config/request.limits.js';
+import { i18n } from '../services/i18n.js';
+import { accessibilityService } from './accessibility.js';
 
 /**
  * Zarządza stanem i logiką motywów
  */
 export class ThemeManager {
+    static instance = null;
+
     constructor() {
+        if (ThemeManager.instance) {
+            return ThemeManager.instance;
+        }
+        ThemeManager.instance = this;
+
         this.state = {
-            currentTheme: localStorage.getItem('theme') || 'light',
-            customColors: JSON.parse(localStorage.getItem('customColors')) || DEFAULT_COLORS,
+            currentTheme: this.getInitialTheme(),
+            customColors: this.getInitialColors(),
             isPanelOpen: false,
             isSyncing: false
         };
         
         this.subscribers = new Set();
-        this.performanceMonitor = new PerformanceMonitor();
+        this.performanceMonitor = performanceMonitor;
         this.api = apiService;
         
         this.init();
@@ -61,28 +69,35 @@ export class ThemeManager {
     }
     
     async toggleTheme(theme, shouldSync = true) {
-        const oldTheme = this.state.currentTheme;
-        this.state.currentTheme = theme;
-        
-        await this.performanceMonitor.batchDOMUpdates(() => {
-            document.body.classList.remove(`${oldTheme}-theme`);
-            document.body.classList.add(`${theme}-theme`);
+        try {
+            const oldTheme = this.state.currentTheme;
+            this.state.currentTheme = theme;
             
-            if (theme === 'custom') {
-                this.applyCustomColors();
-            } else {
-                this.applyThemeColors(theme);
+            await this.performanceMonitor.batchDOMUpdates(() => {
+                document.documentElement.classList.remove(`${oldTheme}-theme`);
+                document.documentElement.classList.add(`${theme}-theme`);
+                
+                if (theme === 'custom') {
+                    this.applyCustomColors();
+                } else {
+                    this.applyThemeColors(theme);
+                }
+            });
+            
+            await this.performanceMonitor.optimizeStorageOperation(() => {
+                localStorage.setItem('theme', theme);
+            });
+            
+            this.notifySubscribers();
+            logToPanel(`🎨 Zastosowano motyw: ${theme}`, 'success');
+            
+            if (shouldSync) {
+                this.syncWithServer();
             }
-        });
-        
-        await this.performanceMonitor.optimizeStorageOperation(() => {
-            localStorage.setItem('theme', theme);
-        });
-        
-        this.notifySubscribers();
-        
-        if (shouldSync) {
-            this.syncWithServer();
+        } catch (error) {
+            console.error('Error toggling theme:', error);
+            logToPanel('❌ Błąd podczas zmiany motywu', 'error', error);
+            throw error;
         }
     }
     
@@ -131,7 +146,24 @@ export class ThemeManager {
 
     setState(newState) {
         this.state = { ...this.state, ...newState };
-        this.subscribers.forEach(callback => callback(this.state));
+        this.notifySubscribers();
+    }
+
+    /**
+     * Powiadamia subskrybentów o zmianach stanu
+     */
+    notifySubscribers() {
+        try {
+            this.subscribers.forEach(callback => {
+                try {
+                    callback(this.state);
+                } catch (error) {
+                    console.warn('Error in theme subscriber callback:', error);
+                }
+            });
+        } catch (error) {
+            console.error('Failed to notify theme subscribers:', error);
+        }
     }
 
     /**
@@ -192,7 +224,38 @@ export class ThemeManager {
             this.updateCustomColors(colors, false);
         }
     }
+
+    /**
+     * Pobiera początkowy motyw
+     */
+    getInitialTheme() {
+        try {
+            return localStorage.getItem('theme') || 'light';
+        } catch (error) {
+            console.warn('Failed to get theme from localStorage:', error);
+            return 'light';
+        }
+    }
+
+    /**
+     * Pobiera początkowe kolory
+     */
+    getInitialColors() {
+        try {
+            const savedColors = localStorage.getItem('customColors');
+            return savedColors ? JSON.parse(savedColors) : {
+                primary: '#495057',
+                secondary: '#6c757d'
+            };
+        } catch (error) {
+            console.warn('Failed to get colors from localStorage:', error);
+            return {
+                primary: '#495057',
+                secondary: '#6c757d'
+            };
+        }
+    }
 }
 
-// Upewnijmy się, że klasa jest eksportowana jako default
-export default ThemeManager; 
+// Export singleton instance
+export const themeManager = new ThemeManager(); 

@@ -1,0 +1,35 @@
+{
+    "notifications": {
+        "newOrders": {
+            "title": "Nowe zamówienia",
+            "message": "Otrzymano {{count}} nowych zamówień"
+        },
+        "apiError": {
+            "title": "Błąd API",
+            "message": "Wystąpił błąd podczas {{context}}: {{error}}"
+        },
+        "statusUpdate": {
+            "title": "Zmiana statusu",
+            "message": "Zamówienie #{{orderId}} zmieniło status na {{status}}"
+        },
+        "userCard": {
+            "title": "Karta użytkownika",
+            "qrGenerated": "Wygenerowano nowy kod QR dla {{name}}",
+            "error": "Błąd podczas generowania kodu QR"
+        },
+        "cache": {
+            "slowWrite": {
+                "title": "Wolny zapis cache",
+                "message": "Zapis do cache trwał {{time}}ms"
+            },
+            "sizeWarning": {
+                "title": "Ostrzeżenie o rozmiarze cache",
+                "message": "Cache zajmuje {{size}}MB"
+            },
+            "error": {
+                "title": "Błąd cache",
+                "message": "Wystąpił błąd podczas operacji na cache: {{message}}"
+            }
+        }
+    }
+} 
