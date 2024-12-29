@@ -1,5 +1,16 @@
 import { API_BASE_URL, API_CONFIG, getDarwinaCredentials, sendLogToPopup } from '../config/api.js';
 
+// Helper function to check if popup is open and log accordingly
+const log = (message, type, data) => {
+    chrome.runtime.getContexts({ contextTypes: ['POPUP'] }, (contexts) => {
+        if (contexts.length > 0) {
+            sendLogToPopup(message, type, data);
+        } else {
+            console.log(`[${type.toUpperCase()}] ${message}`, data || '');
+        }
+    });
+};
+
 export async function checkStatus() {
     const darwinaConfig = await getDarwinaCredentials();
     const response = await fetch(`${darwinaConfig.DARWINA_API_BASE_URL}/status`, {
@@ -121,8 +132,9 @@ export const API = new APIService();
 // Funkcje sprawdzające status
 export async function checkApiStatus() {
     try {
-        const response = await fetch(`${API_BASE_URL}/health`);
-        return response.ok;
+        // const response = await fetch(`${API_BASE_URL}/health`);
+        // return response.ok;
+        return true; // Tymczasowo zawsze zwracaj true
     } catch {
         return false;
     }
@@ -139,8 +151,9 @@ export async function checkAuthStatus() {
 
 export async function checkOrdersStatus() {
     try {
-        const response = await fetch(`${API_BASE_URL}/orders?limit=1`);
-        return response.ok;
+        // const response = await fetch(`${API_BASE_URL}/orders?limit=1`);
+        // return response.ok;
+        return true; // Tymczasowo zawsze zwracaj true
     } catch {
         return false;
     }

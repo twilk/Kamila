@@ -72,34 +72,42 @@ function logToPanel(message, type = 'info', data = null) {
     }
 }
 
-// Dodaj obsługę logów z background.js
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'LOG_MESSAGE' && document.body.classList.contains('debug-enabled')) {
-        const { message: logMessage, type, data } = message.payload;
-        console.log('📝 Log received:', { message: logMessage, type, data });
-        logToPanel(logMessage, type, data);
-    }
-    if (message.type === 'USER_CHANGED') {
-        // Zaktualizuj wybór w selektorze użytkownika
-        const userSelect = document.getElementById('user-select');
-        if (userSelect) {
-            userSelect.value = message.payload;
+// Notify background script that popup is opened
+function notifyPopupOpened() {
+    chrome.runtime.sendMessage({ type: 'POPUP_OPENED' }, (response) => {
+        if (chrome.runtime.lastError) {
+            console.error('Error sending POPUP_OPENED:', chrome.runtime.lastError);
+            return;
         }
-        // Odśwież kartę użytkownika
-        updateUserCard();
+        if (response?.success) {
+            logToPanel('✅ Background script powiadomiony o otwarciu popup', 'success');
+        }
+    });
+}
+
+// Add message listener for logs
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'LOG') {
+        const { text, level, data } = message;
+        appendLog(text, level, data);
+        sendResponse({ received: true });
+        return true;
     }
 });
 
-// Inicjalizacja
+// Initialization
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 DOMContentLoaded event fired');
     logToPanel('🚀 Aplikacja uruchomiona');
     
     try {
-        // Inicjalizacja tłumaczeń
+        // Notify background script about popup opening
+        notifyPopupOpened();
+
+        // Initialize translations
         await i18n.init();
         
-        // Inicjalizacja konfiguracji DARWINA
+        // Initialize DARWINA configuration
         const darwinaConfig = await getDarwinaCredentials();
         console.log('🔑 Got Darwina config:', {
             hasConfig: !!darwinaConfig,
@@ -107,24 +115,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             baseUrl: darwinaConfig?.DARWINA_API_BASE_URL
         });
 
-        // Pierwsze pobranie danych
+        // Initial data fetch
         console.log('📡 Starting initial data fetch...');
         await fetchDarwinaData();
 
-        // Bezpieczna inicjalizacja komponentów UI
+        // Safe UI components initialization
         await initializeUIComponents();
         
-        // Inicjalizacja języka
+        // Language initialization
         i18n.updateDataI18n();
         updateInterface(i18n.translations);
         logToPanel('✅ Język zainicjalizowany', 'success');
 
-        // Inicjalizacja tooltipów Bootstrap
+        // Initialize Bootstrap tooltips
         initializeTooltips();
 
         await updateUserCard();
-
-        // Brakuje inicjalizacji debug mode
+        
+        // Initialize debug mode
         initializeDebugSwitch();
 
     } catch (error) {
@@ -149,6 +157,26 @@ async function initializeUIComponents() {
                 document.body.classList.toggle('debug-enabled', isEnabled);
                 localStorage.setItem('debug-enabled', isEnabled);
                 setTimeout(adjustWindowHeight, 50);
+            });
+        }
+
+        // Przycisk sprawdzania zamówień
+        const checkOrdersBtn = document.getElementById('check-orders');
+        if (checkOrdersBtn) {
+            checkOrdersBtn.addEventListener('click', async () => {
+                logToPanel('📦 Sprawdzam i aktualizuję formy dostawy...', 'info');
+                try {
+                    const response = await chrome.runtime.sendMessage({ type: 'CHECK_ORDERS_NOW' });
+                    if (response?.success) {
+                        logToPanel('✅ Zaktualizowano formy dostawy', 'success');
+                        // Odśwież dane po aktualizacji
+                        await fetchDarwinaData();
+                    } else {
+                        throw new Error(response?.error || 'Nieznany błąd');
+                    }
+                } catch (error) {
+                    logToPanel('❌ Błąd podczas aktualizacji form dostawy', 'error', error.message);
+                }
             });
         }
 
@@ -1051,18 +1079,40 @@ function initializeTabs() {
 
 // Inicjalizacja przycisków statusu
 function initializeStatusButtons() {
-    const runTestsBtn = document.getElementById('run-tests');
-    const refreshStatusBtn = document.getElementById('check-status');
+    const runTestsButton = document.getElementById('run-tests');
+    const checkStatusButton = document.getElementById('check-status');
+    const checkOrdersBtn = document.getElementById('check-orders');
 
-    if (runTestsBtn) {
-        runTestsBtn.addEventListener('click', async () => {
-            await updateAllStatuses(true); // true = pełne testy
+    if (runTestsButton) {
+        runTestsButton.addEventListener('click', async () => {
+            logToPanel('🔍 Uruchamiam testy...', 'info');
+            await updateAllStatuses();
         });
     }
 
-    if (refreshStatusBtn) {
-        refreshStatusBtn.addEventListener('click', async () => {
-            await updateAllStatuses(false); // false = szybkie sprawdzenie
+    if (checkStatusButton) {
+        checkStatusButton.addEventListener('click', async () => {
+            logToPanel('🔄 Odświeżam status...', 'info');
+            await fetchDarwinaData();
+        });
+    }
+
+    if (checkOrdersBtn) {
+        checkOrdersBtn.addEventListener('click', async () => {
+            try {
+                logToPanel('📦 Sprawdzam i aktualizuję formy dostawy...', 'info');
+                const response = await chrome.runtime.sendMessage({ type: 'CHECK_ORDERS_NOW' });
+                
+                if (response?.success) {
+                    logToPanel('✅ Zaktualizowano formy dostawy', 'success');
+                    // Odśwież dane po aktualizacji
+                    await fetchDarwinaData();
+                } else {
+                    throw new Error(response?.error || 'Nieznany błąd');
+                }
+            } catch (error) {
+                logToPanel('❌ Błąd podczas aktualizacji form dostawy', 'error', error.message);
+            }
         });
     }
 }

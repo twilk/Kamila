@@ -50,20 +50,20 @@ export async function loadCredentials() {
             throw new Error(`Failed to load credentials: ${response.status} ${response.statusText}`);
         }
         const credentials = await response.json();
-        sendLogToPopup('🔑 Credentials loaded successfully', 'success');
+        console.log('🔑 Credentials loaded successfully', 'success');
         return credentials;
     } catch (error) {
-        sendLogToPopup('❌ Error loading credentials', 'error', error.message);
+        console.log('❌ Error loading credentials', 'error', error.message);
         throw error;
     }
 }
 
 export const getDarwinaCredentials = async () => {
     try {
-        sendLogToPopup('🔄 Starting credentials fetch...', 'info');
+        console.log('🔄 Starting credentials fetch...', 'info');
         const response = await fetch(chrome.runtime.getURL('config/credentials.json'));
         
-        sendLogToPopup('📄 Credentials response:', 'info', {
+        console.log('📄 Credentials response:', 'info', {
             status: response.status,
             ok: response.ok
         });
@@ -74,15 +74,15 @@ export const getDarwinaCredentials = async () => {
         
         const credentials = await response.json();
         
-        sendLogToPopup('🔑 Credentials loaded:', 'info', {
+        console.log('🔑 Credentials loaded:', 'info', {
             hasClientId: !!credentials.client_id,
             hasClientSecret: !!credentials.client_secret
         });
         
         const tokenUrl = `${API_BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.TOKEN}`;
-        sendLogToPopup('🔗 Token URL:', 'info', tokenUrl);
+        console.log('🔗 Token URL:', 'info', tokenUrl);
         
-        sendLogToPopup('📤 Sending token request...', 'info', {
+        console.log('📤 Sending token request...', 'info', {
             url: tokenUrl,
             method: 'POST',
             headers: ['Content-Type', 'Accept'],
@@ -103,7 +103,7 @@ export const getDarwinaCredentials = async () => {
             }).toString()
         });
         
-        sendLogToPopup('🔍 Token response status:', 'info', {
+        console.log('🔍 Token response status:', 'info', {
             status: tokenResponse.status,
             statusText: tokenResponse.statusText,
             headers: Object.fromEntries(tokenResponse.headers.entries())
@@ -111,7 +111,7 @@ export const getDarwinaCredentials = async () => {
         
         if (!tokenResponse.ok) {
             const errorText = await tokenResponse.text();
-            sendLogToPopup('❌ Token response error:', 'error', {
+            console.log('❌ Token response error:', 'error', {
                 status: tokenResponse.status,
                 text: errorText
             });
@@ -119,7 +119,7 @@ export const getDarwinaCredentials = async () => {
         }
         
         const tokenData = await tokenResponse.json();
-        sendLogToPopup('🔑 Załadowano poświadczenia API', 'success');
+        console.log('🔑 Załadowano poświadczenia API', 'success');
         
         return {
             DARWINA_API_BASE_URL: API_BASE_URL,
@@ -127,7 +127,7 @@ export const getDarwinaCredentials = async () => {
         };
     } catch (error) {
         console.error('Błąd podczas pobierania danych uwierzytelniających:', error);
-        sendLogToPopup('Błąd uwierzytelniania', 'error', error.message);
+        console.log('Błąd uwierzytelniania', 'error', error.message);
         return null;
     }
 };
