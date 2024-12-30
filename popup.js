@@ -162,6 +162,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             baseUrl: darwinaConfig?.DARWINA_API_BASE_URL
         });
 
+        // Check orders immediately when extension opens
+        logToPanel('📦 Sprawdzam i aktualizuję formy dostawy...', 'info');
+        await chrome.runtime.sendMessage({ type: 'CHECK_ORDERS_NOW' });
+
         // Initial data fetch
         console.log('📡 Starting initial data fetch...');
         await fetchDarwinaData();
@@ -914,6 +918,7 @@ async function fetchDarwinaData() {
             counter.classList.remove('count-error', 'count-zero');
         });
 
+        // Fetch the data
         const response = await chrome.runtime.sendMessage({
             type: 'FETCH_DARWINA_DATA',
             selectedStore: store
@@ -1499,7 +1504,7 @@ async function updateDrwnData() {
         
         // Indeksy kolumn które chcemy wyświetlić (B=1, C=2, E=4, G=6)
         const columnIndexes = [1, 2, 4, 6];
-        const columnNames = ['Kod', 'Nazwa', 'Stan', 'DRWN'];
+        const columnNames = ['Kod', 'Nazwa', 'Stan', 'MAG'];
         
         // Update headers - tylko wybrane kolumny
         const headerRow = document.getElementById('drwn-headers');

@@ -420,23 +420,23 @@ function processOrders(orders) {
         switch (parsedStatus) {
             case 1: // SUBMITTED
                 acc['1'] = (acc['1'] || 0) + 1;
-                console.log(`[DEBUG] 📝 Zamówienie ${order.id} - status: Złożone`);
+                // console.log(`[DEBUG] 📝 Zamówienie ${order.id} - status: Złożone`);
                 break;
             case 2: // CONFIRMED
                 acc['2'] = (acc['2'] || 0) + 1;
-                console.log(`[DEBUG] ✓ Zamówienie ${order.id} - status: Potwierdzone`);
+                // console.log(`[DEBUG] ✓ Zamówienie ${order.id} - status: Potwierdzone`);
                 break;
             case 3: // ACCEPTED_STORE
                 acc['3'] = (acc['3'] || 0) + 1;
-                console.log(`[DEBUG] 🏪 Zamówienie ${order.id} - status: Przyjęte`);
+                // console.log(`[DEBUG] 🏪 Zamówienie ${order.id} - status: Przyjęte`);
                 break;
             case 5: // READY
                 if (parsedDate < twoWeeksAgo) {
                     acc['OVERDUE'] = (acc['OVERDUE'] || 0) + 1;
-                    console.log(`[DEBUG] ⏳ Zamówienie ${order.id} oznaczone jako przeterminowane (data: ${orderDate})`);
+                    // console.log(`[DEBUG] ⏳ Zamówienie ${order.id} oznaczone jako przeterminowane (data: ${orderDate})`);
                 } else {
                     acc['READY'] = (acc['READY'] || 0) + 1;
-                    console.log(`[DEBUG] 📦 Zamówienie ${order.id} - status: Gotowe do odbioru`);
+                    // console.log(`[DEBUG] 📦 Zamówienie ${order.id} - status: Gotowe do odbioru`);
                 }
                 break;
             default:
