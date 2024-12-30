@@ -211,6 +211,9 @@ async function initializeUIComponents() {
             });
         }
 
+        // Initialize refresh button
+        initializeRefreshButton();
+
         // Przycisk sprawdzania zamówień
         const checkOrdersBtn = document.getElementById('check-orders');
         if (checkOrdersBtn) {
@@ -1638,4 +1641,34 @@ document.querySelectorAll('.nav-link').forEach(tab => {
         }
     });
 });
+
+// Initialize refresh button functionality
+function initializeRefreshButton() {
+    const refreshButton = document.getElementById('refresh-store-data');
+    if (!refreshButton) return;
+
+    refreshButton.addEventListener('click', async () => {
+        const selectedStore = document.getElementById('store-select').value;
+        
+        // Show loading state
+        refreshButton.disabled = true;
+        refreshButton.querySelector('i').classList.add('rotate');
+        
+        try {
+            // Clear cache for the selected store
+            await chrome.storage.local.remove(CACHE_KEY + '_' + selectedStore);
+            // Remove last refresh timestamp
+            localStorage.removeItem('last_fetch_time');
+            // Reload lead counts
+            await fetchDarwinaData();
+            logToPanel('🔄 Odświeżono dane dla sklepu: ' + selectedStore, 'success');
+        } catch (error) {
+            logToPanel('❌ Błąd odświeżania danych', 'error', error);
+        } finally {
+            // Reset button state
+            refreshButton.disabled = false;
+            refreshButton.querySelector('i').classList.remove('rotate');
+        }
+    });
+}
 

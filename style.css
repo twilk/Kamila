@@ -1469,3 +1469,22 @@ body.debug-enabled .tab-content {
         font-size: 13px;
     }
 }
+
+/* Refresh button animation */
+@keyframes rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.bi-arrow-clockwise.rotate {
+    animation: rotate 1s linear infinite;
+}
+
+#refresh-store-data {
+    padding: 0.25rem 0.5rem;
+    line-height: 1;
+}
+
+#refresh-store-data:disabled {
+    opacity: 0.6;
+}
