@@ -5,48 +5,95 @@
   --wine-accent: #D4AF37;      /* Złoty akcent */
   
   /* Tło i tekst */
-  --bg-primary: #FFFFFF;
-  --bg-secondary: #F8F9FA;
-  --text-primary: #1A1A1A;
-  --text-secondary: #666666;
+  --bg-primary: var(--gray-100);
+  --bg-secondary: var(--gray-200);
+  --text-primary: var(--gray-900);
+  --text-secondary: var(--gray-600);
   
   /* Karty statusów */
-  --status-border: #E4E7EC;
-  --status-hover: #F5F7FA;
+  --status-border: var(--gray-300);
+  --status-hover: var(--gray-200);
   --status-shadow: 0 2px 4px rgba(0,0,0,0.05);
+
+  /* Kolory dla tabeli DRWN */
+  --drwn-red: #dc3545;
+  --drwn-green: #28a745;
 }
 
 [data-theme='dark'] {
-  --bg-primary: #1E2028;
-  --bg-secondary: #2E323C;
-  --text-primary: #FFFFFF;
-  --text-secondary: #A0A0A0;
-  --status-border: #3E4251;
-  --status-hover: #2A2D36;
+  --bg-primary: var(--gray-900);
+  --bg-secondary: var(--gray-800);
+  --text-primary: var(--gray-200);
+  --text-secondary: var(--gray-500);
+  --status-border: var(--gray-700);
+  --status-hover: var(--gray-800);
+
+  /* Kolory dla tabeli DRWN w trybie ciemnym */
+  --drwn-red: #ff4d4d;
+  --drwn-green: #4dff4d;
+}
+
+/* Style dla tabeli DRWN */
+#drwn-data td:nth-child(3) { color: var(--drwn-red); } /* Stan czerwony dla ≤ 1 */
+#drwn-data td:nth-child(4) { color: var(--drwn-green); } /* Stan DRWN zielony */
+
+/* Dark theme dla tabeli DRWN */
+[data-theme='dark'] #drwn-data {
+    background: var(--bg-secondary);
+    border-color: var(--drwn-border);
+}
+
+[data-theme='dark'] #drwn-data thead {
+    background: var(--bg-secondary);
+    box-shadow: 0 2px 4px var(--drwn-shadow);
+}
+
+[data-theme='dark'] #drwn-data tbody tr:hover {
+    background-color: var(--status-hover);
+}
+
+[data-theme='dark'] #drwn-data td, 
+[data-theme='dark'] #drwn-data th {
+    border-color: var(--drwn-border);
 }
 
 /* Karty statusów */
 .lead-status {
-  background: var(--bg-primary);
-  border: 1px solid var(--status-border);
-  border-radius: 8px;
-  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem;
+  background: var(--gray-200);
+  border-radius: var(--radius-md);
   margin-bottom: 0.5rem;
-  transition: all 0.3s ease;
-  cursor: pointer;
+  transition: all var(--transition-fast);
+  cursor: help;
+}
+
+.dark-theme .lead-status {
+  background: var(--gray-800);
 }
 
 .lead-status:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--status-shadow);
-  border-color: var(--wine-accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 /* Liczniki */
 .lead-count {
-  font-size: 1.5rem;
   font-weight: 600;
-  color: var(--wine-primary);
+  color: var(--gray-800);
+  margin-left: 0.5rem;
+  transition: all 0.3s ease-in-out;
+}
+
+.dark-theme .lead-count {
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.lead-status:hover .lead-count {
+  transform: scale(1.1);
 }
 
 /* Select sklepu */
@@ -65,14 +112,27 @@
 }
 
 /* Przyciski */
-.btn-primary {
+.btn-primary, #check-orders {
   background: var(--wine-primary);
   border-color: var(--wine-primary);
+  color: #fff;
+  transition: all var(--transition-fast);
 }
 
-.btn-primary:hover {
+.btn-primary:hover, #check-orders:hover {
   background: var(--wine-secondary);
   border-color: var(--wine-secondary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+#check-orders i {
+  margin-right: 0.5rem;
+  transition: transform 0.3s ease;
+}
+
+#check-orders:hover i {
+  transform: rotate(180deg);
 }
 
 @keyframes refresh-spin {
@@ -82,4 +142,13 @@
 
 .refreshing {
     animation: refresh-spin 1s linear infinite;
+}
+
+.settings-section:has(h6:contains("Zamówienia")) {
+  display: none;
+}
+
+/* Alternatywnie, jeśli selektor :has nie jest wspierany */
+.settings-section:last-of-type {
+  display: none;
 } 

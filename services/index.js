@@ -3,4 +3,6 @@ export * from './cache.js';
 export * from './i18n.js';
 export * from './theme.js';
 export * from './wallpaper.js';
-export { UpdateManager } from './updateManager.js'; 
+export { UpdateManager } from './updateManager.js';
+export * from './userCard.js';
+export * from './drwn.js'; 

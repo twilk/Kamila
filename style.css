@@ -85,6 +85,12 @@ html, body {
     background-color: var(--bg-light);
     color: var(--text-light);
     transition: background-color 0.3s, color 0.3s;
+    overflow: hidden !important;
+}
+
+body {
+    width: 800px;
+    height: 600px;
 }
 
 /* Ciemny motyw */
@@ -100,6 +106,54 @@ body.dark-theme {
     display: flex;
     flex-direction: column;
     position: relative;
+    overflow: hidden !important;
+}
+
+/* Blokada scrollowania */
+.tab-content, 
+.tab-pane, 
+.container-fluid, 
+body, 
+html {
+    overflow: hidden !important;
+    overscroll-behavior: none;
+}
+
+.tab-content::-webkit-scrollbar, 
+.tab-pane::-webkit-scrollbar, 
+.container-fluid::-webkit-scrollbar, 
+body::-webkit-scrollbar, 
+html::-webkit-scrollbar {
+    display: none;
+}
+
+/* Debug panel */
+.debug-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-light);
+    z-index: 1000;
+    height: var(--debug-panel-height);
+    max-height: var(--debug-panel-height);
+    overflow-y: auto !important;
+    display: none;
+}
+
+/* Gdy debug mode jest włączony */
+body.debug-enabled .debug-panel {
+    display: block;
+}
+
+body.debug-enabled .container-fluid {
+    padding-bottom: var(--debug-panel-height);
+}
+
+/* Tabela DRWN - tylko ona może mieć scroll */
+#drwn-data {
+    overflow-y: auto !important;
 }
 
 /* Panel boczny */
@@ -119,6 +173,80 @@ body.dark-theme {
     color: var(--gray-800);
     margin-left: 0.5rem;
     transition: all 0.3s ease-in-out;
+}
+/* Style dla tabów */
+.nav-tabs {
+    border-bottom: 1px solid var(--border-light);
+    margin-bottom: 1rem;
+}
+
+.nav-tabs .nav-link {
+    color: var(--text-light);
+    border: none;
+    padding: 0.75rem 1rem;
+    transition: all 0.2s ease;
+    position: relative;
+    cursor: pointer;
+}
+
+.dark-theme .nav-tabs .nav-link {
+    color: var(--text-dark);
+}
+
+.nav-tabs .nav-link:hover {
+    color: var(--primary);
+    background: transparent;
+    border: none;
+}
+
+.nav-tabs .nav-link.active {
+    color: white;
+    background: var(--primary);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+/* Style dla zawartości tabów */
+.tab-content {
+    padding: 1rem 0;
+    overflow: hidden !important;
+}
+
+.tab-pane {
+    display: none;
+    overflow: hidden;
+    height: calc(100vh - 160px);
+}
+
+.tab-pane.show.active {
+    display: block;
+}
+
+/* Debug panel styles */
+.debug-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-light);
+    z-index: 1000;
+    height: auto;
+    max-height: 200px;
+    overflow-y: auto !important;
+}
+
+/* Gdy debug mode jest włączony */
+body.debug-enabled {
+    overflow: hidden !important;
+}
+
+body.debug-enabled .container-fluid {
+    overflow: hidden !important;
+    padding-bottom: 200px;
+}
+
+body.debug-enabled .tab-content {
+    overflow: hidden !important;
 }
 
 /* Ciemny motyw dla liczników */
@@ -592,10 +720,13 @@ body.debug-enabled {
 /* Style dla zawartości tabów */
 .tab-content {
     padding: 1rem 0;
+    overflow: hidden !important;
 }
 
 .tab-pane {
     display: none;
+    overflow: hidden;
+    height: calc(100vh - 160px);
 }
 
 .tab-pane.show.active {
@@ -1199,4 +1330,142 @@ body.debug-enabled #status {
 .dark-theme .modal .btn-secondary:hover {
     background-color: var(--modal-button-hover-dark);
     border-color: var(--modal-border-dark);
+}
+
+/* Style dla tabeli DRWN */
+#drwn-data {
+    position: relative;
+    height: calc(100vh - 220px) !important;
+    overflow-y: auto;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    max-width: 100%;
+    background: var(--bg-light);
+    margin-top: 5px;
+}
+
+#drwn.tab-pane {
+    overflow: visible;
+    margin-top: -10px;
+}
+
+#drwn.tab-pane .p-3 {
+    padding: 0.25rem !important;
+}
+
+#drwn-data td, #drwn-data th {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 14px;
+}
+
+#drwn-data thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg-secondary);
+    box-shadow: 0 2px 4px var(--shadow-light);
+}
+
+#drwn-data table {
+    margin-bottom: 0;
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+#drwn-data th {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 12px;
+    color: var(--text-secondary);
+    letter-spacing: 0.5px;
+}
+
+/* Szerokości kolumn */
+#drwn-data td:nth-child(1), #drwn-data th:nth-child(1) { width: 15%; } /* Kod */
+#drwn-data td:nth-child(2), #drwn-data th:nth-child(2) { width: 55%; } /* Nazwa */
+#drwn-data td:nth-child(3), #drwn-data th:nth-child(3) { width: 15%; } /* Stan */
+#drwn-data td:nth-child(4), #drwn-data th:nth-child(4) { width: 15%; } /* DRWN */
+
+/* Formatowanie komórek */
+#drwn-data td:nth-child(1) { 
+    font-family: monospace; 
+    color: var(--text-secondary); 
+    font-size: 12px;
+} /* Kod */
+
+#drwn-data td:nth-child(2) { 
+    white-space: normal; 
+    line-height: 1.4; 
+    font-size: 12px;
+} /* Nazwa */
+
+#drwn-data td:nth-child(3), #drwn-data td:nth-child(4) { 
+    text-align: center; 
+    font-weight: 600;
+}
+
+#drwn-data tbody tr:hover {
+    background-color: var(--hover-light);
+    cursor: default;
+}
+
+#drwn-data .table-responsive {
+    overflow-x: hidden;
+    padding: 0 1px;
+}
+
+#drwn-data th {
+    position: relative;
+    padding-right: 20px;
+}
+
+#drwn-data .empty-message {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+#drwn-data.loading tbody {
+    opacity: 0.5;
+    transition: opacity 0.3s;
+}
+
+/* Debug panel styles */
+.debug-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-light);
+    z-index: 1000;
+    height: auto;
+    max-height: 200px;
+    overflow-y: auto !important;
+}
+
+/* Gdy debug mode jest włączony */
+body.debug-enabled {
+    overflow: hidden !important;
+}
+
+body.debug-enabled .container-fluid {
+    overflow: hidden !important;
+    padding-bottom: 200px;
+}
+
+body.debug-enabled .tab-content {
+    overflow: hidden !important;
+}
+
+/* Responsywność */
+@media (max-width: 768px) {
+    #drwn-data td, #drwn-data th {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
 }

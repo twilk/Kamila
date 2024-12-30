@@ -4,6 +4,7 @@ import { getDarwinaCredentials, sendLogToPopup } from './config/api.js';
 import { i18n } from './services/i18n.js';
 import { CacheService } from './services/cache.js';
 import { UserCardService } from './services/userCard.js';
+import { DrwnService } from './services/drwn.js';
 import { 
     checkApiStatus, 
     checkAuthStatus, 
@@ -876,6 +877,14 @@ async function initializeStoreSelect() {
             }
         });
 
+        // Add event listener for DRWN data updates
+        storeSelect.addEventListener('change', async () => {
+            const activeTab = document.querySelector('.nav-link.active');
+            if (activeTab?.getAttribute('data-target') === '#drwn') {
+                await updateDrwnData();
+            }
+        });
+
         logToPanel('✅ Zainicjalizowano wybór sklepu', 'success');
     } catch (error) {
         logToPanel('❌ Błąd inicjalizacji wyboru sklepu', 'error', error.message);
@@ -1084,43 +1093,27 @@ function showLoader(counter) {
 
 // Dodaj tę funkcję do initializeUIComponents
 function initializeTabs() {
-    const tabLinks = document.querySelectorAll('.nav-link');
-    const tabContents = document.querySelectorAll('.tab-pane');
-    
-    tabLinks.forEach(link => {
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
+    const tabButtons = document.querySelectorAll('.nav-link');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+
+    tabButtons.forEach(button => {
+        button.addEventListener('click', async () => {
+            const targetId = button.getAttribute('data-target');
             
-            // Usuń aktywną klasę ze wszystkich tabów
-            tabLinks.forEach(tab => tab.classList.remove('active'));
-            tabContents.forEach(content => content.classList.remove('show', 'active'));
+            // Remove active class from all buttons and panes
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            tabPanes.forEach(pane => pane.classList.remove('show', 'active'));
             
-            // Dodaj aktywną klasę do wybranego taba
-            link.classList.add('active');
-            
-            // Pokaż odpowiednią zawartość
-            const targetId = link.getAttribute('data-target');
-            const targetContent = document.querySelector(targetId);
-            if (targetContent) {
-                targetContent.classList.add('show', 'active');
+            // Add active class to clicked button and its target pane
+            button.classList.add('active');
+            document.querySelector(targetId)?.classList.add('show', 'active');
+
+            // If DRWN tab is activated, update its data
+            if (targetId === '#drwn') {
+                await updateDrwnData();
             }
-            
-            // Zapisz aktywny tab
-            localStorage.setItem('activeTab', targetId);
-            
-            // Dostosuj wysokość okna
-            setTimeout(adjustWindowHeight, 50);
         });
     });
-
-    // Przywróć ostatnio wybrany tab
-    const lastActiveTab = localStorage.getItem('activeTab');
-    if (lastActiveTab) {
-        const tabToActivate = document.querySelector(`[data-target="${lastActiveTab}"]`);
-        if (tabToActivate) {
-            tabToActivate.click();
-        }
-    }
 }
 
 // Inicjalizacja przycisków statusu
@@ -1478,5 +1471,112 @@ function initializeLeadStatusLinks() {
 function getStoreId(storeCode) {
     const store = stores.find(s => s.id === storeCode);
     return store ? store.deliveryId.toString() : '0';
+}
+
+// Funkcja do aktualizacji danych DRWN
+async function updateDrwnData() {
+    const drwnTable = document.getElementById('drwn-data');
+    if (drwnTable) {
+        drwnTable.classList.add('loading');
+    }
+
+    try {
+        const selectedStore = document.getElementById('store-select').value;
+        if (!selectedStore || selectedStore === 'ALL') {
+            const tbody = document.getElementById('drwn-body');
+            tbody.innerHTML = '<tr><td colspan="4" class="empty-message">Wybierz sklep aby zobaczyć dane</td></tr>';
+            return;
+        }
+
+        // Znajdź sklep w konfiguracji
+        const store = stores.find(s => s.id === selectedStore);
+        if (!store || !store.drwn) {
+            throw new Error(`Brak danych DRWN dla sklepu ${selectedStore}`);
+        }
+
+        // Pobierz dane z odpowiedniej zakładki
+        const { headers, rows } = await DrwnService.getSheetData(store.drwn);
+        
+        // Indeksy kolumn które chcemy wyświetlić (B=1, C=2, E=4, G=6)
+        const columnIndexes = [1, 2, 4, 6];
+        const columnNames = ['Kod', 'Nazwa', 'Stan', 'DRWN'];
+        
+        // Update headers - tylko wybrane kolumny
+        const headerRow = document.getElementById('drwn-headers');
+        headerRow.innerHTML = columnNames
+            .map(name => `<th>${name}</th>`)
+            .join('');
+        
+        // Filtruj i wyświetl wiersze
+        const tbody = document.getElementById('drwn-body');
+        if (rows.length > 0) {
+            // Funkcja pomocnicza do określania minimalnej wartości dla kolumny G
+            const getMinimumGValue = (productName) => {
+                if (!productName) return 0;
+                productName = productName.trim().toUpperCase();
+                
+                if (productName.endsWith('DRWN') && !productName.endsWith('DRWN2') && !productName.endsWith('DRWN3') && !productName.endsWith('DRWNG')) return 6;
+                if (productName.endsWith('DRWN2')) return 3;
+                if (productName.endsWith('DRWN3')) return 1;
+                if (productName.endsWith('DRWNG')) return 2;
+                return 0;
+            };
+
+            // Filtruj wiersze
+            const filteredRows = rows.filter(row => {
+                const shopStock = parseFloat(row[4] || '0'); // Kolumna E
+                const drwnStock = parseFloat(row[6] || '0'); // Kolumna G
+                const productName = String(row[2] || '').trim(); // Kolumna C
+                
+                // Jeśli nie ma nazwy produktu lub wartości są nieprawidłowe, pomiń wiersz
+                if (!productName || isNaN(shopStock) || isNaN(drwnStock)) {
+                    return false;
+                }
+
+                const minGValue = getMinimumGValue(productName);
+                console.log(`Product: ${productName}, Min G Value: ${minGValue}, Current G Value: ${drwnStock}, Shop Stock: ${shopStock}`);
+                
+                return shopStock <= 1 && drwnStock >= minGValue;
+            });
+
+            if (filteredRows.length > 0) {
+                tbody.innerHTML = filteredRows
+                    .map(row => {
+                        const shopStock = parseFloat(row[4] || '0');
+                        const drwnStock = parseFloat(row[6] || '0');
+                        
+                        return `<tr>
+                            <td title="${row[1] || ''}">${row[1] || ''}</td>
+                            <td title="${row[2] || ''}">${row[2] || ''}</td>
+                            <td title="Stan w sklepie: ${shopStock}">${shopStock.toFixed(0)}</td>
+                            <td title="Stan DRWN: ${drwnStock}">${drwnStock.toFixed(0)}</td>
+                        </tr>`;
+                    })
+                    .join('');
+                logToPanel(`✅ Znaleziono ${filteredRows.length} produktów spełniających warunki`, 'success');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="4" class="empty-message">Brak produktów spełniających warunki</td></tr>';
+                logToPanel('ℹ️ Brak produktów spełniających warunki', 'info');
+            }
+        } else {
+            tbody.innerHTML = '<tr><td colspan="4" class="empty-message">Brak danych</td></tr>';
+            logToPanel('ℹ️ Brak danych w arkuszu', 'info');
+        }
+
+        logToPanel(`✅ Zaktualizowano dane DRWN dla sklepu ${store.name}`, 'success');
+    } catch (error) {
+        console.error('Error updating DRWN data:', error);
+        logToPanel('❌ Błąd aktualizacji danych DRWN', 'error', error.message);
+        
+        // Pokaż błąd w tabeli
+        const tbody = document.getElementById('drwn-body');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="4" class="empty-message text-danger">Błąd: ${error.message}</td></tr>`;
+        }
+    } finally {
+        if (drwnTable) {
+            drwnTable.classList.remove('loading');
+        }
+    }
 }
 

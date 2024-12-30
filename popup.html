@@ -6,14 +6,9 @@
     <title data-i18n="appTitle">Kamila</title>
     <link href="lib/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <style>
-        html {
-            border-radius: 12px;
-            overflow: hidden;
-        }
-    </style>
+    <link rel="stylesheet" href="styles/theme.css">
 </head>
-<body style="width: 800px; height: 600px; margin: 0; padding: 0;">
+<body>
     <div class="container-fluid h-100">
         <div id="language-switcher" class="d-flex justify-content-start p-2">
             <span class="flag active" data-lang="polish" title="Polski" data-i18n-tooltip="languagePolish">🇵🇱</span>
@@ -90,6 +85,11 @@
                             <span data-i18n="status">Status</span>
                         </button>
                     </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" data-target="#drwn" type="button" role="tab">
+                            <span>DRWN</span>
+                        </button>
+                    </li>
                 </ul>
 
                 <div class="tab-content">
@@ -121,7 +121,7 @@
                     </div>
 
                     <div class="tab-pane fade" id="settings" role="tabpanel">
-                        <h5 data-i18n="settings">Ustawienia</h5>
+                        <!-- <h5 data-i18n="settings">Ustawienia</h5> -->
                         
                         <!-- Motyw -->
                         <div class="settings-section">
@@ -183,7 +183,7 @@
                     </div>
 
                     <div class="tab-pane fade" id="about" role="tabpanel">
-                        <h5 data-i18n="about">O aplikacji</h5>
+                        <!-- <h5 data-i18n="about">O aplikacji</h5> -->
                         <p data-i18n="creator">Twórca: Tomasz Wilk</p>
                         <p data-i18n="purpose">Cel: Automatyzacja procesów obsługi klienta i zarządzania zamówieniami w DARWINA.PL</p>
                         <p id="version" data-i18n="version">Wersja: 1.0.0</p>
@@ -196,7 +196,7 @@
 
                     <div class="tab-pane fade" id="status" role="tabpanel">
                         <div class="p-3">
-                            <h5 data-i18n="serviceStatus">Status usług</h5>
+                            <!-- <h5 data-i18n="serviceStatus">Status usług</h5> -->
                             
                             <div class="status-section">
                                 <!-- Lewa strona - kontrolki -->
@@ -246,6 +246,23 @@
                                         <span data-i18n="statusError">Błąd</span>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="drwn" role="tabpanel">
+                        <div class="p-3">
+                            <div id="drwn-data">
+                                <table class="table table-sm table-hover">
+                                    <thead class="sticky-top bg-white">
+                                        <tr id="drwn-headers">
+                                            <!-- Headers will be populated dynamically -->
+                                        </tr>
+                                    </thead>
+                                    <tbody id="drwn-body">
+                                        <!-- Data will be populated dynamically -->
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>

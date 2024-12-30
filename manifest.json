@@ -16,7 +16,8 @@
     "host_permissions": [
         "https://darwina.pl/*",
         "https://*.darwina.pl/*",
-        "https://darwina.weblucy.com/*"
+        "https://darwina.weblucy.com/*",
+        "https://docs.google.com/*"
     ],
     "action": {
         "default_popup": "popup.html"
@@ -31,7 +32,7 @@
         "type": "module"
     },
     "content_security_policy": {
-        "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://darwina.pl https://*.darwina.pl https://darwina.weblucy.com;"
+        "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://darwina.pl https://*.darwina.pl https://darwina.weblucy.com https://docs.google.com;"
     },
     "content_scripts": [{
         "matches": [
