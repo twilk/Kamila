@@ -90,6 +90,11 @@
                             <span>DRWN</span>
                         </button>
                     </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" data-target="#ranking" type="button" role="tab">
+                            <span>Ranking</span>
+                        </button>
+                    </li>
                 </ul>
 
                 <div class="tab-content">
@@ -261,6 +266,24 @@
                                     </thead>
                                     <tbody id="drwn-body">
                                         <!-- Data will be populated dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="ranking" role="tabpanel">
+                        <div class="p-3">
+                            <div id="ranking-data">
+                                <table class="table table-sm table-hover">
+                                    <thead class="sticky-top bg-white">
+                                        <tr>
+                                            <th>Pozycja</th>
+                                            <th>Imię i nazwisko</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Dane będą wstawiane dynamicznie przez JavaScript -->
                                     </tbody>
                                 </table>
                             </div>

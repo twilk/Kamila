@@ -1534,7 +1534,7 @@ async function updateDrwnData() {
                 }
 
                 const minGValue = getMinimumGValue(productName);
-                console.log(`Product: ${productName}, Min G Value: ${minGValue}, Current G Value: ${drwnStock}, Shop Stock: ${shopStock}`);
+                // console.log(`Product: ${productName}, Min G Value: ${minGValue}, Current G Value: ${drwnStock}, Shop Stock: ${shopStock}`);
                 
                 return shopStock <= 1 && drwnStock >= minGValue;
             });
@@ -1579,4 +1579,58 @@ async function updateDrwnData() {
         }
     }
 }
+
+// Funkcja do pobierania danych rankingu
+async function updateRankingData() {
+    const SHEET_ID = '1gRAuqAbHrFR76Not6tjKLfvNz8FS_S2Uzo0GTQnMTWI';
+    const SHEET_NAME = '2024-12';
+    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${SHEET_NAME}&range=B:C`;
+
+    try {
+        logToPanel('🔄 Pobieram dane rankingu...', 'info');
+        const response = await fetch(url);
+        const text = await response.text();
+        
+        // Wyciągamy właściwy JSON z odpowiedzi
+        const jsonData = JSON.parse(text.substring(47).slice(0, -2));
+        
+        const tbody = document.querySelector('#ranking-data tbody');
+        tbody.innerHTML = '';
+
+        // Pomijamy pierwszy wiersz (nagłówki)
+        jsonData.table.rows.forEach((row, index) => {
+            // if (index === 0) return; // Pomijamy nagłówek
+            
+            const position = row.c[0]?.v || ''; // Kolumna B (pozycja)
+            const name = row.c[1]?.v || '';     // Kolumna C (imię i nazwisko)
+            
+            if (position && name) { // Dodajemy wiersz tylko jeśli mamy pozycję i nazwisko
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${position}</td>
+                    <td>${name}</td>
+                `;
+                tbody.appendChild(tr);
+            }
+        });
+        
+        logToPanel('✅ Zaktualizowano ranking', 'success');
+    } catch (error) {
+        console.error('Błąd podczas pobierania danych rankingu:', error);
+        logToPanel('❌ Błąd podczas pobierania danych rankingu', 'error', error.message);
+        
+        const tbody = document.querySelector('#ranking-data tbody');
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-danger">Błąd podczas pobierania danych</td></tr>';
+    }
+}
+
+// Dodajemy nasłuchiwanie na zmianę zakładki
+document.querySelectorAll('.nav-link').forEach(tab => {
+    tab.addEventListener('click', function (event) {
+        const targetId = this.getAttribute('data-target');
+        if (targetId === '#ranking') {
+            updateRankingData();
+        }
+    });
+});
 

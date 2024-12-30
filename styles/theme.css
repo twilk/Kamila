@@ -173,4 +173,118 @@ select:focus {
 /* Alternatywnie, jeśli selektor :has nie jest wspierany */
 .settings-section:last-of-type {
   display: none;
+}
+
+/* Style dla tabeli rankingu */
+#ranking-data {
+  position: relative;
+  height: calc(100vh - 220px) !important;
+  overflow-y: auto;
+  border: 1px solid var(--status-border);
+  border-radius: var(--radius-lg);
+  max-width: 100%;
+  background: var(--bg-primary);
+  margin-top: 5px;
+}
+
+#ranking.tab-pane {
+  overflow: visible;
+  margin-top: -10px;
+}
+
+#ranking.tab-pane .p-3 {
+  padding: 0.25rem !important;
+}
+
+#ranking-data td, 
+#ranking-data th {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--status-border);
+  font-size: 14px;
+}
+
+#ranking-data thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-secondary);
+  box-shadow: 0 2px 4px var(--shadow-light);
+}
+
+#ranking-data table {
+  margin-bottom: 0;
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+#ranking-data th {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+}
+
+/* Szerokości kolumn */
+#ranking-data td:nth-child(1), 
+#ranking-data th:nth-child(1) { 
+  width: 15%; 
+  text-align: center;
+  font-weight: 600;
+  color: var(--wine-primary);
+} 
+
+#ranking-data td:nth-child(2), 
+#ranking-data th:nth-child(2) { 
+  width: 85%; 
+}
+
+#ranking-data tbody tr:hover {
+  background-color: var(--hover-light);
+  cursor: default;
+}
+
+/* Dark theme dla tabeli rankingu */
+[data-theme='dark'] #ranking-data {
+  background: var(--bg-secondary);
+  border-color: var(--status-border);
+}
+
+[data-theme='dark'] #ranking-data thead {
+  background: var(--bg-secondary);
+  box-shadow: 0 2px 4px var(--shadow-dark);
+}
+
+[data-theme='dark'] #ranking-data tbody tr:hover {
+  background-color: var(--hover-dark);
+}
+
+[data-theme='dark'] #ranking-data td, 
+[data-theme='dark'] #ranking-data th {
+  border-color: var(--status-border);
+} 
+
+.input {
+  width: calc(80%);
+  padding: 0.5rem;
+  border: 1px solid var(--status-border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: all 0.3s;
+  font-size: 14px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--wine-primary);
+  box-shadow: 0 0 0 2px rgba(114, 47, 55, 0.2);
+}
+
+[data-theme='dark'] .input {
+  background-color: var(--bg-secondary);
+  border-color: var(--status-border);
+  color: var(--text-primary);
 } 
