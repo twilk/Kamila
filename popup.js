@@ -73,16 +73,62 @@ function logToPanel(message, type = 'info', data = null) {
 }
 
 // Notify background script that popup is opened
-function notifyPopupOpened() {
-    chrome.runtime.sendMessage({ type: 'POPUP_OPENED' }, (response) => {
-        if (chrome.runtime.lastError) {
-            console.error('Error sending POPUP_OPENED:', chrome.runtime.lastError);
-            return;
+async function notifyPopupOpened() {
+    try {
+        // Pokaż loader w licznikach podczas ładowania
+        document.querySelectorAll('.lead-count').forEach(counter => {
+            counter.textContent = '...';
+            counter.classList.remove('count-error', 'count-zero');
+        });
+
+        const response = await chrome.runtime.sendMessage({ type: 'POPUP_OPENED' });
+        
+        if (!response?.success) {
+            throw new Error(response?.error || 'Nieznany błąd');
         }
-        if (response?.success) {
-            logToPanel('✅ Background script powiadomiony o otwarciu popup', 'success');
+
+        // Aktualizuj liczniki otrzymanymi danymi
+        if (response.counts) {
+            // Mapowanie statusów na ID elementów
+            const statusToElementId = {
+                '1': 'count-1',
+                '2': 'count-2',
+                '3': 'count-3',
+                'READY': 'count-ready',
+                'OVERDUE': 'count-overdue'
+            };
+
+            console.log('[DEBUG] 📊 Otrzymane dane:', response.counts);
+            
+            Object.entries(response.counts).forEach(([status, count]) => {
+                const elementId = statusToElementId[status];
+                if (!elementId) {
+                    console.warn(`[WARNING] ⚠️ Nieznany status: ${status}`);
+                    return;
+                }
+                
+                const counter = document.getElementById(elementId);
+                if (counter) {
+                    console.log(`[DEBUG] 🔄 Aktualizuję licznik ${elementId}: ${count}`);
+                    counter.textContent = count;
+                    counter.classList.toggle('count-zero', count === 0);
+                    counter.classList.remove('count-error');
+                } else {
+                    console.warn(`[WARNING] ⚠️ Nie znaleziono elementu o ID: ${elementId}`);
+                }
+            });
+            logToPanel('✅ Zaktualizowano liczniki', 'success');
         }
-    });
+    } catch (error) {
+        console.error('Error in notifyPopupOpened:', error);
+        logToPanel('❌ Błąd podczas ładowania liczników', 'error', error.message);
+        
+        // Pokaż błąd w licznikach
+        document.querySelectorAll('.lead-count').forEach(counter => {
+            counter.textContent = '-';
+            counter.classList.add('count-error');
+        });
+    }
 }
 
 // Add message listener for logs

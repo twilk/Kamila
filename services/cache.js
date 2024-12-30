@@ -1,6 +1,6 @@
 import { sendLogToPopup } from '../config/api.js';
 
-const CACHE_DURATION = 4 * 60 * 1000; // 4 minuty w milisekundach
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minuty w milisekundach
 
 export class CacheService {
     static async get(key) {

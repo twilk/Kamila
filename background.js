@@ -21,6 +21,11 @@ chrome.runtime.onInstalled.addListener(async () => {
         console.log('[DEBUG] 🔄 Uruchamiam pierwsze sprawdzanie zamówień...');
         await checkAndUpdateOrders();
         
+        // Inicjalizacja badge'a
+        const { selectedStore } = await chrome.storage.local.get('selectedStore');
+        const data = await fetchAndCacheData(selectedStore);
+        updateExtensionBadge(data.counts, selectedStore);
+        
         console.log('[SUCCESS] ✅ Instalacja zakończona pomyślnie');
     } catch (error) {
         console.error('[ERROR] ❌ Błąd podczas instalacji:', error);
@@ -93,6 +98,8 @@ async function fetchAndCacheData(selectedStore) {
         if (data.success) {
             await CacheService.set(getCacheKey(selectedStore), data);
             log('✅ Dane zapisane w cache', 'success');
+            // Aktualizuj badge po pobraniu nowych danych
+            updateExtensionBadge(data.counts, selectedStore);
         }
         return data;
     } catch (error) {
@@ -128,31 +135,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const cachedData = await CacheService.get(cacheKey);
             if (cachedData) {
                 console.log('📦 Zwracam dane z cache');
+                updateExtensionBadge(cachedData.counts, message.selectedStore);
                 return cachedData;
             }
             console.log('🔄 Cache pusty, pobieram nowe dane');
-            return await fetchAndCacheData(message.selectedStore);
+            const data = await fetchAndCacheData(message.selectedStore);
+            updateExtensionBadge(data.counts, message.selectedStore);
+            return data;
         });
         return true;
     }
 
     if (message.type === 'POPUP_OPENED') {
         handleAsyncMessage(async () => {
-            await checkAndUpdateOrders();
-            const storage = await chrome.storage.local.get(['leadCounts', 'lastUpdate']);
-            const now = Date.now();
-            const cacheAge = now - (storage.lastUpdate || 0);
-            
-            if (storage.leadCounts && cacheAge < FETCH_INTERVAL * 60 * 1000) {
-                return { success: true, data: storage.leadCounts };
+            try {
+                console.log('[DEBUG] 📱 Popup otwarty - rozpoczynam ładowanie danych');
+                
+                // Pobierz aktualnie wybrany sklep
+                const { selectedStore } = await chrome.storage.local.get('selectedStore');
+                console.log('[DEBUG] 🏪 Wybrany sklep:', selectedStore || 'ALL');
+                
+                // Sprawdź dane w cache
+                const cacheKey = getCacheKey(selectedStore);
+                const cachedData = await CacheService.get(cacheKey);
+                
+                if (cachedData?.success) {
+                    console.log('[DEBUG] ⚡ Zwracam dane z cache');
+                    return cachedData;
+                }
+
+                // Jeśli brak danych w cache lub są nieaktualne, pobierz nowe
+                console.log('[DEBUG] 🔄 Pobieram świeże dane z API');
+                const data = await fetchAndCacheData(selectedStore);
+                
+                return data;
+            } catch (error) {
+                console.error('Error in POPUP_OPENED handler:', error);
+                return { success: false, error: error.message };
             }
-            
-            const data = await fetchAndCacheData();
-            await chrome.storage.local.set({ 
-                lastUpdate: now,
-                leadCounts: data.counts 
-            });
-            return { success: true, data: data.counts };
         });
         return true;
     }
@@ -306,14 +326,12 @@ async function fetchDarwinaData(darwinaConfig, selectedStore) {
         baseParams.append('status_id', statusGroup);
         baseParams.append('limit', '50');
 
-        // Dodaj filtr sklepu
+        // Dodaj filtr sklepu (tylko delivery_id)
         if (selectedStore && selectedStore !== 'ALL') {
             const store = stores.find(s => s.id === selectedStore);
             if (!store) {
                 throw new Error(`Nie znaleziono sklepu o ID: ${selectedStore}`);
             }
-            
-            // Filtruj po delivery_id
             baseParams.append('delivery_id', store.deliveryId.toString());
         }
 
@@ -354,33 +372,12 @@ async function fetchDarwinaData(darwinaConfig, selectedStore) {
         } while (currentPage <= totalPages);
     }
 
-    // Filtrowanie po store jeśli potrzebne
-    if (selectedStore && selectedStore !== 'ALL') {
-        const store = stores.find(s => s.id === selectedStore);
-        if (store) {
-            allOrders = allOrders.filter(order => {
-                if (store.address && order.client_comment) {
-                    const normalizedStoreAddress = store.address.toLowerCase().replace(/\s+/g, ' ').trim();
-                    const normalizedComment = order.client_comment.toLowerCase().replace(/\s+/g, ' ').trim();
-                    return normalizedComment.includes(normalizedStoreAddress);
-                }
-                return false;
-            });
-        }
-    }
-
     // Przetwórz wszystkie zebrane zamówienia
     const statusCounts = processOrders(allOrders);
 
     const result = {
         success: true,
-        counts: {
-            '1': statusCounts['1'] || 0,
-            '2': statusCounts['2'] || 0,
-            '3': statusCounts['3'] || 0,
-            'READY': statusCounts['READY'] || 0,
-            'OVERDUE': statusCounts['OVERDUE'] || 0
-        },
+        counts: statusCounts,
         totalOrders: allOrders.length,
         store: selectedStore || 'ALL'
     };
@@ -394,9 +391,9 @@ async function fetchDarwinaData(darwinaConfig, selectedStore) {
 function processOrders(orders) {
     const twoWeeksAgo = new Date(Date.now() - 14 * 86400000);
     const totalOrders = orders.length;
+    let processedCount = 0;
     
     console.log(`[DEBUG] 📊 Rozpoczynam analizę ${totalOrders} zamówień`);
-    let processedCount = 0;
 
     const statusCounts = orders.reduce((acc, order) => {
         processedCount++;
@@ -418,38 +415,37 @@ function processOrders(orders) {
             return acc;
         }
 
-        if (status) {
-            const parsedStatus = parseInt(status);
-            switch (parsedStatus) {
-                case 1: // SUBMITTED
-                    acc['1'] = (acc['1'] || 0) + 1;
-                    console.log(`[DEBUG] 📝 Zamówienie ${order.id} - status: Złożone`);
-                    break;
-                case 2: // CONFIRMED
-                    acc['2'] = (acc['2'] || 0) + 1;
-                    console.log(`[DEBUG] ✓ Zamówienie ${order.id} - status: Potwierdzone`);
-                    break;
-                case 3: // ACCEPTED_STORE
-                    acc['3'] = (acc['3'] || 0) + 1;
-                    console.log(`[DEBUG] 🏪 Zamówienie ${order.id} - status: Przyjęte`);
-                    break;
-                case 5: // READY
-                    if (parsedDate < twoWeeksAgo) {
-                        acc['OVERDUE'] = (acc['OVERDUE'] || 0) + 1;
-                        console.log(`[DEBUG] ⏳ Zamówienie ${order.id} oznaczone jako przeterminowane (data: ${orderDate})`);
-                    } else {
-                        acc['READY'] = (acc['READY'] || 0) + 1;
-                        console.log(`[DEBUG] 📦 Zamówienie ${order.id} - status: Gotowe do odbioru`);
-                    }
-                    break;
-                default:
-                    console.log(`[WARNING] ⚠️ Nieznany status ${parsedStatus} dla zamówienia ${order.id}`);
-            }
+        // Zliczaj zamówienia tylko na podstawie status_id
+        const parsedStatus = parseInt(status);
+        switch (parsedStatus) {
+            case 1: // SUBMITTED
+                acc['1'] = (acc['1'] || 0) + 1;
+                console.log(`[DEBUG] 📝 Zamówienie ${order.id} - status: Złożone`);
+                break;
+            case 2: // CONFIRMED
+                acc['2'] = (acc['2'] || 0) + 1;
+                console.log(`[DEBUG] ✓ Zamówienie ${order.id} - status: Potwierdzone`);
+                break;
+            case 3: // ACCEPTED_STORE
+                acc['3'] = (acc['3'] || 0) + 1;
+                console.log(`[DEBUG] 🏪 Zamówienie ${order.id} - status: Przyjęte`);
+                break;
+            case 5: // READY
+                if (parsedDate < twoWeeksAgo) {
+                    acc['OVERDUE'] = (acc['OVERDUE'] || 0) + 1;
+                    console.log(`[DEBUG] ⏳ Zamówienie ${order.id} oznaczone jako przeterminowane (data: ${orderDate})`);
+                } else {
+                    acc['READY'] = (acc['READY'] || 0) + 1;
+                    console.log(`[DEBUG] 📦 Zamówienie ${order.id} - status: Gotowe do odbioru`);
+                }
+                break;
+            default:
+                console.log(`[WARNING] ⚠️ Nieznany status ${parsedStatus} dla zamówienia ${order.id}`);
         }
         return acc;
     }, {});
 
-    // Log końcowych wyników
+    // Przygotuj obiekt wynikowy z wszystkimi licznikami
     const results = {
         '1': statusCounts['1'] || 0,
         '2': statusCounts['2'] || 0,
@@ -467,7 +463,7 @@ function processOrders(orders) {
     console.log(`[DEBUG] 📊 Podsumowanie statusów:`, results);
     console.log(`[DEBUG] ✅ Zakończono analizę wszystkich ${totalOrders} zamówień`);
 
-    return statusCounts;
+    return results;
 }
 
 function getCacheKey(selectedStore) {
@@ -497,29 +493,54 @@ async function checkAndUpdateOrders() {
 
         const apiUrl = `${darwinaConfig.DARWINA_API_BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}`;
 
-        // Najpierw sprawdź czy zamówienie testowe istnieje
-        log('🔍 Próba pobrania zamówienia testowego 36586...', 'info');
-        const testOrderResponse = await fetch(`${apiUrl}/36586`, {
-            method: 'GET',
+        // Pobierz wszystkie zamówienia ze statusem 1 (SUBMITTED)
+        const params = new URLSearchParams({
+            status_id: '1',
+            delivery_id: '3',
+            limit: '50'
+        });
+
+        log('🔍 Pobieram zamówienia ze statusem SUBMITTED...', 'info');
+        const response = await fetch(`${apiUrl}?${params}`, {
             headers: {
                 'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
                 'Content-Type': 'application/json'
             }
         });
 
-        if (!testOrderResponse.ok) {
-            log('⚠️ Nie znaleziono zamówienia testowego 36586', 'warning');
-            return;
+        if (!response.ok) {
+            throw new Error(`API Error: ${response.status}`);
         }
 
-        const testOrder = await testOrderResponse.json();
-        log('📦 Znaleziono zamówienie testowe', 'info', {
-            order_id: testOrder.data?.order_id,
-            delivery_id: testOrder.data?.delivery_id,
-            status_id: testOrder.data?.status_id
-        });
+        const data = await response.json();
+        const allOrders = data.data || [];
+        const totalPages = data.__metadata?.page_count || 1;
 
-        const allOrders = [testOrder.data];
+        log(`📦 Znaleziono ${allOrders.length} zamówień na stronie 1/${totalPages}`, 'info');
+
+        // Pobierz pozostałe strony
+        for (let page = 2; page <= totalPages; page++) {
+            params.set('page', page.toString());
+            const pageResponse = await fetch(`${apiUrl}?${params}`, {
+                headers: {
+                    'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!pageResponse.ok) {
+                log(`⚠️ Błąd pobierania strony ${page}`, 'warning');
+                continue;
+            }
+
+            const pageData = await pageResponse.json();
+            if (pageData.data) {
+                allOrders.push(...pageData.data);
+                log(`📦 Pobrano stronę ${page}/${totalPages} (${pageData.data.length} zamówień)`, 'info');
+            }
+        }
+
+        log(`🔍 Sprawdzam ${allOrders.length} zamówień...`, 'info');
 
         // Sprawdź każde zamówienie
         for (const order of allOrders) {
@@ -626,4 +647,27 @@ chrome.runtime.onStartup.addListener(async () => {
         console.error('[ERROR] ❌ Błąd podczas uruchamiania:', error);
     }
 });
+
+// Funkcja aktualizująca badge na ikonie
+function updateExtensionBadge(counts, selectedStore) {
+    // Jeśli nie ma danych o licznikach, ukryj badge
+    if (!counts) {
+        chrome.action.setBadgeText({ text: '' });
+        return;
+    }
+    
+    // Oblicz sumę zamówień ze statusem 1 i 2
+    const sum = (parseInt(counts['1']) || 0) + (parseInt(counts['2']) || 0);
+    
+    // Jeśli suma wynosi 0 lub nie wybrano konkretnego sklepu (ALL), ukryj badge
+    if (sum === 0 || !selectedStore || selectedStore === 'ALL') {
+        chrome.action.setBadgeText({ text: '' });
+        return;
+    }
+    
+    // Ustaw badge z sumą zamówień
+    chrome.action.setBadgeText({ text: sum.toString() });
+    chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
+    console.log(`[DEBUG] 🔄 Zaktualizowano badge dla sklepu ${selectedStore}: ${sum}`);
+}
   

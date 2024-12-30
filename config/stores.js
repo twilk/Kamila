@@ -6,7 +6,7 @@ export const stores = [
     { id: 'FIL', name: 'FIL', address: 'Gocław - Fieldorfa 10', deliveryId: 62 },
     { id: 'FRA', name: 'FRA', address: 'Francuska - Zwycięzców 23', deliveryId: 63 },
     { id: 'GU', name: 'GU', address: 'Galeria Ursynów - Al. KEN 36', deliveryId: 60 },
-    { id: 'HOK', name: 'HOK', address: 'Przy Hiltonie - Łucka 20', deliveryId: 64 },
+    { id: 'HOK', name: 'HOK', address: 'Ursus Szamoty - Herbu Oksza 6', deliveryId: 64 },
     { id: 'HRU', name: 'HRU', address: 'Przy Muzeum Powstania - Hrubieszowska 2', deliveryId: 65 },
     { id: 'IKR', name: 'IKR', address: 'Idzikowskiego - Ikara 20', deliveryId: 66 },
     { id: 'KBT', name: 'KBT', address: 'Kabaty - Wąwozowa 6', deliveryId: 59 },
