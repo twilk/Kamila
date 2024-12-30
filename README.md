@@ -204,6 +204,42 @@ Thanks to integrations with various systems (Notion, Selly, Google Sheets, PC-Ma
   - Standardowe (<14 dni)
   - Zaległe (>14 dni)
 
+#### Nowe Funkcje
+
+##### 🔄 Automatyczna Zmiana Formy Dostawy
+- Automatycznie aktualizuje formę dostawy przy otwarciu rozszerzenia
+- Konwertuje zamówienia "Odbiór w sklepie" na konkretne ID sklepów
+- Aktualizacje następują natychmiast po uruchomieniu rozszerzenia
+- Nie wymaga ręcznej zmiany statusów
+
+##### 📈 Ulepszone Liczniki Zamówień
+- Połączony licznik dla zamówień złożonych (1) i potwierdzonych (2)
+- Liczniki specyficzne dla sklepów
+- Aktualizacje w czasie rzeczywistym
+- Widoczne w rozwijanej liście sklepów
+
+##### 🏪 Integracja DRWN
+- Widok danych DRWN specyficzny dla sklepu
+- Pokazuje produkty z:
+  - Stanem magazynowym ≤ 1
+  - Dostępnym stanem w magazynie
+- Kolumny:
+  - Kod produktu
+  - Nazwa produktu
+  - Stan w sklepie
+  - Stan magazynowy (MAG)
+- Automatyczne wykrywanie minimalnego poziomu zapasów w MAGAZYNIE:
+  - DRWN: minimum 6
+  - DRWN2: minimum 3
+  - DRWN3: minimum 1
+  - DRWNG: minimum 2
+
+##### 🏆 System Rankingowy
+- Prosty ranking oparty na pozycjach
+- Bez wyświetlania wartości liczbowych
+- Czytelne śledzenie pozycji
+- Łatwy do odczytu format
+
 #### Automatyczne Odświeżanie
 - Interwał sprawdzania: co 5 minut
 - Dane są buforowane (cache)
@@ -229,6 +265,42 @@ Thanks to integrations with various systems (Notion, Selly, Google Sheets, PC-Ma
   - Standard (<14 days)
   - Overdue (>14 days)
 
+#### New Features
+
+##### 🔄 Automatic Delivery Form Changes
+- Automatically updates delivery form when extension is opened
+- Converts "Store Pickup" orders to specific store delivery IDs
+- Updates happen immediately upon extension launch
+- No manual status changes required
+
+##### 📈 Enhanced Order Counters
+- Combined counter for submitted (1) and confirmed (2) orders
+- Store-specific counters
+- Real-time updates on status changes
+- Visible in store selection dropdown
+
+##### 🏪 DRWN Integration
+- Store-specific DRWN data view
+- Shows products with:
+  - Store stock ≤ 1
+  - Available warehouse stock
+- Columns:
+  - Product Code
+  - Product Name
+  - Store Stock
+  - Warehouse Stock (MAG)
+- Automatic minimum stock level detection based on product type:
+  - DRWN: minimum 6
+  - DRWN2: minimum 3
+  - DRWN3: minimum 1
+  - DRWNG: minimum 2
+
+##### 🏆 Ranking System
+- Simple position-based ranking
+- No numerical scores displayed
+- Clear position tracking
+- Easy to read format
+
 #### Auto-Refresh
 - Check interval: every 5 minutes
 - Data is cached
@@ -253,6 +325,42 @@ Thanks to integrations with various systems (Notion, Selly, Google Sheets, PC-Ma
 - `5` - Готові до видачі
   - Стандартні (<14 днів)
   - Прострочені (>14 днів)
+
+#### Нові Функції
+
+##### 🔄 Автоматична Зміна Форми Доставки
+- Автоматично оновлює форму доставки при відкритті розширення
+- Конвертує замовлення "Самовивіз" у конкретні ID магазинів
+- Оновлення відбуваються одразу при запуску розширення
+- Не потрібно вручну змінювати статуси
+
+##### 📈 Покращені Лічильники Замовлень
+- Комбінований лічильник для створених (1) та підтверджених (2) замовлень
+- Лічильники по магазинах
+- Оновлення в реальному часі
+- Відображаються у випадаючому списку магазинів
+
+##### 🏪 Інтеграція з DRWN
+- Перегляд даних DRWN по магазинах
+- Показує товари з:
+  - Залишком у магазині ≤ 1
+  - Наявним складським запасом
+- Колонки:
+  - Код товару
+  - Назва товару
+  - Залишок у магазині
+  - Складський запас (MAG)
+- Автоматичне визначення мінімального рівня запасів:
+  - DRWN: мінімум 6
+  - DRWN2: мінімум 3
+  - DRWN3: мінімум 1
+  - DRWNG: мінімум 2
+
+##### 🏆 Система Рейтингу
+- Простий рейтинг на основі позицій
+- Без числових показників
+- Чітке відстеження позицій
+- Зручний формат для читання
 
 #### Автоматичне Оновлення
 - Інтервал перевірки: кожні 5 хвилин
