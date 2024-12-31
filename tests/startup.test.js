@@ -1,5 +1,6 @@
-import { darwinApi } from '../src/services/darwinApi';
-import { StatusChecker } from '../src/services/statusChecker';
+import { darwinaService } from '../services/DarwinaService.js';
+import { statusCheckerService } from '../services/StatusCheckerService.js';
+import { logService } from '../services/LogService.js';
 
 describe('Application Startup', () => {
     beforeAll(() => {
@@ -26,12 +27,12 @@ describe('Application Startup', () => {
             })
         );
 
-        await darwinApi.initialize();
-        expect(darwinApi.credentials).toEqual(mockCredentials);
+        await darwinaService.initialize();
+        expect(darwinaService.credentials).toEqual(mockCredentials);
     });
 
     test('should run status checks', async () => {
-        const statusChecker = new StatusChecker(darwinApi);
+        const statusChecker = new statusCheckerService(darwinaService);
         const results = await statusChecker.runTests();
 
         expect(results).toHaveProperty('API');

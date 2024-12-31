@@ -1,4 +1,5 @@
-import { darwinApi } from '@/services/darwinApi';
+import { darwinaService } from '../../services/DarwinaService.js';
+import { logService } from '../../services/LogService.js';
 
 describe('DARWINA.PL API Error Handling', () => {
     beforeEach(() => {
@@ -8,7 +9,7 @@ describe('DARWINA.PL API Error Handling', () => {
     test('should handle network errors', async () => {
         fetch.mockRejectedValueOnce(new Error('Network error'));
         
-        await expect(darwinApi.fetchLeadCounts())
+        await expect(darwinaService.fetchLeadCounts())
             .rejects
             .toThrow('Network error');
     });
@@ -20,7 +21,7 @@ describe('DARWINA.PL API Error Handling', () => {
             statusText: 'Unauthorized'
         }));
 
-        await expect(darwinApi.getLeadDetails(1))
+        await expect(darwinaService.getLeadDetails(1))
             .rejects
             .toThrow('Błąd pobierania szczegółów zamówień');
     });
@@ -31,7 +32,7 @@ describe('DARWINA.PL API Error Handling', () => {
             json: () => Promise.resolve(null)
         }));
 
-        await expect(darwinApi.getProducts())
+        await expect(darwinaService.getProducts())
             .rejects
             .toThrow('Błąd pobierania produktów');
     });
@@ -43,13 +44,13 @@ describe('DARWINA.PL API Error Handling', () => {
             statusText: 'Too Many Requests'
         }));
 
-        await expect(darwinApi.getCustomers())
+        await expect(darwinaService.getCustomers())
             .rejects
             .toThrow('Błąd pobierania klientów');
     });
 
     test('should handle severe transformation errors', async () => {
-        const result = darwinApi.transformOrdersData([corruptedOrder]);
+        const result = darwinaService.transformOrdersData([corruptedOrder]);
         expect(result).toEqual([{
             id: undefined,
             status: API_CONFIG.DARWINA.STATUS_CODES.UNKNOWN,

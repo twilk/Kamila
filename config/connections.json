@@ -1,0 +1,206 @@
+{
+    "services": {
+        "core": {
+            "LogService": {
+                "dependencies": ["chrome.storage"],
+                "dependents": ["*"]
+            },
+            "CacheService": {
+                "dependencies": ["LogService", "chrome.storage.local"],
+                "dependents": [
+                    "ApiService",
+                    "DarwinApiService",
+                    "SellyApiService",
+                    "UserCardService",
+                    "ThemeService",
+                    "WallpaperService"
+                ]
+            },
+            "DatabaseService": {
+                "dependencies": ["LogService", "CacheService"],
+                "dependents": ["DrwnService", "UserCardService"]
+            },
+            "RequestQueueService": {
+                "dependencies": ["LogService"],
+                "dependents": [
+                    "ApiService",
+                    "DarwinApiService",
+                    "SellyApiService",
+                    "StatusCheckerService"
+                ]
+            }
+        },
+        "api": {
+            "ApiService": {
+                "dependencies": [
+                    "LogService",
+                    "RequestQueueService",
+                    "CacheService",
+                    "API_CONFIG"
+                ],
+                "dependents": ["DrwnService", "UserCardService"]
+            },
+            "DarwinApiService": {
+                "dependencies": [
+                    "LogService",
+                    "RequestQueueService",
+                    "CacheService",
+                    "API_CONFIG"
+                ],
+                "dependents": ["DrwnService"]
+            },
+            "SellyApiService": {
+                "dependencies": [
+                    "LogService",
+                    "RequestQueueService",
+                    "CacheService",
+                    "API_CONFIG"
+                ],
+                "dependents": ["DrwnService"]
+            }
+        },
+        "business": {
+            "DrwnService": {
+                "dependencies": [
+                    "DatabaseService",
+                    "ApiService",
+                    "DarwinApiService",
+                    "SellyApiService"
+                ],
+                "dependents": ["UIComponentService"]
+            },
+            "UserCardService": {
+                "dependencies": [
+                    "DatabaseService",
+                    "ApiService",
+                    "CacheService"
+                ],
+                "dependents": ["UIComponentService"]
+            }
+        },
+        "ui": {
+            "UIComponentService": {
+                "dependencies": [
+                    "LogService",
+                    "i18n",
+                    "DrwnService",
+                    "UserCardService"
+                ],
+                "dependents": []
+            },
+            "ThemeService": {
+                "dependencies": ["LogService", "CacheService"],
+                "dependents": ["UIComponentService"]
+            },
+            "WallpaperService": {
+                "dependencies": ["LogService", "CacheService"],
+                "dependents": ["UIComponentService"]
+            },
+            "LoadingService": {
+                "dependencies": ["LogService"],
+                "dependents": ["UIComponentService"]
+            }
+        },
+        "monitoring": {
+            "PerformanceMonitorService": {
+                "dependencies": [
+                    "LogService",
+                    "NotificationService",
+                    "CacheService"
+                ],
+                "dependents": []
+            },
+            "StatusCheckerService": {
+                "dependencies": [
+                    "LogService",
+                    "NotificationService",
+                    "RequestQueueService"
+                ],
+                "dependents": []
+            }
+        },
+        "utils": {
+            "i18n": {
+                "dependencies": ["LogService", "CacheService"],
+                "dependents": ["UIComponentService"]
+            },
+            "NotificationService": {
+                "dependencies": [
+                    "LogService",
+                    "CacheService",
+                    "chrome.notifications"
+                ],
+                "dependents": [
+                    "PerformanceMonitorService",
+                    "StatusCheckerService",
+                    "UpdateManagerService"
+                ]
+            },
+            "SyncService": {
+                "dependencies": [
+                    "LogService",
+                    "CacheService",
+                    "RequestQueueService"
+                ],
+                "dependents": []
+            },
+            "UpdateManagerService": {
+                "dependencies": [
+                    "LogService",
+                    "NotificationService",
+                    "CacheService"
+                ],
+                "dependents": []
+            }
+        }
+    },
+    "utilities": {
+        "errorUtils": {
+            "dependencies": ["i18n"],
+            "dependents": ["*"]
+        },
+        "retryUtils": {
+            "dependencies": ["LogService", "errorUtils"],
+            "dependents": ["RequestQueueService"]
+        },
+        "validatorUtils": {
+            "dependencies": ["errorUtils", "i18n"],
+            "dependents": [
+                "ApiService",
+                "DarwinApiService",
+                "SellyApiService",
+                "UserCardService"
+            ]
+        }
+    },
+    "components": {
+        "PerformanceHUD": {
+            "dependencies": ["PerformanceMonitorService"],
+            "dependents": []
+        },
+        "Transition": {
+            "dependencies": ["LoadingService"],
+            "dependents": ["UIComponentService"]
+        },
+        "Counter": {
+            "dependencies": [],
+            "dependents": ["UIComponentService"]
+        },
+        "Notification": {
+            "dependencies": ["NotificationService"],
+            "dependents": ["UIComponentService"]
+        },
+        "TableSkeleton": {
+            "dependencies": ["LoadingService"],
+            "dependents": ["UIComponentService"]
+        },
+        "VirtualList": {
+            "dependencies": [],
+            "dependents": ["UIComponentService"]
+        },
+        "ProgressiveLoader": {
+            "dependencies": ["LoadingService"],
+            "dependents": ["UIComponentService"]
+        }
+    }
+} 

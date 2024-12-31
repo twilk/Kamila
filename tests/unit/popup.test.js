@@ -1,4 +1,4 @@
-import { handleThemeChange, handleLanguageChange, showError, showResponse, initializeBootstrap, initDebugMode, addLogToPanel } from '@/popup';
+import { handleThemeChange, handleLanguageChange, showError, showResponse, initializeBootstrap, initDebugMode, addLogToPanel } from '../../popup.js';
 
 describe('Popup UI', () => {
     beforeEach(() => {

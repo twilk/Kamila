@@ -1,14 +1,14 @@
-import { darwinApi } from '@/services/darwinApi';
-import { API_CONFIG } from '@/config/api';
+import { darwinaService } from '../../services/DarwinaService.js';
+import { API_CONFIG } from '../../config/api.js';
 
 describe('Darwin API Extended Integration', () => {
     beforeAll(async () => {
-        await darwinApi.initialize();
+        await darwinaService.initialize();
     });
 
     test('should handle complete order flow', async () => {
         // Pobierz zamówienia w statusie "złożone"
-        const submittedOrders = await darwinApi.getLeadDetails(
+        const submittedOrders = await darwinaService.getLeadDetails(
             API_CONFIG.DARWINA.STATUS_CODES.SUBMITTED.id
         );
         expect(Array.isArray(submittedOrders)).toBe(true);
@@ -23,7 +23,7 @@ describe('Darwin API Extended Integration', () => {
     });
 
     test('should fetch and validate products', async () => {
-        const products = await darwinApi.getProducts();
+        const products = await darwinaService.getProducts();
         expect(Array.isArray(products)).toBe(true);
 
         if (products.length > 0) {
@@ -35,7 +35,7 @@ describe('Darwin API Extended Integration', () => {
     });
 
     test('should fetch and validate customers', async () => {
-        const customers = await darwinApi.getCustomers();
+        const customers = await darwinaService.getCustomers();
         expect(Array.isArray(customers)).toBe(true);
 
         if (customers.length > 0) {
@@ -48,9 +48,9 @@ describe('Darwin API Extended Integration', () => {
 
     test('should handle concurrent requests', async () => {
         const promises = [
-            darwinApi.fetchLeadCounts(),
-            darwinApi.getProducts(),
-            darwinApi.getCustomers()
+            darwinaService.fetchLeadCounts(),
+            darwinaService.getProducts(),
+            darwinaService.getCustomers()
         ];
 
         const results = await Promise.all(promises);

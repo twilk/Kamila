@@ -1,10 +1,10 @@
-import { sellyApi } from '@/services/sellyApi';
-import { ApiError } from '@/services/errors';
+import { sellyService } from '../../../services/SellyService.js';
+import { ApiError } from '../../../services/ErrorService.js';
 
 describe('SellyApiService', () => {
     beforeEach(() => {
         fetch.mockClear();
-        sellyApi.cache.clear();
+        sellyService.cache.clear();
     });
 
     describe('Authentication', () => {
@@ -17,19 +17,19 @@ describe('SellyApiService', () => {
                 json: () => Promise.resolve(mockCredentials)
             }));
 
-            await sellyApi.initialize();
-            expect(sellyApi.credentials).toEqual(mockCredentials);
+            await sellyService.initialize();
+            expect(sellyService.credentials).toEqual(mockCredentials);
         });
 
         test('should handle initialization errors', async () => {
             fetch.mockImplementationOnce(() => Promise.reject(new Error('Network error')));
-            await expect(sellyApi.initialize()).rejects.toThrow();
+            await expect(sellyService.initialize()).rejects.toThrow();
         });
     });
 
     describe('Order Management', () => {
         beforeEach(async () => {
-            await sellyApi.initialize();
+            await sellyService.initialize();
         });
 
         test('should fetch orders by status', async () => {
@@ -47,7 +47,7 @@ describe('SellyApiService', () => {
                 json: () => Promise.resolve(mockOrders)
             }));
 
-            const orders = await sellyApi.getLeadDetails(1);
+            const orders = await sellyService.getLeadDetails(1);
             expect(orders).toHaveLength(5);
         });
 
@@ -62,7 +62,7 @@ describe('SellyApiService', () => {
                 json: () => Promise.resolve(mockResponse)
             }));
 
-            const counts = await sellyApi.fetchLeadCounts();
+            const counts = await sellyService.fetchLeadCounts();
             expect(counts.submitted).toBe(3);
         });
 
@@ -71,7 +71,7 @@ describe('SellyApiService', () => {
             threeWeeksAgo.setDate(threeWeeksAgo.getDate() - 21);
             
             const order = { ready_date: threeWeeksAgo.toISOString() };
-            expect(sellyApi.isOverdue(order)).toBe(true);
+            expect(sellyService.isOverdue(order)).toBe(true);
         });
     });
 
@@ -83,14 +83,14 @@ describe('SellyApiService', () => {
                 statusText: 'Unauthorized'
             }));
 
-            await expect(sellyApi.getLeadDetails(1))
+            await expect(sellyService.getLeadDetails(1))
                 .rejects
                 .toThrow(ApiError);
         });
 
         test('should handle network errors', async () => {
             fetch.mockImplementationOnce(() => Promise.reject(new Error('Network error')));
-            await expect(sellyApi.getLeadDetails(1)).rejects.toThrow();
+            await expect(sellyService.getLeadDetails(1)).rejects.toThrow();
         });
     });
 
@@ -102,8 +102,8 @@ describe('SellyApiService', () => {
                 json: () => Promise.resolve(mockData)
             }));
 
-            await sellyApi.getLeadDetails(1);
-            await sellyApi.getLeadDetails(1);
+            await sellyService.getLeadDetails(1);
+            await sellyService.getLeadDetails(1);
             expect(fetch).toHaveBeenCalledTimes(1);
         });
 
@@ -114,9 +114,9 @@ describe('SellyApiService', () => {
                 json: () => Promise.resolve(mockData)
             }));
 
-            await sellyApi.getLeadDetails(1);
+            await sellyService.getLeadDetails(1);
             await new Promise(resolve => setTimeout(resolve, 5100)); // TTL + 100ms
-            await sellyApi.getLeadDetails(1);
+            await sellyService.getLeadDetails(1);
             expect(fetch).toHaveBeenCalledTimes(2);
         });
     });

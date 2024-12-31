@@ -1,5 +1,6 @@
-import { sellyApi } from '@/services/sellyApi';
-import { API_CONFIG } from '@/config/api';
+import { sellyService } from '../../services/SellyService.js';
+import { logService } from '../../services/LogService.js';
+import { API_CONFIG } from '../../config/api.js';
 
 // Mock fetch
 global.fetch = jest.fn();

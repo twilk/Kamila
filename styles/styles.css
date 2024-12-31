@@ -1,0 +1,243 @@
+/* Global styles for DARWINA.PL Assistant */
+
+/* Reset and base styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Base styles */
+:root {
+    --primary-color: #007bff;
+    --secondary-color: #6c757d;
+    --success-color: #28a745;
+    --danger-color: #dc3545;
+    --warning-color: #ffc107;
+    --info-color: #17a2b8;
+    --light-color: #f8f9fa;
+    --dark-color: #343a40;
+}
+
+body {
+    min-width: 400px;
+    min-height: 300px;
+    padding: 1rem;
+    background-color: var(--light-color);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+}
+
+/* Layout */
+.container-fluid {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Utility classes */
+.hidden {
+    display: none !important;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Loading states */
+.loading {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Error states */
+.error {
+    border-color: var(--danger-color);
+}
+
+/* Success states */
+.success {
+    border-color: var(--success-color);
+}
+
+/* Animations */
+.fade-in {
+    animation: fadeIn 0.3s ease-in;
+}
+
+.fade-out {
+    animation: fadeOut 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    body {
+        min-width: 320px;
+    }
+}
+
+/* Print styles */
+@media print {
+    .no-print {
+        display: none !important;
+    }
+}
+
+/* Loading overlay */
+#loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid var(--light-color);
+    border-top: 4px solid var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Containers */
+.container {
+    padding: 1rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Login container */
+.login-box {
+    max-width: 400px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.login-box h2 {
+    margin-bottom: 1.5rem;
+    color: var(--dark-color);
+    text-align: center;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+/* Error container */
+.error-box {
+    max-width: 400px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.error-box h2 {
+    color: var(--danger-color);
+    margin-bottom: 1rem;
+}
+
+.error-message {
+    color: var(--dark-color);
+    margin-bottom: 1.5rem;
+}
+
+/* Debug panel */
+.debug-panel {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    width: 300px;
+    background: white;
+    border-top-left-radius: 8px;
+    box-shadow: -2px -2px 8px rgba(0,0,0,0.1);
+    z-index: 1000;
+}
+
+.debug-header {
+    padding: 0.5rem 1rem;
+    background: var(--light-color);
+    border-top-left-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.debug-content {
+    padding: 1rem;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* Status indicators */
+.status-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 0.5rem;
+}
+
+.status-online {
+    background-color: var(--success-color);
+}
+
+.status-offline {
+    background-color: var(--danger-color);
+}
+
+.status-warning {
+    background-color: var(--warning-color);
+}
+
+/* Responsive adjustments */
+@media (max-width: 576px) {
+    body {
+        padding: 0.5rem;
+    }
+
+    .login-box,
+    .error-box {
+        margin: 1rem auto;
+        padding: 1rem;
+    }
+
+    .debug-panel {
+        width: 100%;
+    }
+} 

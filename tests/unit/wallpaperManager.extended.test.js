@@ -1,10 +1,12 @@
-import { WallpaperManager } from '@/services/wallpaperManager';
+import { wallpaperService } from '../../services/WallpaperService.js';
+import { logService } from '../../services/LogService.js';
+import { wallpaperManagerService } from '../../services/WallpaperManagerService.js';
 
 describe('Extended Wallpaper Manager Tests', () => {
     let wallpaperManager;
 
     beforeEach(() => {
-        wallpaperManager = new WallpaperManager();
+        wallpaperManager = wallpaperManagerService;
         localStorage.clear();
         URL.createObjectURL = jest.fn(blob => 'blob:test');
         URL.revokeObjectURL = jest.fn();

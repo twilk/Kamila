@@ -1,11 +1,12 @@
-import { ApiCache } from '@/services/cache';
+import { cacheService } from '../../services/CacheService.js';
 
 describe('Extended Cache Tests', () => {
     let cache;
     
     beforeEach(() => {
         jest.useFakeTimers();
-        cache = new ApiCache(1000); // 1 second TTL for testing
+        cache = cacheService;
+        cache.clear();
     });
 
     afterEach(() => {

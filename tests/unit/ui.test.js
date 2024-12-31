@@ -8,7 +8,9 @@ import {
     showError,
     showMessage
 } from '@/popup';
-import { darwinApi } from '@/services/darwinApi';
+import { darwinaService } from '../../services/DarwinaService.js';
+import { logService } from '../../services/LogService.js';
+import { i18nService } from '../../services/I18nService.js';
 
 describe('UI Component Tests', () => {
     let mockBootstrapModal;
@@ -84,7 +86,7 @@ describe('UI Component Tests', () => {
                 ready: 1
             };
 
-            jest.spyOn(darwinApi, 'fetchLeadCounts')
+            jest.spyOn(darwinaService, 'fetchLeadCounts')
                 .mockResolvedValue(mockCounts);
 
             await updateLeadCounts();
@@ -129,12 +131,12 @@ describe('UI Component Tests', () => {
                 { id: 1, status: 'new' }
             ];
 
-            jest.spyOn(darwinApi, 'getLeadDetails')
+            jest.spyOn(darwinaService, 'getLeadDetails')
                 .mockResolvedValue(mockLeads);
 
             await handleLeadClick('submitted');
 
-            expect(darwinApi.getLeadDetails).toHaveBeenCalledWith(
+            expect(darwinaService.getLeadDetails).toHaveBeenCalledWith(
                 expect.any(Number)
             );
             expect(mockBootstrapModal.show).toHaveBeenCalled();
@@ -161,7 +163,7 @@ describe('UI Component Tests', () => {
         });
 
         test('should handle API errors in UI', async () => {
-            jest.spyOn(darwinApi, 'fetchLeadCounts')
+            jest.spyOn(darwinaService, 'fetchLeadCounts')
                 .mockRejectedValue(new Error('API Error'));
 
             await updateLeadCounts();

@@ -1,11 +1,15 @@
-import { RetryStrategy } from '@/services/retry';
-import { ApiError } from '@/services/errors';
+import { retryUtils } from '../../utils/retryUtils.js';
+import { errorUtils } from '../../utils/errorUtils.js';
+import { logService } from '../../services/LogService.js';
+import { retryService } from '../../services/RetryService.js';
+import { ApiError } from '../../services/ErrorService.js';
 
 describe('RetryStrategy', () => {
     let retry;
 
     beforeEach(() => {
-        retry = new RetryStrategy(3, 100);
+        retry = retryService;
+        retry.reset();
         jest.useFakeTimers();
     });
 

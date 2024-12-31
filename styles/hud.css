@@ -1,0 +1,62 @@
+/* Performance HUD Styles */
+.performance-hud {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 300px;
+    height: 200px;
+    z-index: 9999;
+    font-family: 'Courier New', monospace;
+    pointer-events: none;
+    transform: perspective(500px) rotateX(5deg);
+    transform-origin: bottom right;
+    animation: hudAppear 0.5s ease-out;
+}
+
+.performance-hud canvas {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.3));
+}
+
+/* Animacje */
+@keyframes hudAppear {
+    from {
+        opacity: 0;
+        transform: perspective(500px) rotateX(30deg) translateY(100px);
+    }
+    to {
+        opacity: 1;
+        transform: perspective(500px) rotateX(5deg) translateY(0);
+    }
+}
+
+@keyframes hudGlow {
+    0% { filter: drop-shadow(0 0 5px rgba(0, 255, 255, 0.3)); }
+    50% { filter: drop-shadow(0 0 15px rgba(0, 255, 255, 0.5)); }
+    100% { filter: drop-shadow(0 0 5px rgba(0, 255, 255, 0.3)); }
+}
+
+/* Efekty hover */
+.performance-hud:hover {
+    animation: hudGlow 2s infinite;
+}
+
+/* Responsywność */
+@media (max-width: 768px) {
+    .performance-hud {
+        width: 200px;
+        height: 133px;
+        bottom: 10px;
+        right: 10px;
+    }
+}
+
+/* Tryb wysokiego kontrastu */
+@media (prefers-contrast: high) {
+    .performance-hud {
+        --hud-background: rgba(0, 0, 0, 0.95);
+        --hud-text: #ffffff;
+        --hud-border: #00ffff;
+    }
+} 

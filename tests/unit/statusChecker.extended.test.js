@@ -1,12 +1,13 @@
-import { StatusChecker } from '@/services/statusChecker';
-import { darwinApi } from '@/services/darwinApi';
+import { statusCheckerService } from '../../services/StatusCheckerService.js';
+import { darwinaService } from '../../services/DarwinaService.js';
+import { logService } from '../../services/LogService.js';
 
 describe('Extended Status Checker Tests', () => {
     let statusChecker;
     let mockElement;
 
     beforeEach(() => {
-        statusChecker = new StatusChecker(darwinApi);
+        statusChecker = new statusCheckerService(darwinaService);
         mockElement = document.createElement('div');
         mockElement.id = 'api-status';
         document.body.appendChild(mockElement);
@@ -77,7 +78,7 @@ describe('Extended Status Checker Tests', () => {
 
     test('should validate authentication', async () => {
         const mockHeaders = { Authorization: 'Bearer test-token' };
-        jest.spyOn(darwinApi, 'getHeaders').mockReturnValue(mockHeaders);
+        jest.spyOn(darwinaService, 'getHeaders').mockReturnValue(mockHeaders);
 
         const result = await statusChecker.testAuthentication();
         expect(result).toBe(true);

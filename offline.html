@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DARWINA.PL - Tryb Offline</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 600px;
+            padding: 40px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #2196F3;
+            margin: 0 0 20px;
+            font-size: 24px;
+        }
+
+        p {
+            margin: 10px 0;
+            line-height: 1.5;
+            color: #666;
+        }
+
+        .icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px 0;
+            padding: 10px;
+            background: #fff3e0;
+            border-radius: 4px;
+            color: #e65100;
+        }
+
+        .status::before {
+            content: "⚠️";
+            margin-right: 8px;
+        }
+
+        .actions {
+            margin-top: 30px;
+        }
+
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #1976D2;
+        }
+
+        .sync-info {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .sync-info span {
+            color: #2196F3;
+            font-weight: 500;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">🌐</div>
+        <h1>DARWINA.PL - Tryb Offline</h1>
+        
+        <div class="status">
+            Brak połączenia z internetem
+        </div>
+
+        <p>
+            Aktualnie pracujesz w trybie offline. Możesz nadal przeglądać wcześniej załadowane dane
+            i wykonywać operacje, które zostaną zsynchronizowane po przywróceniu połączenia.
+        </p>
+
+        <div class="actions">
+            <button onclick="checkConnection()" class="pulse">
+                Sprawdź połączenie
+            </button>
+        </div>
+
+        <div class="sync-info">
+            Ostatnia synchronizacja: <span id="lastSync">...</span>
+        </div>
+    </div>
+
+    <script>
+        // Funkcja sprawdzająca połączenie
+        async function checkConnection() {
+            try {
+                const response = await fetch('/api/health-check');
+                if (response.ok) {
+                    window.location.reload();
+                }
+            } catch (error) {
+                console.log('Nadal brak połączenia');
+            }
+        }
+
+        // Aktualizuj informację o ostatniej synchronizacji
+        async function updateLastSync() {
+            try {
+                const db = await openDatabase();
+                const lastSync = await db.get('meta', 'lastSync');
+                if (lastSync) {
+                    const date = new Date(lastSync);
+                    document.getElementById('lastSync').textContent = date.toLocaleString();
+                }
+            } catch (error) {
+                console.error('Błąd odczytu czasu synchronizacji:', error);
+            }
+        }
+
+        // Otwórz połączenie z bazą danych
+        function openDatabase() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('DarwinaDB', 1);
+                
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+                
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains('meta')) {
+                        db.createObjectStore('meta');
+                    }
+                };
+            });
+        }
+
+        // Nasłuchuj na zmiany stanu sieci
+        window.addEventListener('online', () => {
+            window.location.reload();
+        });
+
+        // Inicjalizacja
+        updateLastSync();
+    </script>
+</body>
+</html> 

@@ -1,0 +1,136 @@
+/* Animacje dla skeleton loadera */
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+.skeleton-loader {
+    background: linear-gradient(
+        90deg,
+        #f0f0f0 25%,
+        #e0e0e0 50%,
+        #f0f0f0 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    transform: translateZ(0); /* Włącz akcelerację sprzętową */
+    will-change: background-position; /* Zoptymalizuj pod kątem animacji */
+}
+
+/* Animacje przejść */
+.fade-enter {
+    opacity: 0;
+    transform: translateY(10px) translateZ(0);
+}
+
+.fade-enter-active {
+    opacity: 1;
+    transform: translateY(0) translateZ(0);
+    transition: opacity 200ms ease-out, transform 200ms ease-out;
+    will-change: opacity, transform;
+}
+
+.fade-exit {
+    opacity: 1;
+    transform: translateY(0) translateZ(0);
+}
+
+.fade-exit-active {
+    opacity: 0;
+    transform: translateY(-10px) translateZ(0);
+    transition: opacity 150ms ease-in, transform 150ms ease-in;
+    will-change: opacity, transform;
+}
+
+/* Animacje dla liczników */
+@keyframes countUp {
+    from {
+        transform: translateY(10px) translateZ(0);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0) translateZ(0);
+        opacity: 1;
+    }
+}
+
+.count-update {
+    animation: countUp 200ms ease-out forwards;
+    will-change: transform, opacity;
+}
+
+/* Animacje dla przycisków */
+.btn-hover {
+    transition: transform 100ms ease-out;
+    will-change: transform;
+}
+
+.btn-hover:hover {
+    transform: translateY(-1px) translateZ(0);
+}
+
+.btn-hover:active {
+    transform: translateY(1px) translateZ(0);
+}
+
+/* Animacje dla powiadomień */
+@keyframes slideIn {
+    from {
+        transform: translateX(100%) translateZ(0);
+    }
+    to {
+        transform: translateX(0) translateZ(0);
+    }
+}
+
+.notification {
+    animation: slideIn 200ms ease-out;
+    will-change: transform;
+}
+
+/* Animacje dla tooltipów */
+@keyframes tooltipFade {
+    from {
+        opacity: 0;
+        transform: translateY(5px) translateZ(0);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) translateZ(0);
+    }
+}
+
+.tooltip {
+    animation: tooltipFade 150ms ease-out;
+    will-change: opacity, transform;
+}
+
+/* Zoptymalizowane style dla komponentów w trakcie ładowania */
+.loading {
+    position: relative;
+    overflow: hidden;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        90deg,
+        transparent 25%,
+        rgba(255, 255, 255, 0.3) 50%,
+        transparent 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    transform: translateZ(0);
+    will-change: background-position;
+    pointer-events: none;
+} 

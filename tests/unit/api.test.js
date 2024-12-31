@@ -1,12 +1,15 @@
-import { APIService } from '../../services/api.js';
-import { CacheService } from '../../services/cache.js';
+import { apiService } from '../../services/ApiService.js';
+import { cacheService } from '../../services/CacheService.js';
+import { logService } from '../../services/LogService.js';
+import { requestQueueService } from '../../services/RequestQueueService.js';
 
 describe('API Service', () => {
     let api;
 
     beforeEach(async () => {
-        api = new APIService();
-        await CacheService.clearAll();
+        api = new apiService();
+        await cacheService.clearAll();
+        requestQueueService.clear();
     });
 
     describe('Inicjalizacja', () => {
@@ -47,7 +50,7 @@ describe('API Service', () => {
             const firstResult = await api.getOrderStatuses();
             expect(firstResult.success).toBe(true);
 
-            const cachedData = await CacheService.get('orders_ALL');
+            const cachedData = await cacheService.get('orders_ALL');
             expect(cachedData).toBeDefined();
             expect(cachedData).toEqual(firstResult);
 
@@ -57,14 +60,14 @@ describe('API Service', () => {
 
         it('powinno respektować czas życia cache', async () => {
             const testData = { success: true, statusCounts: { '1': 5 } };
-            await CacheService.set('orders_ALL', testData);
+            await cacheService.set('orders_ALL', testData);
             
-            const cachedData = await CacheService.get('orders_ALL');
+            const cachedData = await cacheService.get('orders_ALL');
             expect(cachedData).toEqual(testData);
 
             jest.advanceTimersByTime(5 * 60 * 1000);
 
-            const expiredData = await CacheService.get('orders_ALL');
+            const expiredData = await cacheService.get('orders_ALL');
             expect(expiredData).toBeNull();
         });
     });

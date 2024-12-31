@@ -1,10 +1,11 @@
-import { darwinApi } from '@/services/darwinApi';
-import { API_CONFIG } from '@/config/api';
+import { darwinaService } from '../../services/DarwinaService.js';
+import { logService } from '../../services/LogService.js';
+import { API_CONFIG } from '../../config/api.js';
 
 describe('Extended Darwin API Error Handling', () => {
     beforeEach(() => {
         fetch.mockClear();
-        darwinApi.cache.clear();
+        darwinaService.cache.clear();
     });
 
     test('should handle authentication errors', async () => {
@@ -14,7 +15,7 @@ describe('Extended Darwin API Error Handling', () => {
             statusText: 'Unauthorized'
         }));
 
-        await expect(darwinApi.initialize())
+        await expect(darwinaService.initialize())
             .rejects
             .toThrow('Nie można załadować danych uwierzytelniających');
     });
@@ -36,7 +37,7 @@ describe('Extended Darwin API Error Handling', () => {
             });
         });
 
-        const result = await darwinApi.getLeadDetails(
+        const result = await darwinaService.getLeadDetails(
             API_CONFIG.DARWIN.STATUS_CODES.SUBMITTED.id
         );
         expect(attempts).toBe(3);
@@ -51,7 +52,7 @@ describe('Extended Darwin API Error Handling', () => {
             })
         }));
 
-        await expect(darwinApi.getLeadDetails(1))
+        await expect(darwinaService.getLeadDetails(1))
             .rejects
             .toThrow();
     });
@@ -61,7 +62,7 @@ describe('Extended Darwin API Error Handling', () => {
             setTimeout(() => reject(new Error('timeout')), 1000);
         }));
 
-        await expect(darwinApi.fetchLeadCounts())
+        await expect(darwinaService.fetchLeadCounts())
             .rejects
             .toThrow();
     });

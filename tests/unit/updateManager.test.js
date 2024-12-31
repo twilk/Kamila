@@ -1,10 +1,11 @@
-import { UpdateManager } from '@/services/updateManager';
+import { updateManagerService } from '../../services/UpdateManagerService.js';
+import { logService } from '../../services/LogService.js';
 
 describe('Update Manager', () => {
     let updateManager;
 
     beforeEach(() => {
-        updateManager = new UpdateManager();
+        updateManager = new updateManagerService();
         fetch.mockClear();
     });
 

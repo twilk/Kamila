@@ -1,0 +1,146 @@
+{
+  "services": {
+    "LogService": {
+      "dependencies": [],
+      "interfaces": ["info", "warn", "error", "debug"],
+      "events": ["LOG"]
+    },
+    "ApiService": {
+      "dependencies": ["LogService", "RequestQueueService", "CacheService"],
+      "interfaces": ["get", "post", "put", "delete"],
+      "events": ["API_ERROR", "API_SUCCESS"]
+    },
+    "CacheService": {
+      "dependencies": ["LogService"],
+      "interfaces": ["get", "set", "clear", "invalidate"],
+      "events": ["CACHE_INVALIDATED"]
+    },
+    "DatabaseService": {
+      "dependencies": ["LogService"],
+      "interfaces": ["query", "insert", "update", "delete"],
+      "events": ["DB_CHANGE"]
+    },
+    "DarwinaService": {
+      "dependencies": ["LogService", "RequestQueueService", "CacheService"],
+      "interfaces": ["getLeadDetails", "fetchLeadCounts", "updateStatus"],
+      "events": ["LEAD_UPDATE"]
+    },
+    "SellyService": {
+      "dependencies": ["LogService", "RequestQueueService", "CacheService"],
+      "interfaces": ["getLeadDetails", "fetchLeadCounts", "updateStatus"],
+      "events": ["ORDER_UPDATE"]
+    },
+    "I18nService": {
+      "dependencies": ["LogService"],
+      "interfaces": ["translate", "setLanguage", "getCurrentLanguage"],
+      "events": ["LANGUAGE_CHANGE"]
+    },
+    "LoadingService": {
+      "dependencies": ["LogService"],
+      "interfaces": ["show", "hide", "setProgress"],
+      "events": ["LOADING_STATE_CHANGE"]
+    },
+    "NotificationService": {
+      "dependencies": ["LogService", "I18nService"],
+      "interfaces": ["show", "hide", "update"],
+      "events": ["NOTIFICATION"]
+    },
+    "PerformanceMonitorService": {
+      "dependencies": ["LogService"],
+      "interfaces": ["startMonitoring", "stopMonitoring", "getMetrics"],
+      "events": ["PERFORMANCE_UPDATE"]
+    },
+    "RequestQueueService": {
+      "dependencies": ["LogService"],
+      "interfaces": ["enqueue", "dequeue", "process"],
+      "events": ["QUEUE_UPDATE"]
+    },
+    "StatusCheckerService": {
+      "dependencies": ["LogService", "DarwinaService", "SellyService"],
+      "interfaces": ["check", "startChecking", "stopChecking"],
+      "events": ["STATUS_UPDATE"]
+    },
+    "SyncService": {
+      "dependencies": ["LogService", "DatabaseService", "CacheService"],
+      "interfaces": ["sync", "startSync", "stopSync"],
+      "events": ["SYNC_COMPLETE"]
+    },
+    "ThemeService": {
+      "dependencies": ["LogService"],
+      "interfaces": ["setTheme", "getTheme", "toggleTheme"],
+      "events": ["THEME_CHANGE"]
+    },
+    "UIComponentService": {
+      "dependencies": ["LogService", "I18nService"],
+      "interfaces": ["initialize", "update", "render"],
+      "events": ["UI_UPDATE"]
+    },
+    "UpdateManagerService": {
+      "dependencies": ["LogService", "NotificationService"],
+      "interfaces": ["checkForUpdates", "applyUpdate"],
+      "events": ["UPDATE_AVAILABLE"]
+    },
+    "UserCardService": {
+      "dependencies": ["LogService", "DatabaseService", "DarwinaService", "SellyService"],
+      "interfaces": ["getCard", "updateCard", "generateQR"],
+      "events": ["CARD_UPDATE"]
+    },
+    "WallpaperService": {
+      "dependencies": ["LogService"],
+      "interfaces": ["setWallpaper", "getWallpaper", "listWallpapers"],
+      "events": ["WALLPAPER_CHANGE"]
+    },
+    "WallpaperManagerService": {
+      "dependencies": ["LogService", "WallpaperService"],
+      "interfaces": ["addCustomWallpaper", "removeCustomWallpaper"],
+      "events": ["WALLPAPER_LIST_UPDATE"]
+    },
+    "RetryService": {
+      "dependencies": ["LogService"],
+      "interfaces": ["execute", "reset"],
+      "events": ["RETRY_ATTEMPT"]
+    },
+    "ErrorService": {
+      "dependencies": [],
+      "interfaces": ["ApiError", "ValidationError", "NetworkError", "AuthenticationError", "CacheError", "DatabaseError"],
+      "events": []
+    }
+  },
+  "ui_components": {
+    "PerformanceHUD": {
+      "dependencies": ["PerformanceMonitorService", "LogService"],
+      "events": ["METRICS_UPDATE"]
+    },
+    "HUD": {
+      "dependencies": ["PerformanceMonitorService", "LogService"],
+      "events": ["DEBUG_UPDATE"]
+    },
+    "ProgressiveLoader": {
+      "dependencies": ["LoadingService", "LogService"],
+      "events": ["LOADING_UPDATE"]
+    },
+    "UserCard": {
+      "dependencies": ["UserCardService", "LogService", "I18nService"],
+      "events": ["CARD_RENDER"]
+    }
+  },
+  "stores": {
+    "chrome.storage.local": {
+      "keys": ["debugMode", "selectedStore", "language", "cache", "lastSync", "pendingChanges", "theme", "wallpaper", "notifications"]
+    },
+    "localStorage": {
+      "keys": ["theme", "debug", "lastUpdate", "customWallpapers", "userPreferences"]
+    }
+  },
+  "events": {
+    "runtime.messages": {
+      "SYNC_CHANGE": { "type": "string", "payload": "any" },
+      "INVALIDATE_CACHE": { "pattern": "string" },
+      "LOG": { "level": "string", "message": "string", "data?": "any" },
+      "METRICS_UPDATE": { "category": "string", "updates": "object" },
+      "THEME_CHANGE": { "theme": "string" },
+      "LANGUAGE_CHANGE": { "language": "string" },
+      "NOTIFICATION": { "type": "string", "message": "string", "data?": "any" }
+    }
+  }
+} 

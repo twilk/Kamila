@@ -1,4 +1,5 @@
-import { DataValidator } from '@/services/validator';
+import { validatorService } from '../../services/ValidatorService.js';
+import { logService } from '../../services/LogService.js';
 
 describe('DataValidator', () => {
     describe('Order Validation', () => {
@@ -18,7 +19,7 @@ describe('DataValidator', () => {
                 total: 200
             };
 
-            expect(() => DataValidator.validateOrder(validOrder)).not.toThrow();
+            expect(() => validatorService.validateOrder(validOrder)).not.toThrow();
         });
 
         test('should reject order without required fields', () => {
@@ -27,7 +28,7 @@ describe('DataValidator', () => {
                 status: 'new'
             };
 
-            expect(() => DataValidator.validateOrder(invalidOrder))
+            expect(() => validatorService.validateOrder(invalidOrder))
                 .toThrow('Brakujące pola');
         });
 
@@ -40,7 +41,7 @@ describe('DataValidator', () => {
                 total: 0
             };
 
-            expect(() => DataValidator.validateOrder(orderWithInvalidCustomer))
+            expect(() => validatorService.validateOrder(orderWithInvalidCustomer))
                 .toThrow('Nieprawidłowe dane klienta');
         });
 
@@ -56,7 +57,7 @@ describe('DataValidator', () => {
                 total: 0
             };
 
-            expect(() => DataValidator.validateOrder(orderWithInvalidItems))
+            expect(() => validatorService.validateOrder(orderWithInvalidItems))
                 .toThrow('Nieprawidłowe dane produktu');
         });
     });
@@ -68,12 +69,12 @@ describe('DataValidator', () => {
                 orders: []
             };
 
-            expect(() => DataValidator.validateResponse(validResponse)).not.toThrow();
+            expect(() => validatorService.validateResponse(validResponse)).not.toThrow();
         });
 
         test('should reject invalid response format', () => {
             const invalidResponse = null;
-            expect(() => DataValidator.validateResponse(invalidResponse))
+            expect(() => validatorService.validateResponse(invalidResponse))
                 .toThrow('Nieprawidłowa odpowiedź API');
         });
 
@@ -82,7 +83,7 @@ describe('DataValidator', () => {
                 orders: 'not an array'
             };
 
-            expect(() => DataValidator.validateResponse(responseWithInvalidOrders))
+            expect(() => validatorService.validateResponse(responseWithInvalidOrders))
                 .toThrow('Nieprawidłowy format listy zamówień');
         });
     });

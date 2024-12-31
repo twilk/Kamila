@@ -1,4 +1,5 @@
-import { WallpaperService } from '../../services/wallpaper.js';
+import { wallpaperService } from '../../services/WallpaperService.js';
+import { logService } from '../../services/LogService.js';
 
 describe('Wallpaper Service', () => {
     let wallpaperService;

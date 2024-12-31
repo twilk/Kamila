@@ -1,101 +1,151 @@
-export class UserCardService {
-    static async saveUserData(userData) {
-        if (!userData || !userData.memberId || !userData.qrCodeUrl) return false;
-        
+import { logService } from './LogService.js';
+import { apiService } from './ApiService.js';
+import { cacheService } from './CacheService.js';
+
+/**
+ * Service for managing user card data
+ */
+class UserCardService {
+    constructor() {
+        this.userData = null;
+        this.isInitialized = false;
+        logService.info('UserCardService constructed');
+    }
+
+    async initialize() {
+        if (this.isInitialized) return;
+
         try {
-            const data = await chrome.storage.local.get('darwin_users_data');
-            let users = data.darwin_users_data || {};
-            
-            const existingUser = users[userData.memberId];
-            const isNewQRCode = !existingUser || existingUser.qrCodeUrl !== userData.qrCodeUrl;
-            
-            users[userData.memberId] = {
-                ...userData,
-                lastLogin: new Date().toISOString(),
-                notificationShown: existingUser?.notificationShown || false
-            };
-
-            await chrome.storage.local.set({
-                'darwin_users_data': users,
-                'darwin_current_user': userData.memberId
-            });
-
-            await this.saveUserFile(userData);
-
-            return isNewQRCode;
+            logService.info('Initializing UserCardService...');
+            await this.loadUserData();
+            this.isInitialized = true;
+            logService.info('UserCardService initialized successfully');
         } catch (error) {
-            console.error('Error saving user data:', error);
-            return false;
+            logService.error('Failed to initialize UserCardService', error);
+            throw error;
         }
     }
 
-    static async saveUserFile(userData) {
+    async loadUserData() {
         try {
-            const fileName = `${userData.firstName}-${userData.memberId}.json`;
-            const fileContent = JSON.stringify({
-                ...userData,
-                exportDate: new Date().toISOString()
-            }, null, 2);
-
-            const blob = new Blob([fileContent], { type: 'application/json' });
+            logService.debug('Loading user data...');
             
-            const url = URL.createObjectURL(blob);
-
-            await chrome.downloads.download({
-                url: url,
-                filename: `users/${fileName}`,
-                saveAs: false,
-                conflictAction: 'overwrite'
-            });
-
-            URL.revokeObjectURL(url);
-        } catch (error) {
-            console.error('Error saving user file:', error);
-        }
-    }
-
-    static async loadCurrentUser() {
-        try {
-            const data = await chrome.storage.local.get(['darwin_users_data', 'darwin_current_user']);
-            const currentUserId = data.darwin_current_user;
-            const users = data.darwin_users_data || {};
-            
-            return currentUserId ? users[currentUserId] : null;
-        } catch (error) {
-            console.error('Error loading current user data:', error);
-            return null;
-        }
-    }
-
-    static async getAllUsers() {
-        try {
-            const data = await chrome.storage.local.get('darwin_users_data');
-            return data.darwin_users_data || {};
-        } catch (error) {
-            console.error('Error loading users data:', error);
-            return {};
-        }
-    }
-
-    static async setCurrentUser(userId) {
-        try {
-            await chrome.storage.local.set({ 'darwin_current_user': userId });
-        } catch (error) {
-            console.error('Error setting current user:', error);
-        }
-    }
-
-    static async markNotificationShown(userId) {
-        try {
-            const data = await chrome.storage.local.get('darwin_users_data');
-            let users = data.darwin_users_data || {};
-            
-            if (users[userId]) {
-                users[userId].notificationShown = true;
-                await chrome.storage.local.set({ 'darwin_users_data': users });
+            // Try to get from cache first
+            const cachedData = await cacheService.get('userData');
+            if (cachedData) {
+                this.userData = cachedData;
+                logService.debug('User data loaded from cache');
+                return cachedData;
             }
+
+            // If not in cache, fetch from API
+            const freshData = await apiService.get('/user/data');
+            this.userData = freshData;
+            
+            // Cache the result
+            await cacheService.set('userData', freshData, 300); // 5 minutes cache
+            
+            logService.debug('User data loaded from API');
+            return freshData;
         } catch (error) {
-            console.error('Error marking notification as shown:', error);
+            logService.error('Failed to load user data', error);
+            throw error;
         }
     }
-} 
+
+    async updateUserCard(data) {
+        try {
+            logService.debug('Updating user card...', data);
+            
+            // Validate data
+            if (!data.name || !data.email) {
+                throw new Error('Invalid user card data');
+            }
+
+            // Update via API
+            const updatedData = await apiService.put('/user/card', data);
+            this.userData = updatedData;
+            
+            // Update cache
+            await cacheService.set('userData', updatedData, 300);
+            
+            logService.info('User card updated successfully');
+            return updatedData;
+        } catch (error) {
+            logService.error('Failed to update user card', error);
+            throw error;
+        }
+    }
+
+    async generateQRCode() {
+        try {
+            logService.debug('Generating QR code...');
+            
+            if (!this.userData) {
+                throw new Error('User data not loaded');
+            }
+
+            const qrData = await apiService.post('/qr/generate', {
+                data: this.userData,
+                options: {
+                    width: 256,
+                    height: 256,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: 'H'
+                }
+            });
+            
+            logService.debug('QR code generated successfully');
+            return qrData;
+        } catch (error) {
+            logService.error('Failed to generate QR code', error);
+            throw error;
+        }
+    }
+
+    async generateSignature() {
+        try {
+            logService.debug('Generating signature...');
+            
+            if (!this.userData) {
+                throw new Error('User data not loaded');
+            }
+
+            const signatureData = await apiService.post('/signature/generate', {
+                data: this.userData,
+                options: {
+                    format: 'png',
+                    width: 300,
+                    height: 100
+                }
+            });
+            
+            logService.debug('Signature generated successfully');
+            return signatureData;
+        } catch (error) {
+            logService.error('Failed to generate signature', error);
+            throw error;
+        }
+    }
+
+    async refreshUserCard() {
+        try {
+            logService.debug('Refreshing user card...');
+            await cacheService.delete('userData');
+            const freshData = await this.loadUserData();
+            logService.info('User card refreshed successfully');
+            return freshData;
+        } catch (error) {
+            logService.error('Failed to refresh user card', error);
+            throw error;
+        }
+    }
+
+    getUserData() {
+        return this.userData;
+    }
+}
+
+// Create and export singleton instance
+export const userCardService = new UserCardService(); 

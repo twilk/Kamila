@@ -63,3 +63,6 @@ wallpapers/custom/
 
 # Test coverage
 coverage/
+
+# QR codes directory
+qrcodes/

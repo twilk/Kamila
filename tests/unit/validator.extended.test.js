@@ -1,4 +1,5 @@
-import { DataValidator } from '@/services/validator';
+import { validatorService } from '../../services/ValidatorService.js';
+import { logService } from '../../services/LogService.js';
 
 describe('Extended Validator Tests', () => {
     describe('Order Validation', () => {
@@ -25,7 +26,7 @@ describe('Extended Validator Tests', () => {
                 shipping: { method: 'express' }
             };
 
-            expect(() => DataValidator.validateOrder(order)).not.toThrow();
+            expect(() => validatorService.validateOrder(order)).not.toThrow();
         });
 
         test('should validate order items thoroughly', () => {
@@ -39,7 +40,7 @@ describe('Extended Validator Tests', () => {
                 total: 100
             };
 
-            expect(() => DataValidator.validateOrder(orderWithInvalidItems))
+            expect(() => validatorService.validateOrder(orderWithInvalidItems))
                 .toThrow('Nieprawidłowa ilość produktu');
         });
 
@@ -52,7 +53,7 @@ describe('Extended Validator Tests', () => {
                 total: 100
             };
 
-            expect(() => DataValidator.validateOrder(minimalOrder)).not.toThrow();
+            expect(() => validatorService.validateOrder(minimalOrder)).not.toThrow();
         });
 
         test('should validate response with minimal data', () => {
@@ -60,7 +61,7 @@ describe('Extended Validator Tests', () => {
                 orders: []
             };
 
-            expect(() => DataValidator.validateResponse(minimalResponse)).not.toThrow();
+            expect(() => validatorService.validateResponse(minimalResponse)).not.toThrow();
         });
 
         test('should handle null values in order items', () => {
@@ -72,7 +73,7 @@ describe('Extended Validator Tests', () => {
                 total: 100
             };
 
-            expect(() => DataValidator.validateOrder(orderWithNullItems))
+            expect(() => validatorService.validateOrder(orderWithNullItems))
                 .toThrow('Brak produktów w zamówieniu');
         });
 
@@ -91,7 +92,7 @@ describe('Extended Validator Tests', () => {
                 total: 100
             };
 
-            expect(() => DataValidator.validateOrder(complexOrder))
+            expect(() => validatorService.validateOrder(complexOrder))
                 .toThrow('Nieprawidłowa cena produktu');
         });
 
@@ -104,7 +105,7 @@ describe('Extended Validator Tests', () => {
                 total: NaN
             };
 
-            expect(() => DataValidator.validateOrder(corruptedOrder))
+            expect(() => validatorService.validateOrder(corruptedOrder))
                 .toThrow('Nieprawidłowe dane klienta');
         });
 
@@ -126,7 +127,7 @@ describe('Extended Validator Tests', () => {
                 total: 0
             };
 
-            expect(() => DataValidator.validateOrder(edgeCaseOrder))
+            expect(() => validatorService.validateOrder(edgeCaseOrder))
                 .toThrow('Nieprawidłowe dane zamówienia');
         });
     });
@@ -141,7 +142,7 @@ describe('Extended Validator Tests', () => {
                 total_pages: 1
             };
 
-            expect(() => DataValidator.validateResponse(response)).not.toThrow();
+            expect(() => validatorService.validateResponse(response)).not.toThrow();
         });
 
         test('should validate error responses', () => {
@@ -152,7 +153,7 @@ describe('Extended Validator Tests', () => {
                 }
             };
 
-            expect(() => DataValidator.validateResponse(errorResponse))
+            expect(() => validatorService.validateResponse(errorResponse))
                 .toThrow('Nieprawidłowa odpowiedź API');
         });
     });

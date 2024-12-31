@@ -3,8 +3,10 @@ import { stores } from './stores.js';
 
 export const API_CONFIG = {
     DARWINA: {
-        BASE_URL: 'https://darwina.pl/api',
+        BASE_URL: 'https://darwina.pl/api/v1',
         ENDPOINTS: {
+            USER: '/user',
+            USER_DATA: '/user/data',
             ORDERS: '/orders',
             STATUS: '/status',
             TOKEN: '/auth/access_token'
@@ -28,7 +30,7 @@ export const API_CONFIG = {
     }
 };
 
-export const API_BASE_URL = 'https://darwina.pl/api';
+export const API_BASE_URL = 'https://darwina.pl/api/v1';
 
 // Dodaj funkcję wysyłania logów z timestampem
 export function sendLogToPopup(message, type = 'info', data = null) {
@@ -61,18 +63,26 @@ export async function loadCredentials() {
 export const getDarwinaCredentials = async () => {
     try {
         console.log('🔄 Starting credentials fetch...', 'info');
+        
+        // Load credentials file
+        console.log('📄 Loading credentials file...');
         const response = await fetch(chrome.runtime.getURL('config/credentials.json'));
         
         console.log('📄 Credentials response:', 'info', {
             status: response.status,
-            ok: response.ok
+            ok: response.ok,
+            statusText: response.statusText
         });
         
         if (!response.ok) {
-            throw new Error('Nie udało się załadować poświadczeń');
+            throw new Error(`Failed to load credentials: ${response.status} ${response.statusText}`);
         }
         
         const credentials = await response.json();
+        
+        if (!credentials.client_id || !credentials.client_secret) {
+            throw new Error('Invalid credentials format: missing client_id or client_secret');
+        }
         
         console.log('🔑 Credentials loaded:', 'info', {
             hasClientId: !!credentials.client_id,
@@ -82,52 +92,84 @@ export const getDarwinaCredentials = async () => {
         const tokenUrl = `${API_BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.TOKEN}`;
         console.log('🔗 Token URL:', 'info', tokenUrl);
         
+        // Prepare token request body
+        const tokenBody = new URLSearchParams({
+            grant_type: 'client_credentials',
+            scope: 'READWRITE',
+            client_id: credentials.client_id,
+            client_secret: credentials.client_secret
+        });
+
         console.log('📤 Sending token request...', 'info', {
             url: tokenUrl,
             method: 'POST',
-            headers: ['Content-Type', 'Accept'],
-            bodyParams: ['grant_type', 'scope', 'client_id', 'client_secret']
+            headers: ['Content-Type'],
+            bodyParams: Array.from(tokenBody.keys())
         });
         
-        // Przygotuj token dostępu
+        // Request token
         const tokenResponse = await fetch(tokenUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded'
             },
-            body: new URLSearchParams({
-                grant_type: 'client_credentials',
-                scope: 'READWRITE',
-                client_id: credentials.client_id,
-                client_secret: credentials.client_secret
-            }).toString()
+            body: tokenBody.toString()
         });
-        
+
         console.log('🔍 Token response status:', 'info', {
             status: tokenResponse.status,
             statusText: tokenResponse.statusText,
+            ok: tokenResponse.ok,
             headers: Object.fromEntries(tokenResponse.headers.entries())
         });
         
         if (!tokenResponse.ok) {
-            const errorText = await tokenResponse.text();
-            console.log('❌ Token response error:', 'error', {
+            let errorText;
+            try {
+                errorText = await tokenResponse.text();
+            } catch (e) {
+                errorText = 'Could not read error response';
+            }
+            
+            console.error('❌ Token response error:', {
                 status: tokenResponse.status,
+                statusText: tokenResponse.statusText,
                 text: errorText
             });
-            throw new Error(`Błąd autoryzacji API: ${tokenResponse.status} ${errorText}`);
+            
+            throw new Error(`Token request failed: ${tokenResponse.status} ${tokenResponse.statusText} - ${errorText}`);
         }
         
-        const tokenData = await tokenResponse.json();
-        console.log('🔑 Załadowano poświadczenia API', 'success');
+        let tokenData;
+        try {
+            tokenData = await tokenResponse.json();
+        } catch (e) {
+            console.error('❌ Token parse error:', e);
+            throw new Error('Failed to parse token response');
+        }
+
+        if (!tokenData.access_token) {
+            throw new Error('Token response missing access_token');
+        }
+
+        console.log('🔑 Token received successfully');
         
-        return {
+        const config = {
             DARWINA_API_BASE_URL: API_BASE_URL,
             DARWINA_API_KEY: tokenData.access_token
         };
+
+        console.log('✅ API configuration complete:', {
+            hasBaseUrl: !!config.DARWINA_API_BASE_URL,
+            hasApiKey: !!config.DARWINA_API_KEY
+        });
+
+        return config;
     } catch (error) {
-        console.error('Błąd podczas pobierania danych uwierzytelniających:', error);
-        console.log('Błąd uwierzytelniania', 'error', error.message);
+        console.error('❌ Error getting Darwina credentials:', {
+            message: error.message,
+            stack: error.stack
+        });
         return null;
     }
 };

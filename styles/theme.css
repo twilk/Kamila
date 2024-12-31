@@ -176,74 +176,58 @@ select:focus {
 }
 
 /* Style dla tabeli rankingu */
+#ranking {
+    height: 380px;
+    overflow: hidden;
+}
+
 #ranking-data {
-  position: relative;
-  height: calc(100vh - 220px) !important;
-  overflow-y: auto;
-  border: 1px solid var(--status-border);
-  border-radius: var(--radius-lg);
-  max-width: 100%;
-  background: var(--bg-primary);
-  margin-top: 5px;
+    height: 100%;
+    overflow-y: auto;
+    border: 1px solid var(--status-border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-primary);
 }
 
-#ranking.tab-pane {
-  overflow: visible;
-  margin-top: -10px;
-}
-
-#ranking.tab-pane .p-3 {
-  padding: 0.25rem !important;
+#ranking-data table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
 }
 
 #ranking-data td, 
 #ranking-data th {
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--status-border);
-  font-size: 14px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--status-border);
+    font-size: 14px;
 }
 
 #ranking-data thead {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--bg-secondary);
-  box-shadow: 0 2px 4px var(--shadow-light);
-}
-
-#ranking-data table {
-  margin-bottom: 0;
-  width: 100%;
-  table-layout: fixed;
-  border-collapse: separate;
-  border-spacing: 0;
-}
-
-#ranking-data th {
-  font-weight: 600;
-  text-transform: uppercase;
-  font-size: 12px;
-  color: var(--text-secondary);
-  letter-spacing: 0.5px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg-secondary);
+    box-shadow: 0 2px 4px var(--shadow-light);
 }
 
 /* Szerokości kolumn */
 #ranking-data td:nth-child(1), 
 #ranking-data th:nth-child(1) { 
-  width: 15%; 
-  text-align: center;
-  font-weight: 600;
-  color: var(--wine-primary);
+    width: 15%; 
+    text-align: center;
+    font-weight: 600;
+    color: var(--wine-primary);
 } 
 
 #ranking-data td:nth-child(2), 
 #ranking-data th:nth-child(2) { 
-  width: 85%; 
+    width: 85%; 
 }
 
 #ranking-data tbody tr:hover {
-  background-color: var(--hover-light);
-  cursor: default;
+    background-color: var(--hover-light);
+    cursor: default;
 }
 
 /* Dark theme dla tabeli rankingu */
@@ -287,4 +271,127 @@ select:focus {
   background-color: var(--bg-secondary);
   border-color: var(--status-border);
   color: var(--text-primary);
+} 
+
+/* Performance HUD Styles */
+.performance-hud {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 300px;
+    height: 200px;
+    z-index: 9999;
+    font-family: 'Courier New', monospace;
+    pointer-events: none;
+    transform: perspective(500px) rotateX(5deg);
+    transform-origin: bottom right;
+    animation: hudAppear 0.5s ease-out;
+    background: rgba(0, 20, 40, 0.85);
+    border: 1px solid rgba(0, 255, 255, 0.3);
+    border-radius: 5px;
+    color: #00ffff;
+    padding: 10px;
+    backdrop-filter: blur(5px);
+}
+
+.performance-hud canvas {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.3));
+}
+
+/* HUD Animations */
+@keyframes hudAppear {
+    from {
+        opacity: 0;
+        transform: perspective(500px) rotateX(30deg) translateY(100px);
+    }
+    to {
+        opacity: 1;
+        transform: perspective(500px) rotateX(5deg) translateY(0);
+    }
+}
+
+@keyframes hudGlow {
+    0% { filter: drop-shadow(0 0 5px rgba(0, 255, 255, 0.3)); }
+    50% { filter: drop-shadow(0 0 15px rgba(0, 255, 255, 0.5)); }
+    100% { filter: drop-shadow(0 0 5px rgba(0, 255, 255, 0.3)); }
+}
+
+/* HUD Sections */
+.hud-section {
+    margin-bottom: 10px;
+    padding: 8px;
+    border: 1px solid rgba(0, 255, 255, 0.2);
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.4);
+}
+
+.hud-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+    padding-bottom: 3px;
+    border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+}
+
+.hud-section-title {
+    color: #00ffff;
+    font-weight: bold;
+}
+
+.hud-section-timer {
+    color: #00ff00;
+    font-size: 10px;
+}
+
+.hud-metric {
+    display: flex;
+    justify-content: space-between;
+    margin: 2px 0;
+}
+
+.hud-metric-label {
+    color: rgba(0, 255, 255, 0.7);
+}
+
+.hud-metric-value {
+    color: #ffffff;
+}
+
+.hud-status-ok {
+    color: #00ff00;
+}
+
+.hud-status-warning {
+    color: #ffff00;
+}
+
+.hud-status-error {
+    color: #ff0000;
+}
+
+/* HUD Hover Effects */
+.performance-hud:hover {
+    animation: hudGlow 2s infinite;
+}
+
+/* HUD Responsiveness */
+@media (max-width: 768px) {
+    .performance-hud {
+        width: 200px;
+        height: 133px;
+        bottom: 10px;
+        right: 10px;
+    }
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+    .performance-hud {
+        --hud-background: rgba(0, 0, 0, 0.95);
+        --hud-text: #ffffff;
+        --hud-border: #00ffff;
+    }
 } 

@@ -1,4 +1,5 @@
-import { ThemeService } from '../../services/theme.js';
+import { themeService } from '../../services/ThemeService.js';
+import { logService } from '../../services/LogService.js';
 
 describe('Theme Service', () => {
     let themeService;

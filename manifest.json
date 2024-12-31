@@ -1,63 +1,49 @@
 {
     "manifest_version": 3,
-    "name": "Kamila",
+    "name": "Kamila - DARWINA.PL Assistant",
     "version": "1.0.0",
-    "description": "Inteligentny asystent dla pracowników DARWINA.PL",
+    "description": "Asystent do zarządzania zamówieniami w DARWINA.PL",
     "permissions": [
         "storage",
-        "tabs",
-        "windows",
-        "webRequest",
+        "alarms",
         "notifications",
-        "downloads",
-        "scripting",
-        "alarms"
+        "background"
     ],
     "host_permissions": [
         "https://darwina.pl/*",
-        "https://*.darwina.pl/*",
-        "https://darwina.weblucy.com/*",
-        "https://docs.google.com/*"
+        "https://darwina.weblucy.com/*"
     ],
+    "background": {
+        "service_worker": "service-worker.js",
+        "type": "module"
+    },
     "action": {
-        "default_popup": "popup.html"
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "/assets/icons/icon-16.png",
+            "48": "/assets/icons/icon-48.png",
+            "128": "/assets/icons/icon-128.png"
+        }
     },
     "icons": {
-        "16": "icon16.png",
-        "48": "icon48.png",
-        "128": "icon128.png"
+        "16": "/assets/icons/icon-16.png",
+        "48": "/assets/icons/icon-48.png",
+        "128": "/assets/icons/icon-128.png"
     },
-    "background": {
-        "service_worker": "background.js",
-        "type": "module"
-    },
-    "content_security_policy": {
-        "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://darwina.pl https://*.darwina.pl https://darwina.weblucy.com https://docs.google.com;"
-    },
-    "content_scripts": [{
-        "matches": [
-            "https://darwina.weblucy.com/raporty*"
-        ],
-        "js": [
-            "content_scripts/userDataCollector.js"
-        ],
-        "type": "module"
-    }],
     "web_accessible_resources": [{
         "resources": [
-            "wallpapers/custom/*",
             "assets/*",
-            "users/*.json",
-            "config/credentials.json",
-            "config/delivery.js",
-            "config/stores.js",
-            "config/api.js"
+            "styles/*",
+            "services/*",
+            "utils/*",
+            "components/*",
+            "lib/*"
         ],
-        "matches": [
-            "https://darwina.pl/*",
-            "https://*.darwina.pl/*",
-            "https://darwina.weblucy.com/*"
-        ]
+        "matches": ["<all_urls>"]
     }],
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'self'"
+    },
+    "offline_enabled": true,
     "minimum_chrome_version": "88"
 }
