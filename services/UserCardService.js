@@ -1,6 +1,7 @@
 import { logService } from './LogService.js';
 import { apiService } from './ApiService.js';
 import { cacheService } from './CacheService.js';
+import { darwinaService } from './DarwinaService.js';
 
 const QR_CONFIG = {
     width: 256,
@@ -103,25 +104,38 @@ export class UserCardService {
     }
 
     async refreshUserData() {
-        if (!this.initialized) {
-            throw new Error('Cannot refresh user data before initialization');
-        }
-
         try {
-            logService.debug('Fetching fresh user data...');
-            const freshData = await apiService.get('/user/data');
+            logService.debug('Refreshing user data...');
             
-            // Validate data
-            if (!this.validateUserData(freshData)) {
-                throw new Error('Invalid user data received from API');
+            if (darwinaService.devBypassAuth) {
+                // Return mock data in development mode
+                const mockData = {
+                    id: 'dev_user_1',
+                    fullName: 'Developer Test',
+                    email: 'dev@darwina.pl',
+                    role: 'admin',
+                    status: 'active',
+                    permissions: ['read', 'write', 'admin'],
+                    settings: {
+                        theme: 'light',
+                        notifications: true,
+                        language: 'pl'
+                    },
+                    lastLogin: new Date().toISOString(),
+                    created: '2024-01-01T00:00:00Z'
+                };
+                logService.info('Using mock user data in development mode');
+                return mockData;
             }
-            
-            // Update cache and local data
-            await cacheService.set('userData', freshData);
-            this.userData = freshData;
-            
+
+            const userData = await darwinaService.getUserData();
+            if (!userData) {
+                logService.error('Failed to load user data');
+                return null;
+            }
+
             logService.debug('User data refreshed successfully');
-            return freshData;
+            return userData;
         } catch (error) {
             logService.error('Failed to refresh user data', error);
             throw error;

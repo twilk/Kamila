@@ -15,6 +15,26 @@ async function initializeServices() {
     try {
         logService.info('Initializing application...');
 
+        // Show main container and ensure other containers are hidden
+        const containers = {
+            main: document.getElementById('main-container'),
+            login: document.getElementById('login-container'),
+            error: document.getElementById('error-container'),
+            loading: document.getElementById('loading-overlay')
+        };
+
+        // Hide all containers first
+        Object.values(containers).forEach(container => {
+            if (container) {
+                container.classList.add('hidden');
+            }
+        });
+
+        // Show main container by default
+        if (containers.main) {
+            containers.main.classList.remove('hidden');
+        }
+
         // Initialize core infrastructure
         await Promise.all([
             loadingService.initialize(),
@@ -58,14 +78,20 @@ async function initializeServices() {
         });
         logService.info('Management services initialized');
 
-        // Check authentication state
-        const isAuthenticated = await darwinaService.checkAuthorization();
-        if (!isAuthenticated) {
-            logService.info('Application initialized in unauthenticated state');
-            showLoginPrompt();
-        } else {
-            logService.info('Application initialized successfully');
+        // In development mode, skip auth check and load data directly
+        if (darwinaService.devBypassAuth) {
+            logService.info('Development mode: Skipping authentication check');
             await loadInitialData();
+        } else {
+            // Check authentication state
+            const isAuthenticated = await darwinaService.checkAuthorization();
+            if (!isAuthenticated) {
+                logService.info('Application initialized in unauthenticated state');
+                showLoginPrompt();
+            } else {
+                logService.info('Application initialized successfully');
+                await loadInitialData();
+            }
         }
 
     } catch (error) {
@@ -125,7 +151,8 @@ function showLoginPrompt() {
             notificationService.show({
                 title: 'Authentication Required',
                 message: 'Please log in to continue',
-                type: 'info'
+                type: 'basic',
+                iconUrl: '/assets/icons/icon-48.png'
             });
             
             // Setup login form if exists

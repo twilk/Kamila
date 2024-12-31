@@ -8,6 +8,7 @@ export class LoadingService {
         this.initialized = false;
         this.loadingStates = new Map();
         this.pendingStates = [];
+        this.loadingId = 'global-loading';
         logService.info('LoadingService constructed');
     }
 
@@ -32,6 +33,20 @@ export class LoadingService {
             logService.error('Failed to initialize LoadingService', error);
             throw error;
         }
+    }
+
+    /**
+     * Show global loading state
+     */
+    show() {
+        this.setLoading(this.loadingId, true);
+    }
+
+    /**
+     * Hide global loading state
+     */
+    hide() {
+        this.setLoading(this.loadingId, false);
     }
 
     /**
@@ -84,13 +99,13 @@ export class LoadingService {
      * Update UI elements based on loading states
      */
     _updateUI() {
-        const loadingContainer = document.getElementById('loading-container');
-        if (!loadingContainer) return;
+        const loadingOverlay = document.getElementById('loading-overlay');
+        if (!loadingOverlay) return;
 
         if (this.isLoading()) {
-            loadingContainer.classList.remove('hidden');
+            loadingOverlay.classList.remove('hidden');
         } else {
-            loadingContainer.classList.add('hidden');
+            loadingOverlay.classList.add('hidden');
         }
     }
 

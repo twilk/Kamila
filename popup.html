@@ -1,9 +1,15 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>DARWINA.PL Assistant</title>
-    <link rel="stylesheet" href="lib/bootstrap.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="appTitle">Kamila</title>
+    <link href="lib/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="styles/theme.css">
+    <link rel="stylesheet" href="styles/animations.css">
+    <link rel="stylesheet" href="styles/hud.css">
     <link rel="stylesheet" href="styles/styles.css">
 </head>
 <body>
@@ -13,30 +19,104 @@
     </div>
 
     <!-- Main container -->
-    <div id="main-container" class="container hidden">
+    <div id="main-container" class="container-fluid">
+        <!-- Header -->
         <div class="header">
-            <h1>DARWINA.PL Assistant</h1>
-            <div class="status-bar"></div>
+            <h1 data-i18n="appTitle">Kamila</h1>
+            <div class="selector-group">
+                <!-- Language selector -->
+                <select id="lang-switch" class="form-select">
+                    <option value="pl">Polski</option>
+                    <option value="en">English</option>
+                    <option value="uk">Українська</option>
+                </select>
+                
+                <!-- Store selector -->
+                <select id="store-select" class="form-select">
+                    <option value="" data-i18n="noStoreSelected">Select store...</option>
+                </select>
+                
+                <!-- Refresh button -->
+                <button id="refresh-store-data" class="btn btn-primary">
+                    <i class="bi bi-arrow-clockwise"></i>
+                    <span data-i18n="refresh">Refresh</span>
+                </button>
+            </div>
         </div>
-        <div class="content">
-            <!-- Main content will be dynamically loaded -->
+
+        <!-- Status bar -->
+        <div class="status-bar">
+            <!-- Lead counters -->
+            <div class="lead-status">
+                <span class="lead-count" id="count-submitted">0</span>
+                <span data-i18n="submitted">Submitted</span>
+            </div>
+            <div class="lead-status">
+                <span class="lead-count" id="count-confirmed">0</span>
+                <span data-i18n="confirmed">Confirmed</span>
+            </div>
+            <div class="lead-status">
+                <span class="lead-count" id="count-accepted">0</span>
+                <span data-i18n="accepted">Accepted</span>
+            </div>
+            <div class="lead-status">
+                <span class="lead-count" id="count-ready">0</span>
+                <span data-i18n="ready">Ready</span>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <ul class="nav nav-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#orders" type="button" role="tab">
+                    <span data-i18n="orders">Orders</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#stock" type="button" role="tab">
+                    <span data-i18n="stock">Stock</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings" type="button" role="tab">
+                    <span data-i18n="settings">Settings</span>
+                </button>
+            </li>
+        </ul>
+
+        <!-- Tab content -->
+        <div class="tab-content">
+            <!-- Orders tab -->
+            <div class="tab-pane fade show active" id="orders" role="tabpanel">
+                <div class="orders-list"></div>
+            </div>
+
+            <!-- Stock tab -->
+            <div class="tab-pane fade" id="stock" role="tabpanel">
+                <div class="stock-list"></div>
+            </div>
+
+            <!-- Settings tab -->
+            <div class="tab-pane fade" id="settings" role="tabpanel">
+                <div class="settings-content"></div>
+            </div>
         </div>
     </div>
 
     <!-- Login container -->
     <div id="login-container" class="container hidden">
         <div class="login-box">
-            <h2>Login Required</h2>
+            <h2 data-i18n="loginRequired">Login Required</h2>
             <form id="login-form">
                 <div class="form-group">
-                    <label for="username">Username</label>
+                    <label for="username" data-i18n="username">Username</label>
                     <input type="text" class="form-control" id="username" name="username" required>
                 </div>
                 <div class="form-group">
-                    <label for="password">Password</label>
+                    <label for="password" data-i18n="password">Password</label>
                     <input type="password" class="form-control" id="password" name="password" required>
                 </div>
-                <button type="submit" class="btn btn-primary">Login</button>
+                <button type="submit" class="btn btn-primary" data-i18n="login">Login</button>
             </form>
         </div>
     </div>
@@ -44,20 +124,20 @@
     <!-- Error container -->
     <div id="error-container" class="container hidden">
         <div class="error-box">
-            <h2>Error</h2>
-            <p class="error-message">An error occurred</p>
-            <button class="btn btn-primary retry-button">Retry</button>
+            <h2 data-i18n="error">Error</h2>
+            <p class="error-message"></p>
+            <button class="btn btn-primary retry-button" data-i18n="retry">Retry</button>
         </div>
     </div>
 
     <!-- Debug panel -->
     <div id="debug-panel" class="debug-panel hidden">
         <div class="debug-header">
-            <h3>Debug Info</h3>
-            <button data-control="debug-toggle" class="btn btn-sm btn-secondary">Toggle</button>
+            <h3 data-i18n="debugInfo">Debug Info</h3>
+            <button data-control="debug-toggle" class="btn btn-sm btn-secondary" data-i18n="toggle">Toggle</button>
         </div>
         <div class="debug-content">
-            <!-- Debug info will be dynamically loaded -->
+            <div id="debug-logs"></div>
         </div>
     </div>
 

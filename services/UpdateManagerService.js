@@ -243,7 +243,7 @@ export class UpdateManagerService {
         notificationService.show({
             title: 'Update Available',
             message: `Version ${newVersion} is available. Restart to update.`,
-            type: 'info',
+            type: 'basic',
             buttons: [{
                 title: 'Restart Now',
                 action: () => this.restartToUpdate()

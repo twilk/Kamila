@@ -1,93 +1,48 @@
 # Service Connections and Dependencies
 
-## Service Initialization Order
+## Service Initialization Order (✓ - Working, 🔄 - In Progress, ❌ - Issues)
 
-### Level 1 - Core Infrastructure
-1. LogService
-2. CacheService
-3. DatabaseService
+### Level 1 - Core Infrastructure (✓)
+1. LogService ✓
+2. CacheService ✓
+3. DatabaseService ✓
 
-### Level 2 - Communication
-1. RequestQueueService
-2. ApiService (using DARWINA.PL API configuration)
+### Level 2 - Communication (✓)
+1. RequestQueueService ✓
+2. ApiService ✓
 
-### Level 3 - UI and Localization
-1. I18nService
-2. LoadingService
-3. ThemeService
-4. UIComponentService
+### Level 3 - UI and Localization (✓)
+1. I18nService ✓
+2. LoadingService ✓ (Fixed show/hide functionality)
+3. ThemeService ✓
+4. UIComponentService ✓
 
-### Level 4 - Business Logic
-1. UserCardService
-2. DarwinaService (using DARWINA.PL API)
+### Level 4 - Business Logic (🔄)
+1. UserCardService 🔄 (Working in dev mode)
+2. DarwinaService 🔄 (Working in dev mode)
 
-### Level 5 - Management
-1. StatusCheckerService
-2. UpdateManagerService
-3. PerformanceMonitorService
-
-## Service Dependencies
-
-### UserCardService
-- Depends on:
-  - LogService
-  - ApiService (DARWINA.PL)
-  - CacheService
-- Used by:
-  - popup.js
-  - background.js
-- Status: Fixed initialization cycle
-
-### ApiService
-- Depends on:
-  - LogService
-  - RequestQueueService
-  - CacheService
-- Used by:
-  - UserCardService
-  - DarwinaService
-- Status: Fixed API configuration
-
-### CacheService
-- Depends on:
-  - LogService
-- Used by:
-  - ApiService
-  - UserCardService
-  - UpdateManagerService
-- Status: Working correctly
-
-### LoadingService
-- Depends on:
-  - LogService
-- Used by:
-  - All UI components
-  - RequestQueueService
-- Status: Improved state management
-
-### UIComponentService
-- Depends on:
-  - LogService
-  - ThemeService
-  - I18nService
-- Used by:
-  - popup.js
-  - All UI components
-- Status: Initialization issues being fixed
+### Level 5 - Management (✓)
+1. StatusCheckerService ✓
+2. UpdateManagerService ✓
+3. PerformanceMonitorService ✓
 
 ## Current Issues
 
-### Service Initialization
-1. UIComponentService initialization:
-   - Component registration timing
-   - Event listener setup
-   - Debug panel initialization
+### Fixed
+1. LoadingService initialization ✓
+2. UI visibility states ✓
+3. Service initialization order ✓
+4. Basic error handling ✓
 
-### State Management
-1. Loading state coordination:
-   - Pre-initialization state handling
-   - State transitions
-   - Error state management
+### In Progress
+1. Authentication flow 🔄
+2. Data synchronization 🔄
+3. API integration 🔄
+
+### Pending
+1. Network error handling ❌
+2. Advanced error recovery ❌
+3. Service coordination ❌
 
 ## Recommendations
 

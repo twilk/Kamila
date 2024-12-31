@@ -8,7 +8,7 @@ class NotificationService {
         this.isInitialized = false;
         this.defaultOptions = {
             type: 'basic',
-            iconUrl: '/assets/icons/icon-128.png',
+            iconUrl: '/assets/icons/icon-48.png',
             silent: false
         };
         logService.info('NotificationService constructed');
@@ -137,7 +137,7 @@ class NotificationService {
             type: 'basic',
             title: 'Error',
             message: message,
-            iconUrl: '/assets/icons/error-icon.png',
+            iconUrl: '/assets/icons/icon-48.png',
             priority: 2,
             ...options
         });
@@ -149,7 +149,7 @@ class NotificationService {
             type: 'basic',
             title: 'Warning',
             message: message,
-            iconUrl: '/assets/icons/warning-icon.png',
+            iconUrl: '/assets/icons/icon-48.png',
             priority: 1,
             ...options
         });
@@ -161,7 +161,7 @@ class NotificationService {
             type: 'basic',
             title: 'Success',
             message: message,
-            iconUrl: '/assets/icons/success-icon.png',
+            iconUrl: '/assets/icons/icon-48.png',
             priority: 0,
             ...options
         });

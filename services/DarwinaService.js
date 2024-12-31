@@ -2,6 +2,7 @@ import { logService } from './LogService.js';
 import { apiService } from './ApiService.js';
 import { cacheService } from './CacheService.js';
 import { API_CONFIG } from '../config/api.js';
+import { stores } from '../config/stores.js';
 
 /**
  * Service for interacting with DARWINA.PL API
@@ -12,6 +13,8 @@ class DarwinaService {
         this.isInitialized = false;
         this.endpoints = API_CONFIG.DARWINA.ENDPOINTS;
         this.statusCodes = API_CONFIG.DARWINA.STATUS_CODES;
+        this.devBypassAuth = true; // Development bypass flag
+        this.users = new Map(); // Cache dla użytkowników
         logService.info('DarwinaService constructed');
     }
 
@@ -24,6 +27,7 @@ class DarwinaService {
         try {
             logService.info('Initializing DarwinaService...');
             await this.setupApiConfig();
+            await this.loadUsers(); // Ładujemy użytkowników podczas inicjalizacji
             await this.checkAuthorization();
             this.isInitialized = true;
             logService.info('DarwinaService initialized successfully');
@@ -31,6 +35,43 @@ class DarwinaService {
             logService.error('Failed to initialize DarwinaService', error);
             // Don't throw here, continue with empty state
             this.isInitialized = true;
+        }
+    }
+
+    async loadUsers() {
+        try {
+            // W trybie dev, wczytaj użytkowników z plików
+            const userFiles = await this.getUserFiles();
+            for (const file of userFiles) {
+                const userData = await this.readUserFile(file);
+                if (userData && userData.memberId) {
+                    this.users.set(userData.memberId, userData);
+                }
+            }
+            logService.debug(`Loaded ${this.users.size} users`);
+        } catch (error) {
+            logService.error('Failed to load users', error);
+        }
+    }
+
+    async getUserFiles() {
+        // TODO: Implement file system access to read users directory
+        return ['84.json', '9.json']; // Przykładowa lista plików
+    }
+
+    async readUserFile(filename) {
+        try {
+            // TODO: Implement file reading
+            // Na razie zwracamy przykładowe dane
+            return {
+                memberId: filename.replace('.json', ''),
+                status: "Aktywny",
+                fullName: "Example User",
+                email: "example@email.com"
+            };
+        } catch (error) {
+            logService.error(`Failed to read user file ${filename}`, error);
+            return null;
         }
     }
 
@@ -166,6 +207,16 @@ class DarwinaService {
     async getUserData() {
         try {
             logService.debug('Fetching user data...');
+            
+            if (this.devBypassAuth) {
+                // Return mock data in development mode
+                return {
+                    id: 'dev_user',
+                    name: 'Development User',
+                    role: 'admin'
+                };
+            }
+
             const isAuthorized = await this.checkAuthorization();
             
             if (!isAuthorized) {
@@ -207,6 +258,11 @@ class DarwinaService {
     }
 
     async checkAuthorization() {
+        if (this.devBypassAuth) {
+            logService.info('Development mode: Authentication bypass enabled');
+            return true;
+        }
+
         try {
             const token = await cacheService.get('authToken');
             if (!token) {
@@ -255,6 +311,110 @@ class DarwinaService {
             logService.error('Failed to refresh token', error);
             return false;
         }
+    }
+
+    async getData() {
+        try {
+            logService.debug('Fetching all data...');
+            
+            // W trybie dev używamy lokalnych danych
+            if (this.devBypassAuth) {
+                const mockData = await this.getMockData();
+                return mockData;
+            }
+
+            // W trybie produkcyjnym pobieramy z API
+            const orders = await this.getOrders();
+            const stock = await this.getProducts();
+            const statusCounts = this.calculateStatusCounts(orders);
+            
+            return {
+                orders,
+                stock,
+                ...statusCounts
+            };
+        } catch (error) {
+            logService.error('Failed to fetch data', error);
+            throw error;
+        }
+    }
+
+    async getMockData() {
+        try {
+            // Generuj przykładowe zamówienia na podstawie sklepów i użytkowników
+            const mockOrders = stores
+                .filter(store => store.id !== 'ALL' && store.drwn)
+                .map((store, index) => ({
+                    number: `ORD${String(index + 1).padStart(3, '0')}`,
+                    status: ['submitted', 'confirmed', 'accepted', 'ready'][Math.floor(Math.random() * 4)],
+                    date: new Date(),
+                    store: store.drwn,
+                    user: Array.from(this.users.values())[Math.floor(Math.random() * this.users.size)]?.fullName || 'Unknown'
+                }));
+
+            // Generuj przykładowe stany magazynowe dla każdego sklepu
+            const mockStock = stores
+                .filter(store => store.id !== 'ALL' && store.drwn)
+                .map((store, index) => ({
+                    name: store.drwn,
+                    quantity: Math.floor(Math.random() * 100),
+                    lastUpdate: new Date()
+                }));
+
+            const statusCounts = this.calculateStatusCounts(mockOrders);
+
+            return {
+                orders: mockOrders,
+                stock: mockStock,
+                ...statusCounts
+            };
+        } catch (error) {
+            logService.error('Failed to get mock data', error);
+            throw error;
+        }
+    }
+
+    async getStores() {
+        try {
+            logService.debug('Getting stores from config...');
+            // Używamy danych z stores.js
+            return stores;
+        } catch (error) {
+            logService.error('Failed to get stores', error);
+            throw error;
+        }
+    }
+
+    calculateStatusCounts(orders) {
+        const counts = {
+            submitted: 0,
+            confirmed: 0,
+            accepted: 0,
+            ready: 0
+        };
+
+        if (!Array.isArray(orders)) return counts;
+
+        orders.forEach(order => {
+            if (!order?.status) return;
+            
+            switch (order.status.toLowerCase()) {
+                case 'submitted':
+                    counts.submitted++;
+                    break;
+                case 'confirmed':
+                    counts.confirmed++;
+                    break;
+                case 'accepted':
+                    counts.accepted++;
+                    break;
+                case 'ready':
+                    counts.ready++;
+                    break;
+            }
+        });
+
+        return counts;
     }
 }
 
