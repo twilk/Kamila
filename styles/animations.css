@@ -133,4 +133,152 @@
     transform: translateZ(0);
     will-change: background-position;
     pointer-events: none;
+}
+
+/* Animacja aktualizacji licznika */
+@keyframes countUpdate {
+    0% { transform: scale(1); }
+    50% { 
+        transform: scale(1.2);
+        color: var(--gray-900);
+    }
+    100% { transform: scale(1); }
+}
+
+.dark-theme .count-updated {
+    animation: countUpdateDark 1s ease-in-out;
+}
+
+@keyframes countUpdateDark {
+    0% { transform: scale(1); }
+    50% { 
+        transform: scale(1.2);
+        color: #ffffff;
+        text-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+    }
+    100% { transform: scale(1); }
+}
+
+/* Efekt odświeżenia dla lead-status */
+.lead-status.refreshed {
+    animation: refresh-pulse 1s ease-in-out;
+}
+
+@keyframes refresh-pulse {
+    0% {
+        transform: scale(1);
+        background: var(--light-surface);
+    }
+    50% {
+        transform: scale(1.02);
+        background: var(--primary-light);
+    }
+    100% {
+        transform: scale(1);
+        background: var(--light-surface);
+    }
+}
+
+/* Dla ciemnego motywu */
+.dark-theme .lead-status.refreshed {
+    animation: refresh-pulse-dark 1s ease-in-out;
+}
+
+@keyframes refresh-pulse-dark {
+    0% {
+        transform: scale(1);
+        background: var(--dark-surface);
+    }
+    50% {
+        transform: scale(1.02);
+        background: var(--primary-dark);
+    }
+    100% {
+        transform: scale(1);
+        background: var(--dark-surface);
+    }
+}
+
+/* Animacja dla przycisków */
+.btn {
+    transition: all var(--transition-fast);
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
+/* Animacja dla flag języków */
+.flag {
+    transition: all var(--transition-fast);
+}
+
+.flag:hover {
+    transform: scale(1.1) translateY(-1px);
+}
+
+/* Animacja dla karty użytkownika */
+.user-card-flip {
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+}
+
+.user-card-flip:hover {
+    transform: rotateY(180deg);
+}
+
+/* Animacja ładowania */
+@keyframes loading {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading {
+    animation: loading 1s linear infinite;
+}
+
+/* Animacja dla tooltipów */
+.tooltip {
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+}
+
+.tooltip.show {
+    opacity: 1;
+}
+
+/* Animacja dla modali */
+.modal.fade .modal-dialog {
+    transform: scale(0.8);
+    transition: transform 0.3s ease-out;
+}
+
+.modal.show .modal-dialog {
+    transform: scale(1);
+}
+
+/* Animacja dla powiadomień */
+@keyframes slideIn {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.notification {
+    animation: slideIn 0.3s ease-out forwards;
+}
+
+/* Animacja dla przełączania zakładek */
+.tab-pane {
+    transition: opacity 0.3s ease-in-out;
+    opacity: 0;
+}
+
+.tab-pane.show {
+    opacity: 1;
 } 

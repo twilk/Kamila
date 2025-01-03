@@ -1,48 +1,52 @@
 {
     "manifest_version": 3,
-    "name": "Kamila - DARWINA.PL Assistant",
+    "name": "KAMILA - Asystent DARWINA.PL",
     "version": "1.0.0",
-    "description": "Asystent do zarządzania zamówieniami w DARWINA.PL",
+    "description": "Inteligentny asystent do automatyzacji procesów w DARWINA.PL",
     "permissions": [
         "storage",
-        "alarms",
         "notifications",
-        "background"
+        "scripting"
     ],
     "host_permissions": [
         "https://darwina.pl/*",
-        "https://darwina.weblucy.com/*"
+        "https://darwina.weblucy.com/*",
+        "https://cdn.jsdelivr.net/*"
     ],
     "background": {
-        "service_worker": "service-worker.js",
+        "service_worker": "background.js",
         "type": "module"
     },
+    "content_scripts": [
+        {
+            "matches": ["https://darwina.pl/*", "https://darwina.weblucy.com/*"],
+            "js": ["content_scripts/userDataCollector.js"],
+            "css": ["style.css", "styles/theme.css"]
+        }
+    ],
     "action": {
         "default_popup": "popup.html",
         "default_icon": {
-            "16": "/assets/icons/icon-16.png",
-            "48": "/assets/icons/icon-48.png",
-            "128": "/assets/icons/icon-128.png"
+            "16": "assets/icons/icon-16.png",
+            "48": "assets/icons/icon-48.png",
+            "128": "assets/icons/icon-128.png"
         }
     },
     "icons": {
-        "16": "/assets/icons/icon-16.png",
-        "48": "/assets/icons/icon-48.png",
-        "128": "/assets/icons/icon-128.png"
+        "16": "assets/icons/icon-16.png",
+        "48": "assets/icons/icon-48.png",
+        "128": "assets/icons/icon-128.png"
     },
     "web_accessible_resources": [{
         "resources": [
             "assets/*",
             "styles/*",
-            "services/*",
-            "utils/*",
-            "components/*",
-            "lib/*"
+            "locales/*"
         ],
         "matches": ["<all_urls>"]
     }],
     "content_security_policy": {
-        "extension_pages": "script-src 'self'; object-src 'self'"
+        "extension_pages": "script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; object-src 'self'"
     },
     "offline_enabled": true,
     "minimum_chrome_version": "88"

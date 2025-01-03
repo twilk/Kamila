@@ -1,98 +1,111 @@
 /**
- * Service for centralized logging functionality
+ * Serwis do logowania zdarzeń w aplikacji
  */
 class LogService {
     constructor() {
-        this.debugMode = false;
-        this.logLevel = 'info';
-        this.logLevels = {
-            debug: 0,
-            info: 1,
-            warn: 2,
-            error: 3
+        this.listeners = new Set();
+        this.logLevel = 'info'; // Default to info level
+        this.levels = {
+            error: 0,
+            warn: 1,
+            info: 2,
+            debug: 3
         };
-    }
-
-    setDebugMode(enabled) {
-        this.debugMode = enabled;
-        this.log('debug', 'Debug mode set to:', enabled);
+        this.debug('LogService constructed');
     }
 
     setLogLevel(level) {
-        if (this.logLevels.hasOwnProperty(level)) {
+        if (this.levels.hasOwnProperty(level)) {
             this.logLevel = level;
-            this.log('info', 'Log level set to:', level);
-        }
-    }
-
-    debug(message, ...args) {
-        if (this.shouldLog('debug')) {
-            this.log('debug', message, ...args);
-        }
-    }
-
-    info(message, ...args) {
-        if (this.shouldLog('info')) {
-            this.log('info', message, ...args);
-        }
-    }
-
-    warn(message, ...args) {
-        if (this.shouldLog('warn')) {
-            this.log('warn', message, ...args);
-        }
-    }
-
-    error(message, ...args) {
-        if (this.shouldLog('error')) {
-            this.log('error', message, ...args);
+            this.info(`Log level set to: ${level}`);
         }
     }
 
     shouldLog(level) {
-        return this.logLevels[level] >= this.logLevels[this.logLevel];
+        return this.levels[level] <= this.levels[this.logLevel];
     }
 
-    log(level, message, ...args) {
-        const timestamp = new Date().toISOString();
-        const prefix = `[${timestamp}] [${level.toUpperCase()}]`;
-
-        if (args.length > 0) {
-            if (typeof args[0] === 'object' && args[0] !== null) {
-                // If first argument is an object (context data), format it nicely
-                console[level](prefix, message, JSON.stringify(args[0], null, 2), ...args.slice(1));
-            } else {
-                console[level](prefix, message, ...args);
-            }
-        } else {
-            console[level](prefix, message);
+    addListener(callback) {
+        if (typeof callback === 'function') {
+            this.listeners.add(callback);
         }
-
-        // Add to debug panel if it exists
-        this.addToDebugPanel(level, message, args);
     }
 
-    addToDebugPanel(level, message, args) {
-        const debugPanel = document.getElementById('debug-panel');
-        if (!debugPanel) return;
+    removeListener(callback) {
+        this.listeners.delete(callback);
+    }
 
-        const logEntry = document.createElement('div');
-        logEntry.className = `log-entry log-${level}`;
+    notifyListeners(logEntry) {
+        if (!this.shouldLog(logEntry.level)) return;
         
-        let logMessage = message;
-        if (args.length > 0) {
-            if (typeof args[0] === 'object' && args[0] !== null) {
-                logMessage += ' ' + JSON.stringify(args[0]);
-            } else {
-                logMessage += ' ' + args.join(' ');
+        this.listeners.forEach(listener => {
+            try {
+                listener(logEntry);
+            } catch (error) {
+                console.error('Error in log listener:', error);
             }
+        });
+    }
+
+    log(level, message, data) {
+        if (!this.shouldLog(level)) return;
+
+        const timestamp = new Date().toISOString();
+        const logEntry = {
+            timestamp,
+            level,
+            message,
+            data
+        };
+
+        // Format log message
+        const logMessage = data 
+            ? `[${timestamp}] [${level.toUpperCase()}] ${message} ${JSON.stringify(data, null, 2)}`
+            : `[${timestamp}] [${level.toUpperCase()}] ${message}`;
+
+        // Output to console with appropriate styling
+        switch (level) {
+            case 'error':
+                console.error(logMessage);
+                break;
+            case 'warn':
+                console.warn(logMessage);
+                break;
+            case 'info':
+                console.log(logMessage);
+                break;
+            case 'debug':
+                console.log(logMessage);
+                break;
+            default:
+                console.log(logMessage);
         }
 
-        logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${logMessage}`;
-        debugPanel.appendChild(logEntry);
-        debugPanel.scrollTop = debugPanel.scrollHeight;
+        // Notify listeners
+        this.notifyListeners(logEntry);
+    }
+
+    error(message, data) {
+        this.log('error', message, data);
+    }
+
+    warn(message, data) {
+        this.log('warn', message, data);
+    }
+
+    info(message, data) {
+        this.log('info', message, data);
+    }
+
+    debug(message, data) {
+        this.log('debug', message, data);
+    }
+
+    getLogLevel() {
+        return this.logLevel;
     }
 }
 
 // Create and export singleton instance
-export const logService = new LogService(); 
+const logService = new LogService();
+export { logService }; 

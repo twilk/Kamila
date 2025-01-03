@@ -6,7 +6,7 @@ import { logService } from './LogService.js';
 export class I18nService {
     constructor() {
         this.translations = new Map();
-        this.currentLocale = 'pl';
+        this.currentLocale = 'polish';
         logService.info('I18nService constructed');
     }
 

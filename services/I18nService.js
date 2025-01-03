@@ -1,163 +1,138 @@
 import { logService } from './LogService.js';
-import { cacheService } from './CacheService.js';
+import { 
+    LANGUAGES, 
+    DEFAULT_LANGUAGE, 
+    AVAILABLE_LANGUAGES, 
+    isValidLanguage 
+} from './constants/languages.js';
 
-/**
- * Service for handling internationalization
- */
 export class I18nService {
     constructor() {
         this.translations = {};
-        this.currentLanguage = 'polish';
-        this.fallbackLanguage = 'polish';
+        this.currentLanguage = DEFAULT_LANGUAGE;
+        this.defaultLanguage = DEFAULT_LANGUAGE;
         this.initialized = false;
-        this.supportedLanguages = ['pl', 'en', 'ua'];
-        this.observers = new Set();
         logService.info('I18nService constructed');
     }
 
     async initialize() {
-        if (this.initialized) {
-            logService.debug('I18nService already initialized');
-            return;
-        }
-
         try {
-            logService.info('Initializing I18nService...');
-            
-            // Try to get cached translations first
-            const cachedTranslations = await cacheService.get('translations');
-            if (cachedTranslations) {
-                this.translations = cachedTranslations;
-                logService.debug('Using cached translations');
-            } else {
-                await this.loadTranslations();
-            }
-
-            // Load saved language preference
-            const savedLanguage = await cacheService.get('currentLanguage');
-            if (savedLanguage && this.supportedLanguages.includes(this.getLangCode(savedLanguage))) {
-                this.currentLanguage = savedLanguage;
-                logService.debug('Restored language preference', { language: savedLanguage });
-            }
-
+            await this.loadTranslations();
+            await this.loadStoredLanguage();
             this.initialized = true;
             logService.info('I18nService initialized successfully');
         } catch (error) {
-            logService.error('Failed to initialize I18nService', error);
-            throw error;
+            logService.error('Failed to initialize I18nService:', error);
+            this.initialized = false;
         }
     }
 
     async loadTranslations() {
         try {
-            logService.info('Loading translations...');
-            const [plTranslations, enTranslations, uaTranslations] = await Promise.all([
-                fetch('./locales/polish.json').then(res => res.json()),
-                fetch('./locales/english.json').then(res => res.json()),
-                fetch('./locales/ukrainian.json').then(res => res.json())
-            ]);
+            logService.debug('Loading translations...');
+            
+            // Map of languages to file names
+            const languageFiles = AVAILABLE_LANGUAGES.reduce((acc, lang) => {
+                acc[lang] = `${lang}.json`;
+                return acc;
+            }, {});
 
-            this.translations = {
-                pl: plTranslations,
-                en: enTranslations,
-                ua: uaTranslations
-            };
+            // Load all translation files
+            const translations = await Promise.all(
+                Object.entries(languageFiles).map(async ([code, file]) => {
+                    const response = await fetch(`/locales/${file}`);
+                    if (!response.ok) {
+                        throw new Error(`Failed to load ${file}: ${response.status} ${response.statusText}`);
+                    }
+                    const data = await response.json();
+                    return [code, data];
+                })
+            );
 
-            // Cache the translations
-            await cacheService.set('translations', this.translations);
+            // Cache translations with proper language codes
+            this.translations = Object.fromEntries(translations);
+
+            logService.debug('Translations loaded:', Object.keys(this.translations));
             logService.info('Translations loaded and cached successfully');
         } catch (error) {
-            logService.error('Failed to load translations', error);
+            logService.error('Failed to load translations:', error);
+            // Initialize with empty translations to prevent null reference errors
+            this.translations = AVAILABLE_LANGUAGES.reduce((acc, lang) => {
+                acc[lang] = {};
+                return acc;
+            }, {});
             throw error;
         }
     }
 
-    translate(key, language = this.currentLanguage) {
-        if (!this.initialized) {
-            logService.warn('Attempting to translate before initialization');
-            return key;
-        }
-
+    async loadStoredLanguage() {
         try {
-            const langCode = this.getLangCode(language);
-            const translation = this.translations[langCode]?.[key] 
-                || this.translations[this.getLangCode(this.fallbackLanguage)]?.[key];
-            
-            if (!translation) {
-                logService.warn(`Missing translation for key: ${key} in language: ${language}`);
-                return key;
+            const result = await chrome.storage.local.get('language');
+            if (result.language && isValidLanguage(result.language)) {
+                this.currentLanguage = result.language;
+                logService.debug('Loaded stored language:', this.currentLanguage);
+            } else {
+                this.currentLanguage = this.defaultLanguage;
+                await chrome.storage.local.set({ language: this.defaultLanguage });
+                logService.debug('Set default language:', this.defaultLanguage);
             }
-
-            return translation;
         } catch (error) {
-            logService.error('Translation error', error);
-            return key;
+            logService.error('Error loading stored language:', error);
+            this.currentLanguage = this.defaultLanguage;
         }
-    }
-
-    getLangCode(language) {
-        const langMap = {
-            'polish': 'pl',
-            'english': 'en',
-            'ukrainian': 'ua'
-        };
-        return langMap[language] || language;
     }
 
     async setLanguage(language) {
-        if (!this.initialized) {
-            throw new Error('Cannot set language before initialization');
-        }
-
         try {
-            const langCode = this.getLangCode(language);
-            if (!this.supportedLanguages.includes(langCode)) {
-                throw new Error(`Unsupported language: ${language}`);
-            }
-
-            this.currentLanguage = language;
-            await cacheService.set('currentLanguage', language);
-            this.notifyObservers();
-            logService.info(`Language changed to: ${language}`);
-        } catch (error) {
-            logService.error('Failed to set language', error);
-            throw error;
-        }
-    }
-
-    addObserver(callback) {
-        this.observers.add(callback);
-    }
-
-    removeObserver(callback) {
-        this.observers.delete(callback);
-    }
-
-    notifyObservers() {
-        this.observers.forEach(callback => {
-            try {
-                callback();
-            } catch (error) {
-                logService.error('Error in i18n observer callback', error);
-            }
-        });
-    }
-
-    updateDataI18n() {
-        if (!this.initialized) {
-            logService.warn('Attempting to update i18n elements before initialization');
-            return;
-        }
-
-        try {
-            const elements = document.querySelectorAll('[data-i18n]');
-            elements.forEach(element => {
-                const key = element.getAttribute('data-i18n');
-                element.textContent = this.translate(key);
+            logService.debug('Setting language:', {
+                requested: language,
+                current: this.currentLanguage,
+                available: AVAILABLE_LANGUAGES
             });
-            logService.debug('Updated i18n elements');
+
+            // Validate language
+            if (!isValidLanguage(language)) {
+                logService.error(`Invalid language requested: ${language}`);
+                throw new Error(`Invalid language: ${language}. Available languages: ${AVAILABLE_LANGUAGES.join(', ')}`);
+            }
+
+            // Check if translations are loaded
+            if (!this.translations[language] || Object.keys(this.translations[language]).length === 0) {
+                logService.warn(`Empty translations for ${language}, attempting to reload`);
+                await this.loadTranslations();
+                
+                if (!this.translations[language] || Object.keys(this.translations[language]).length === 0) {
+                    logService.error(`Failed to load translations for ${language}`);
+                    throw new Error(`Failed to load translations for ${language}`);
+                }
+            }
+
+            // Set new language
+            const previousLanguage = this.currentLanguage;
+            this.currentLanguage = language;
+
+            // Save to storage
+            try {
+                await chrome.storage.local.set({ language });
+                logService.info('Language changed successfully', {
+                    from: previousLanguage,
+                    to: language
+                });
+                return true;
+            } catch (storageError) {
+                // Rollback on storage error
+                this.currentLanguage = previousLanguage;
+                logService.error('Failed to save language preference:', storageError);
+                throw new Error(`Failed to save language preference: ${storageError.message}`);
+            }
         } catch (error) {
-            logService.error('Failed to update i18n elements', error);
+            logService.error('Error setting language:', {
+                error: error.message,
+                language,
+                current: this.currentLanguage,
+                available: AVAILABLE_LANGUAGES
+            });
+            return false;
         }
     }
 
@@ -165,10 +140,57 @@ export class I18nService {
         return this.currentLanguage;
     }
 
-    getSupportedLanguages() {
-        return [...this.supportedLanguages];
+    translate(key) {
+        try {
+            if (!key) {
+                logService.warn('Empty translation key provided');
+                return '';
+            }
+
+            const currentTranslations = this.translations[this.currentLanguage];
+            if (!currentTranslations) {
+                logService.warn(`No translations found for language: ${this.currentLanguage}`);
+                // Try fallback to default language
+                const defaultTranslations = this.translations[this.defaultLanguage];
+                if (!defaultTranslations) {
+                    logService.error('No translations found for default language');
+                    return key;
+                }
+                return this.translateWithFallback(key, defaultTranslations);
+            }
+
+            return this.translateWithFallback(key, currentTranslations);
+        } catch (error) {
+            logService.error('Translation error:', error);
+            return key;
+        }
+    }
+
+    translateWithFallback(key, translations) {
+        const keys = key.split('.');
+        let result = translations;
+
+        for (const k of keys) {
+            if (!result || typeof result !== 'object') {
+                logService.warn(`Translation path broken at key: ${k} in ${key}`);
+                return key;
+            }
+            result = result[k];
+        }
+
+        if (result === undefined || result === null) {
+            logService.warn(`Translation missing for key: ${key}`);
+            return key;
+        }
+
+        return result;
+    }
+
+    cleanup() {
+        this.translations = {};
+        this.currentLanguage = DEFAULT_LANGUAGE;
+        this.initialized = false;
     }
 }
 
-// Create and export singleton instance
 export const i18nService = new I18nService(); 

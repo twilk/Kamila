@@ -1,12 +1,16 @@
 import '@testing-library/jest-dom';
 
+// Mock fetch globally
+global.fetch = jest.fn();
+
 // Mock chrome API
 global.chrome = {
     runtime: {
+        getURL: jest.fn(path => `chrome-extension://mock-id/${path}`),
+        sendMessage: jest.fn(),
         onMessage: {
             addListener: jest.fn()
-        },
-        sendMessage: jest.fn()
+        }
     },
     storage: {
         local: {
@@ -14,6 +18,16 @@ global.chrome = {
             set: jest.fn()
         }
     }
+};
+
+// Mock console methods
+global.console = {
+    ...console,
+    log: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    info: jest.fn(),
+    debug: jest.fn()
 };
 
 // Mock localStorage
@@ -24,9 +38,6 @@ const localStorageMock = {
     removeItem: jest.fn()
 };
 Object.defineProperty(window, 'localStorage', { value: localStorageMock });
-
-// Mock fetch
-global.fetch = jest.fn();
 
 // Mock URL
 global.URL.createObjectURL = jest.fn();

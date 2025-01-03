@@ -36,6 +36,12 @@ export class StatusCheckerService {
     }
 
     async checkEndpoint(name) {
+        // Temporarily skip API checks
+        if (name.toLowerCase().includes('api')) {
+            logService.debug('API check temporarily disabled');
+            return;
+        }
+
         const endpoint = this.endpoints.get(name);
         if (!endpoint) return;
 

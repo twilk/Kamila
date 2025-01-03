@@ -65,4 +65,7 @@ wallpapers/custom/
 coverage/
 
 # QR codes directory
-qrcodes/
+# qrcodes/
+
+# Users directory
+# users/

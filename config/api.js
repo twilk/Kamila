@@ -3,34 +3,21 @@ import { stores } from './stores.js';
 
 export const API_CONFIG = {
     DARWINA: {
-        BASE_URL: 'https://darwina.pl/api/v1',
+        BASE_URL: 'https://darwina.pl/api',
         ENDPOINTS: {
-            USER: '/user',
-            USER_DATA: '/user/data',
             ORDERS: '/orders',
-            STATUS: '/status',
             TOKEN: '/auth/access_token'
         },
         STATUS_CODES: {
             SUBMITTED: 1,        // Złożone
             CONFIRMED: 2,        // Potwierdzone przez Klienta
             ACCEPTED_STORE: 3,   // Przyjęte do realizacji w sklepie
-            ACCEPTED_SHIPPING: 4, // Przyjęte do realizacji do wysyłki
-            READY: 5,           // Gotowe do odbioru w sklepie
-            PICKED_UP: 9,       // Towar odebrany w sklepie
-            AWAITING_PAYMENT: 13, // Oczekiwanie na płatność - Gotowe do wysyłki
-            AWAITING_COURIER: 8,  // Opłacone-Oczekuje na odbiór kuriera
-            HANDED_TO_COURIER: 6, // Paczka wydana Pełnomocnikowi
-            DELIVERED: 7,        // Paczka dostarczona
-            ADDITIONAL_CORR: 12,  // Wysłana dodatkowa korespondencja
-            REFUND_REQUESTED: 11, // Rezygnacja-chce zwrot kasy
-            CANCELLED: 14,       // Anulowane - nasza porażka
-            DO_NOT_USE: 10       // NIE UŻYWAĆ
+            READY: 5            // Gotowe do odbioru w sklepie
         }
     }
 };
 
-export const API_BASE_URL = 'https://darwina.pl/api/v1';
+export const API_BASE_URL = 'https://darwina.pl/api';
 
 // Dodaj funkcję wysyłania logów z timestampem
 export function sendLogToPopup(message, type = 'info', data = null) {
@@ -281,17 +268,7 @@ export const getStatusName = (statusCode) => {
         [API_CONFIG.DARWINA.STATUS_CODES.SUBMITTED]: 'Złożone',
         [API_CONFIG.DARWINA.STATUS_CODES.CONFIRMED]: 'Potwierdzone przez Klienta',
         [API_CONFIG.DARWINA.STATUS_CODES.ACCEPTED_STORE]: 'Przyjęte do realizacji w sklepie',
-        [API_CONFIG.DARWINA.STATUS_CODES.ACCEPTED_SHIPPING]: 'Przyjęte do realizacji do wysyłki',
-        [API_CONFIG.DARWINA.STATUS_CODES.READY]: 'Gotowe do odbioru w sklepie',
-        [API_CONFIG.DARWINA.STATUS_CODES.PICKED_UP]: 'Towar odebrany w sklepie',
-        [API_CONFIG.DARWINA.STATUS_CODES.AWAITING_PAYMENT]: 'Oczekiwanie na płatność',
-        [API_CONFIG.DARWINA.STATUS_CODES.AWAITING_COURIER]: 'Opłacone-Oczekuje na kuriera',
-        [API_CONFIG.DARWINA.STATUS_CODES.HANDED_TO_COURIER]: 'Wydane kurierowi',
-        [API_CONFIG.DARWINA.STATUS_CODES.DELIVERED]: 'Dostarczone',
-        [API_CONFIG.DARWINA.STATUS_CODES.ADDITIONAL_CORR]: 'Dodatkowa korespondencja',
-        [API_CONFIG.DARWINA.STATUS_CODES.REFUND_REQUESTED]: 'Rezygnacja-zwrot',
-        [API_CONFIG.DARWINA.STATUS_CODES.CANCELLED]: 'Anulowane',
-        [API_CONFIG.DARWINA.STATUS_CODES.DO_NOT_USE]: 'Nieaktywne'
+        [API_CONFIG.DARWINA.STATUS_CODES.READY]: 'Gotowe do odbioru w sklepie'
     };
 
     return statusMap[statusCode] || 'Nieznany status';

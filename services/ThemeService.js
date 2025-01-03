@@ -91,9 +91,9 @@ export class ThemeService {
             // Apply theme to document
             document.documentElement.setAttribute('data-theme', effectiveTheme);
             
-            // Apply theme-specific styles
-            document.body.classList.remove('theme-light', 'theme-dark');
-            document.body.classList.add(`theme-${effectiveTheme}`);
+            // Apply theme-specific classes
+            document.body.classList.remove('light-theme', 'dark-theme');
+            document.body.classList.add(`${effectiveTheme}-theme`);
             
             // Notify observers
             this.notifyObservers(effectiveTheme);

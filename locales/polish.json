@@ -41,14 +41,19 @@
     "errorConnection": "Błąd połączenia z serwerem",
     "leadStatuses": {
         "submitted": "Złożone",
-        "confirmed": "Potwierdzone przez Klienta",
-        "accepted": "Przyjęte do realizacji",
+        "confirmed": "Potwierdzone",
+        "accepted": "Zaakceptowane",
         "ready": "Gotowe do odbioru",
-        "overdue": "Zaległe"
+        "overdue": "Przeterminowane",
+        "1": "Złożone",
+        "2": "Potwierdzone",
+        "3": "Zaakceptowane"
     },
     "languagePolish": "Polski",
     "languageEnglish": "Angielski",
     "languageUkrainian": "Ukraiński",
+    "languageChanged": "Język został zmieniony",
+    "errorLanguageChange": "Błąd podczas zmiany języka",
     "instructionUnzip": "Rozpakuj pobrany plik ZIP",
     "instructionGoTo": "Przejdź do chrome://extensions/",
     "instructionRemove": "Usuń obecną wersję Kamili",
@@ -130,5 +135,22 @@
         "success": "Dane użytkownika zweryfikowane",
         "error": "Błąd weryfikacji danych użytkownika",
         "notFound": "Nie znaleziono użytkownika"
-    }
+    },
+    "errorChangingStore": "Błąd podczas zmiany sklepu",
+    "refreshData": "Odśwież dane",
+    "common": {
+        "loading": "Ładowanie...",
+        "error": "Błąd",
+        "success": "Sukces",
+        "warning": "Ostrzeżenie"
+    },
+    "errors": {
+        "initialization": "Błąd podczas inicjalizacji aplikacji",
+        "loading": "Błąd podczas ładowania danych",
+        "network": "Problem z połączeniem sieciowym"
+    },
+    "devMode": "Tryb deweloperski",
+    "devModeEnabled": "🔧 Tryb deweloperski włączony",
+    "devModeDisabled": "🔧 Tryb deweloperski wyłączony",
+    "dataRefreshed": "Dane zostały odświeżone"
 }

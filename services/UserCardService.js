@@ -31,58 +31,43 @@ export class UserCardService {
 
     async initialize() {
         if (this.initialized) {
-            logService.debug('UserCardService already initialized');
-            return;
-        }
-
-        if (this.initializing) {
-            logService.debug('UserCardService initialization already in progress');
             return;
         }
 
         try {
-            this.initializing = true;
             logService.info('Initializing UserCardService...');
-            
-            // First mark as initialized so other methods know we're ready
-            this.initialized = true;
-            
-            // Then try to load initial data
-            try {
-                await this.loadUserData();
-            } catch (error) {
-                // Don't fail initialization if data load fails
-                logService.warn('Failed to load initial user data, continuing with empty state', error);
-                this.initError = error;
+
+            // Sprawdź czy mamy userId w storage
+            const storage = await chrome.storage.local.get('userId');
+            if (!storage.userId) {
+                // Ustaw domyślne ID użytkownika (2)
+                await chrome.storage.local.set({ userId: '2' });
+                logService.info('Set default user ID: 2');
             }
+
+            // Załaduj dane użytkownika
+            await this.loadUserData();
             
+            this.initialized = true;
             logService.info('UserCardService initialized successfully');
         } catch (error) {
-            this.initialized = false;
             this.initError = error;
-            logService.error('Failed to initialize UserCardService', error);
-            throw error;
-        } finally {
-            this.initializing = false;
+            logService.warn('Failed to load initial user data, continuing with empty state', {});
+            this.initialized = true; // Pozwalamy na inicjalizację nawet przy błędzie
         }
     }
 
     async loadUserData() {
         try {
-            logService.debug('Loading user data...');
-            
-            // Try to get from cache first
-            const cachedData = await cacheService.get('userData');
-            if (cachedData) {
-                this.userData = cachedData;
-                logService.debug('User data loaded from cache');
-                return;
+            const userData = await this.refreshUserData();
+            if (this.validateUserData(userData)) {
+                this.userData = userData;
+                logService.debug('User data loaded successfully');
+            } else {
+                throw new Error('Invalid user data format');
             }
-
-            // Fetch fresh data if not in cache
-            await this.refreshUserData();
         } catch (error) {
-            logService.error('Failed to load user data', error);
+            logService.error('Failed to load user data', {});
             throw error;
         }
     }
@@ -103,6 +88,50 @@ export class UserCardService {
         }
     }
 
+    async loadUserFromFile(userId) {
+        try {
+            logService.debug('Loading user data from file:', userId);
+            const response = await fetch(chrome.runtime.getURL(`users/${userId}.json`));
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load user file: ${response.status} ${response.statusText}`);
+            }
+            
+            const userData = await response.json();
+            
+            // Dodaj URL do QR kodu - używamy bezpośrednio pliku PNG
+            userData.qrCodeImageUrl = chrome.runtime.getURL(`qrcodes/${userId}.png`);
+            logService.debug('QR code URL added:', userData.qrCodeImageUrl);
+            
+            logService.debug('User data loaded from file successfully');
+            return userData;
+        } catch (error) {
+            logService.error(`Failed to load user file for ID ${userId}:`, error);
+            throw error;
+        }
+    }
+
+    async getQRCode() {
+        if (!this.initialized) {
+            throw new Error('Cannot get QR code before initialization');
+        }
+
+        try {
+            if (!this.userData || !this.userData.memberId) {
+                await this.refreshUserData();
+            }
+
+            if (!this.userData || !this.userData.memberId) {
+                throw new Error('No valid user data available');
+            }
+
+            return this.userData.qrCodeImageUrl;
+        } catch (error) {
+            logService.error('Failed to get QR code:', error);
+            throw error;
+        }
+    }
+
     async refreshUserData() {
         try {
             logService.debug('Refreshing user data...');
@@ -119,7 +148,7 @@ export class UserCardService {
                     settings: {
                         theme: 'light',
                         notifications: true,
-                        language: 'pl'
+                        language: 'polish'
                     },
                     lastLogin: new Date().toISOString(),
                     created: '2024-01-01T00:00:00Z'
@@ -128,16 +157,37 @@ export class UserCardService {
                 return mockData;
             }
 
-            const userData = await darwinaService.getUserData();
+            // Pobierz userId ze storage
+            const storage = await chrome.storage.local.get('userId');
+            if (!storage.userId) {
+                throw new Error('No user ID found in storage');
+            }
+            
+            const userId = storage.userId;
+            logService.debug('User ID found in storage:', userId);
+
+            // Załaduj dane użytkownika z pliku
+            const userData = await this.loadUserFromFile(userId);
             if (!userData) {
-                logService.error('Failed to load user data');
-                return null;
+                throw new Error('Failed to load user data from file');
             }
 
-            logService.debug('User data refreshed successfully');
+            // Upewnij się że mamy memberId
+            userData.memberId = userId;
+            this.userData = userData;
+
+            logService.debug('User data refreshed successfully:', {
+                userId: userData.memberId,
+                hasData: !!userData,
+                dataKeys: Object.keys(userData)
+            });
+            
             return userData;
         } catch (error) {
-            logService.error('Failed to refresh user data', error);
+            logService.error('Failed to refresh user data:', {
+                error: error.message,
+                stack: error.stack
+            });
             throw error;
         }
     }
@@ -145,7 +195,7 @@ export class UserCardService {
     validateUserData(data) {
         return data && 
                typeof data === 'object' && 
-               typeof data.name === 'string' &&
+               typeof data.fullName === 'string' &&
                typeof data.email === 'string';
     }
 
@@ -157,110 +207,10 @@ export class UserCardService {
         return this.initialized;
     }
 
-    async generateQRCode(data) {
-        if (!this.initialized) {
-            throw new Error('Cannot generate QR code before initialization');
-        }
-
-        try {
-            logService.debug('Generating QR code...');
-            
-            const qrData = await apiService.post('/qr/generate', {
-                data,
-                options: QR_CONFIG
-            });
-            
-            logService.debug('QR code generated successfully');
-            return qrData;
-        } catch (error) {
-            logService.error('Failed to generate QR code', error);
-            throw error;
-        }
-    }
-
-    async generateSignature(data) {
-        if (!this.initialized) {
-            throw new Error('Cannot generate signature before initialization');
-        }
-
-        try {
-            logService.debug('Generating signature...');
-            
-            const signatureData = await apiService.post('/signature/generate', {
-                data,
-                options: SIGNATURE_CONFIG
-            });
-            
-            logService.debug('Signature generated successfully');
-            return signatureData;
-        } catch (error) {
-            logService.error('Failed to generate signature', error);
-            throw error;
-        }
-    }
-
-    async updateUserCard(data) {
-        if (!this.initialized) {
-            throw new Error('Cannot update user card before initialization');
-        }
-
-        try {
-            logService.debug('Updating user card...', { data });
-            
-            // Validate update data
-            if (!this.validateUserData(data)) {
-                throw new Error('Invalid user card update data');
-            }
-
-            // Update user card
-            const updatedData = await apiService.put('/user/card', data);
-            
-            // Validate response
-            if (!this.validateUserData(updatedData)) {
-                throw new Error('Invalid user data received from API');
-            }
-            
-            // Update cache and local data
-            await cacheService.set('userData', updatedData);
-            this.userData = updatedData;
-            
-            logService.debug('User card updated successfully');
-            return updatedData;
-        } catch (error) {
-            logService.error('Failed to update user card', error);
-            throw error;
-        }
-    }
-
-    async clearUserData() {
-        if (!this.initialized) {
-            throw new Error('Cannot clear user data before initialization');
-        }
-
-        try {
-            logService.debug('Clearing user data...');
-            await cacheService.delete('userData');
-            this.userData = null;
-            logService.debug('User data cleared successfully');
-        } catch (error) {
-            logService.error('Failed to clear user data', error);
-            throw error;
-        }
-    }
-
     cleanup() {
-        if (!this.initialized) return;
-
-        try {
-            logService.debug('Cleaning up UserCardService...');
-            this.userData = null;
-            this.initialized = false;
-            this.initError = null;
-            logService.debug('UserCardService cleaned up successfully');
-        } catch (error) {
-            logService.error('Error during cleanup', error);
-            throw error;
-        }
+        this.initialized = false;
+        this.userData = null;
+        this.initError = null;
     }
 }
 

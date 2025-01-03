@@ -10,6 +10,17 @@ export class ApiService {
         this.baseUrl = '';
         this.apiKey = '';
         this.initialized = false;
+        this.apiStats = {
+            totalCalls: 0,
+            successCalls: 0,
+            errorCalls: 0,
+            lastResponse: null,
+            lastError: null,
+            lastCallTime: null,
+            responseTimeMs: 0,
+            endpoints: new Map() // Track calls per endpoint
+        };
+        this.listeners = new Set();
         logService.info('ApiService constructed');
     }
 
@@ -165,6 +176,128 @@ export class ApiService {
             logService.debug('ApiService cleaned up successfully');
         } catch (error) {
             logService.error('Error during cleanup', error);
+            throw error;
+        }
+    }
+
+    addStatsListener(callback) {
+        if (typeof callback === 'function') {
+            this.listeners.add(callback);
+        }
+    }
+
+    removeStatsListener(callback) {
+        this.listeners.delete(callback);
+    }
+
+    notifyListeners() {
+        this.listeners.forEach(listener => {
+            try {
+                listener(this.apiStats);
+            } catch (error) {
+                console.error('Error in API stats listener:', error);
+            }
+        });
+    }
+
+    async fetchWithRetry(url, options = {}, retries = 3) {
+        const startTime = performance.now();
+        const endpoint = new URL(url).pathname;
+        
+        try {
+            this.apiStats.totalCalls++;
+            this.apiStats.lastCallTime = new Date();
+            
+            // Track endpoint call
+            const endpointStats = this.apiStats.endpoints.get(endpoint) || { calls: 0, errors: 0 };
+            endpointStats.calls++;
+            this.apiStats.endpoints.set(endpoint, endpointStats);
+
+            const response = await fetch(url, options);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            // Update success stats
+            this.apiStats.successCalls++;
+            this.apiStats.lastResponse = data;
+            this.apiStats.responseTimeMs = performance.now() - startTime;
+            
+            this.notifyListeners();
+            return data;
+        } catch (error) {
+            // Update error stats
+            this.apiStats.errorCalls++;
+            this.apiStats.lastError = error;
+            
+            const endpointStats = this.apiStats.endpoints.get(endpoint);
+            if (endpointStats) {
+                endpointStats.errors++;
+            }
+            
+            this.notifyListeners();
+            throw error;
+        }
+    }
+
+    getStats() {
+        return this.apiStats;
+    }
+
+    async getOrders(forceRefresh = false) {
+        try {
+            const url = `${this.baseUrl}/orders`;
+            const options = {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json'
+                }
+            };
+            
+            return await this.fetchWithRetry(url, options);
+        } catch (error) {
+            logService.error('Failed to fetch orders:', error);
+            throw error;
+        }
+    }
+
+    async getOrderDetails(orderId) {
+        try {
+            const url = `${this.baseUrl}/orders/${orderId}`;
+            const options = {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json'
+                }
+            };
+            
+            return await this.fetchWithRetry(url, options);
+        } catch (error) {
+            logService.error('Failed to fetch order details:', error);
+            throw error;
+        }
+    }
+
+    async updateOrderStatus(orderId, status) {
+        try {
+            const url = `${this.baseUrl}/orders/${orderId}/status`;
+            const options = {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ status })
+            };
+            
+            return await this.fetchWithRetry(url, options);
+        } catch (error) {
+            logService.error('Failed to update order status:', error);
             throw error;
         }
     }

@@ -1,47 +1,103 @@
 import { logService } from './LogService.js';
+import { notification } from '../components/Notification.js';
 
-export class RetryStrategy {
-    constructor(maxAttempts = 3, delayMs = 1000) {
-        this.maxAttempts = maxAttempts;
-        this.delayMs = delayMs;
-        this.attempts = 0;
-        logService.debug('RetryStrategy constructed', { maxAttempts, delayMs });
+/**
+ * Konfiguracja domyślna dla retry policy
+ */
+const DEFAULT_CONFIG = {
+    maxAttempts: 3,
+    initialDelay: 1000,
+    maxDelay: 5000,
+    backoffFactor: 2,
+    timeout: 10000,
+    retryableErrors: [
+        'NetworkError',
+        'TimeoutError',
+        'ConnectionError',
+        'ECONNREFUSED',
+        'ETIMEDOUT'
+    ]
+};
+
+export class RetryService {
+    constructor(config = {}) {
+        this.config = { ...DEFAULT_CONFIG, ...config };
+        logService.info('RetryService constructed');
     }
 
-    async execute(operation) {
-        while (this.attempts < this.maxAttempts) {
+    /**
+     * Wykonuje funkcję z obsługą ponownych prób
+     * @param {Function} fn Funkcja do wykonania
+     * @param {Object} options Opcje konfiguracyjne
+     * @returns {Promise} Wynik wykonania funkcji
+     */
+    async execute(fn, options = {}) {
+        const config = { ...this.config, ...options };
+        let attempt = 1;
+        let delay = config.initialDelay;
+
+        while (attempt <= config.maxAttempts) {
             try {
-                logService.debug('Executing operation...', { attempt: this.attempts + 1 });
-                const result = await operation();
-                logService.debug('Operation executed successfully');
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error('Operation timed out')), config.timeout);
+                });
+
+                const result = await Promise.race([
+                    fn(),
+                    timeoutPromise
+                ]);
+
+                if (attempt > 1) {
+                    notification.success('Connection restored', {
+                        message: 'Operation completed successfully after retry'
+                    });
+                }
+
                 return result;
+
             } catch (error) {
-                this.attempts++;
-                if (this.attempts === this.maxAttempts) {
-                    logService.error('Retry strategy failed', { error, maxAttempts: this.maxAttempts });
+                logService.warn(`Attempt ${attempt} failed:`, error);
+
+                if (attempt === config.maxAttempts || !this.isRetryableError(error, config)) {
+                    notification.error('Connection failed', {
+                        message: `Failed after ${attempt} attempts: ${error.message}`
+                    });
                     throw error;
                 }
-                logService.warn('Operation failed, retrying...', { error, attempt: this.attempts });
-                await new Promise(resolve => setTimeout(resolve, this.delayMs));
+
+                notification.warning('Retrying connection', {
+                    message: `Attempt ${attempt} failed. Retrying in ${delay/1000}s...`
+                });
+
+                await this.sleep(delay);
+                delay = Math.min(delay * config.backoffFactor, config.maxDelay);
+                attempt++;
             }
         }
     }
 
-    reset() {
-        this.attempts = 0;
-        logService.debug('RetryStrategy reset');
+    /**
+     * Sprawdza czy błąd kwalifikuje się do ponownej próby
+     * @param {Error} error Błąd do sprawdzenia
+     * @param {Object} config Konfiguracja
+     * @returns {boolean} Czy należy ponowić próbę
+     */
+    isRetryableError(error, config) {
+        return config.retryableErrors.some(type => 
+            error.name === type || 
+            error.message.includes(type) ||
+            (error.code && error.code === type)
+        );
     }
 
-    onError(error) {
-        if (this.attempts >= this.maxAttempts) {
-            logService.error('Retry strategy exhausted', { error, maxAttempts: this.maxAttempts });
-            throw error;
-        }
-
-        logService.warn('Operation failed, scheduling retry', { error, nextAttempt: this.attempts + 1 });
-        this.attempts++;
-        return new Promise(resolve => setTimeout(resolve, this.delayMs));
+    /**
+     * Czeka określony czas
+     * @param {number} ms Czas w milisekundach
+     * @returns {Promise} Promise rozwiązywany po określonym czasie
+     */
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
 
-export const retryService = new RetryStrategy(); 
+export const retryService = new RetryService(); 

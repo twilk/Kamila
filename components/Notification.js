@@ -10,6 +10,7 @@ export class Notification {
         this.active = null;
         this.duration = options.duration || 3000;
         this.maxVisible = options.maxVisible || 1;
+        this.timeouts = new Set();
     }
 
     /**
@@ -126,9 +127,11 @@ export class Notification {
 
         // Automatyczne zamknięcie po określonym czasie
         if (options.duration !== 0) {
-            setTimeout(() => {
+            const timeout = setTimeout(() => {
                 this.close(element);
+                this.timeouts.delete(timeout);
             }, options.duration || this.duration);
+            this.timeouts.add(timeout);
         }
     }
 
@@ -141,6 +144,28 @@ export class Notification {
         element.remove();
         this.active = null;
         this.processQueue();
+    }
+
+    cleanup() {
+        // Clear all timeouts
+        for (const timeout of this.timeouts) {
+            clearTimeout(timeout);
+        }
+        this.timeouts.clear();
+
+        // Remove all notifications
+        while (this.container.firstChild) {
+            this.container.removeChild(this.container.firstChild);
+        }
+        
+        // Clear queue
+        this.queue = [];
+        this.active = null;
+
+        // Remove container
+        if (this.container && this.container.parentNode) {
+            this.container.parentNode.removeChild(this.container);
+        }
     }
 
     /**

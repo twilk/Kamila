@@ -1,4 +1,10 @@
-import { DELIVERY_METHODS, DELIVERY_IDS } from './delivery.js';
+export const DELIVERY_METHODS = {
+    PICKUP: 'pickup'
+};
+
+export const DELIVERY_IDS = {
+    PICKUP: 0
+};
 
 export const stores = [
     { id: 'ALL', name: 'Wszystkie sklepy', deliveryId: null, drwn: null },

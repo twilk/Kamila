@@ -1,173 +1,120 @@
 import { logService } from './LogService.js';
 
-/**
- * Service for handling notifications
- */
-class NotificationService {
+export class NotificationService {
     constructor() {
-        this.isInitialized = false;
-        this.defaultOptions = {
-            type: 'basic',
-            iconUrl: '/assets/icons/icon-48.png',
-            silent: false
-        };
+        this.initialized = false;
         logService.info('NotificationService constructed');
     }
 
     async initialize() {
-        if (this.isInitialized) return;
+        if (this.initialized) return;
 
         try {
             logService.info('Initializing NotificationService...');
-            await this.requestPermission();
-            this.isInitialized = true;
+            
+            // Request notification permissions if needed
+            if (chrome.notifications) {
+                chrome.notifications.getPermissionLevel((level) => {
+                    if (level !== 'granted') {
+                        logService.warn('Notifications not granted');
+                    }
+                });
+            }
+            
+            this.initialized = true;
             logService.info('NotificationService initialized successfully');
         } catch (error) {
-            logService.error('Failed to initialize NotificationService', error);
-            throw error;
-        }
-    }
-
-    async requestPermission() {
-        try {
-            logService.debug('Requesting notification permission...');
-            const permission = await chrome.notifications.getPermissionLevel();
-            
-            if (permission !== 'granted') {
-                logService.warn('Notification permission not granted');
-            } else {
-                logService.debug('Notification permission granted');
-            }
-        } catch (error) {
-            logService.error('Failed to request notification permission', error);
+            logService.error('Failed to initialize NotificationService:', error);
             throw error;
         }
     }
 
     show(options) {
         try {
-            logService.debug('Showing notification...', options);
-            
             const notificationOptions = {
-                ...this.defaultOptions,
-                title: options.title || 'Notification',
-                message: options.message || '',
                 type: options.type || 'basic',
+                iconUrl: options.iconUrl || chrome.runtime.getURL('assets/icons/icon-48.png'),
+                title: options.title || 'Kamila',
+                message: options.message,
                 priority: options.priority || 0
             };
 
-            if (options.buttons) {
-                notificationOptions.buttons = options.buttons.map(button => ({
-                    title: button.title,
-                    iconUrl: button.iconUrl
-                }));
+            // Validate notification type
+            const validTypes = ['basic', 'image', 'list', 'progress'];
+            if (!validTypes.includes(notificationOptions.type)) {
+                notificationOptions.type = 'basic';
             }
 
-            if (options.items) {
-                notificationOptions.items = options.items;
+            // Ensure we have a valid icon
+            if (!notificationOptions.iconUrl.startsWith('chrome-extension://')) {
+                notificationOptions.iconUrl = chrome.runtime.getURL('assets/icons/icon-48.png');
             }
 
-            if (options.progress) {
-                notificationOptions.progress = options.progress;
-            }
-
-            chrome.notifications.create(options.id, notificationOptions, (notificationId) => {
-                logService.debug('Notification shown', { notificationId });
-                
-                if (options.timeout) {
-                    setTimeout(() => {
-                        this.clear(notificationId);
-                    }, options.timeout);
+            chrome.notifications.create(null, notificationOptions, (notificationId) => {
+                if (chrome.runtime.lastError) {
+                    logService.error('Failed to show notification:', {
+                        error: chrome.runtime.lastError,
+                        options: notificationOptions
+                    });
+                    // Try without icon if it failed
+                    if (chrome.runtime.lastError.message?.includes('image')) {
+                        delete notificationOptions.iconUrl;
+                        chrome.notifications.create(null, notificationOptions, (retryId) => {
+                            if (chrome.runtime.lastError) {
+                                logService.error('Failed to show notification even without icon:', chrome.runtime.lastError);
+                            } else {
+                                logService.debug('Notification shown without icon:', retryId);
+                            }
+                        });
+                    }
+                } else {
+                    logService.debug('Notification shown:', notificationId);
                 }
             });
         } catch (error) {
-            logService.error('Failed to show notification', error);
-            throw error;
+            logService.error('Failed to show notification:', error);
         }
     }
 
-    async clear(notificationId) {
-        try {
-            logService.debug('Clearing notification...', { notificationId });
-            await chrome.notifications.clear(notificationId);
-            logService.debug('Notification cleared');
-        } catch (error) {
-            logService.error('Failed to clear notification', error);
-            throw error;
-        }
-    }
-
-    async clearAll() {
-        try {
-            logService.debug('Clearing all notifications...');
-            const notifications = await chrome.notifications.getAll();
-            await Promise.all(
-                Object.keys(notifications).map(id => this.clear(id))
-            );
-            logService.debug('All notifications cleared');
-        } catch (error) {
-            logService.error('Failed to clear all notifications', error);
-            throw error;
-        }
-    }
-
-    onClicked(callback) {
-        chrome.notifications.onClicked.addListener((notificationId) => {
-            logService.debug('Notification clicked', { notificationId });
-            callback(notificationId);
-        });
-    }
-
-    onButtonClicked(callback) {
-        chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-            logService.debug('Notification button clicked', { notificationId, buttonIndex });
-            callback(notificationId, buttonIndex);
-        });
-    }
-
-    onClosed(callback) {
-        chrome.notifications.onClosed.addListener((notificationId, byUser) => {
-            logService.debug('Notification closed', { notificationId, byUser });
-            callback(notificationId, byUser);
-        });
-    }
-
-    showError(message, options = {}) {
+    showSuccess(message, title = 'Sukces') {
         this.show({
             type: 'basic',
-            title: 'Error',
-            message: message,
-            iconUrl: '/assets/icons/icon-48.png',
-            priority: 2,
-            ...options
+            title,
+            message,
+            priority: 0
         });
-        logService.error(message);
     }
 
-    showWarning(message, options = {}) {
+    showError(message, title = 'Błąd') {
         this.show({
             type: 'basic',
-            title: 'Warning',
-            message: message,
-            iconUrl: '/assets/icons/icon-48.png',
-            priority: 1,
-            ...options
+            title,
+            message,
+            priority: 2
         });
-        logService.warn(message);
     }
 
-    showSuccess(message, options = {}) {
+    showWarning(message, title = 'Ostrzeżenie') {
         this.show({
             type: 'basic',
-            title: 'Success',
-            message: message,
-            iconUrl: '/assets/icons/icon-48.png',
-            priority: 0,
-            ...options
+            title,
+            message,
+            priority: 1
         });
-        logService.info(message);
+    }
+
+    showInfo(message, title = 'Informacja') {
+        this.show({
+            type: 'basic',
+            title,
+            message,
+            priority: 0
+        });
+    }
+
+    cleanup() {
+        this.initialized = false;
     }
 }
 
-// Create and export singleton instance
 export const notificationService = new NotificationService(); 

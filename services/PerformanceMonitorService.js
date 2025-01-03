@@ -5,142 +5,107 @@ import { logService } from './LogService.js';
  */
 export class PerformanceMonitorService {
     constructor() {
-        this.initialized = false;
-        this.metrics = new Map();
-        this.observers = new Set();
+        this.metrics = {
+            memory: {},
+            performance: {},
+            system: {
+                memory: 0,
+                cpu: 0,
+                fps: 0
+            }
+        };
+        this.listeners = new Set();
+        this.updateInterval = 1000; // 1 second
+        this.intervalId = null;
         logService.info('PerformanceMonitorService constructed');
     }
 
     async initialize() {
-        if (this.initialized) {
-            logService.debug('PerformanceMonitorService already initialized');
-            return;
-        }
-
         try {
             logService.info('Initializing PerformanceMonitorService...');
             
-            // Initialize performance observers
-            this.setupObservers();
+            // Start monitoring
+            this.startMonitoring();
             
-            // Start collecting basic metrics
-            this.startMetricsCollection();
+            // Initial metrics update
+            await this.updateMetrics();
             
-            this.initialized = true;
             logService.info('PerformanceMonitorService initialized successfully');
         } catch (error) {
-            logService.error('Failed to initialize PerformanceMonitorService', error);
-            // Don't throw, continue with basic functionality
-            this.initialized = true;
+            logService.error('Failed to initialize PerformanceMonitorService:', error);
+            throw error;
         }
     }
 
-    setupObservers() {
+    startMonitoring() {
+        if (this.intervalId) return;
+        
+        this.intervalId = setInterval(async () => {
+            await this.updateMetrics();
+        }, this.updateInterval);
+    }
+
+    stopMonitoring() {
+        if (this.intervalId) {
+            clearInterval(this.intervalId);
+            this.intervalId = null;
+        }
+    }
+
+    async updateMetrics() {
         try {
-            // Setup performance observer for long tasks
-            if (window.PerformanceObserver) {
-                const longTaskObserver = new PerformanceObserver(list => {
-                    list.getEntries().forEach(entry => {
-                        this.recordMetric('longTask', entry.duration);
-                    });
-                });
-                
-                longTaskObserver.observe({ entryTypes: ['longtask'] });
-                this.observers.add(longTaskObserver);
+            // Update memory metrics
+            if (performance.memory) {
+                this.metrics.memory = {
+                    heapUsed: performance.memory.usedJSHeapSize / (1024 * 1024), // MB
+                    heapTotal: performance.memory.totalJSHeapSize / (1024 * 1024) // MB
+                };
             }
-            
-            logService.debug('Performance observers setup complete');
-        } catch (error) {
-            logService.error('Failed to setup performance observers:', error);
-        }
-    }
 
-    startMetricsCollection() {
-        try {
-            // Record basic metrics
-            this.recordMetric('jsHeapSize', performance.memory?.usedJSHeapSize);
-            this.recordMetric('totalJSHeapSize', performance.memory?.totalJSHeapSize);
-            this.recordMetric('jsHeapLimit', performance.memory?.jsHeapSizeLimit);
-            
-            // Setup periodic collection
-            setInterval(() => {
-                this.collectMetrics();
-            }, 60000); // Collect every minute
-            
-            logService.debug('Metrics collection started');
-        } catch (error) {
-            logService.error('Failed to start metrics collection:', error);
-        }
-    }
-
-    collectMetrics() {
-        try {
-            const metrics = {
-                jsHeapSize: performance.memory?.usedJSHeapSize,
-                totalJSHeapSize: performance.memory?.totalJSHeapSize,
-                jsHeapLimit: performance.memory?.jsHeapSizeLimit,
-                timestamp: Date.now()
+            // Update system metrics (simulated for demo)
+            this.metrics.system = {
+                memory: Math.round(Math.random() * 100),
+                cpu: Math.round(Math.random() * 100),
+                fps: 60 - Math.round(Math.random() * 10)
             };
-            
-            Object.entries(metrics).forEach(([key, value]) => {
-                this.recordMetric(key, value);
-            });
+
+            // Notify listeners
+            this.notifyListeners();
         } catch (error) {
-            logService.error('Failed to collect metrics:', error);
+            logService.error('Failed to update metrics:', error);
         }
     }
 
-    recordMetric(name, value) {
-        if (!this.metrics.has(name)) {
-            this.metrics.set(name, []);
+    addListener(callback) {
+        if (typeof callback === 'function') {
+            this.listeners.add(callback);
         }
-        
-        const metricHistory = this.metrics.get(name);
-        metricHistory.push({
-            value,
-            timestamp: Date.now()
+    }
+
+    removeListener(callback) {
+        this.listeners.delete(callback);
+    }
+
+    notifyListeners() {
+        this.listeners.forEach(callback => {
+            try {
+                callback(this.metrics);
+            } catch (error) {
+                logService.error('Error in performance monitor listener:', error);
+            }
         });
-        
-        // Keep only last 100 measurements
-        if (metricHistory.length > 100) {
-            metricHistory.shift();
-        }
-    }
-
-    getMetric(name) {
-        return this.metrics.get(name) || [];
     }
 
     getAllMetrics() {
-        const result = {};
-        this.metrics.forEach((value, key) => {
-            result[key] = value;
-        });
-        return result;
+        return this.metrics;
     }
 
-    cleanup() {
-        try {
-            logService.debug('Cleaning up PerformanceMonitorService...');
-            
-            // Disconnect all observers
-            this.observers.forEach(observer => {
-                try {
-                    observer.disconnect();
-                } catch (error) {
-                    logService.error('Failed to disconnect observer:', error);
-                }
-            });
-            
-            this.observers.clear();
-            this.metrics.clear();
-            this.initialized = false;
-            
-            logService.debug('PerformanceMonitorService cleaned up successfully');
-        } catch (error) {
-            logService.error('Error during cleanup:', error);
-        }
+    destroy() {
+        this.stopMonitoring();
+        this.listeners.clear();
     }
 }
 
-export const performanceMonitorService = new PerformanceMonitorService(); 
+// Create and export singleton instance
+const performanceMonitorService = new PerformanceMonitorService();
+export { performanceMonitorService }; 

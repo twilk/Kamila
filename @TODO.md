@@ -1,80 +1,68 @@
-# TODO List
+# TODO List - System Consistency Improvements
 
-## Current Issues
-1. Service Initialization Issues
-   - [x] Fix UserCardService initialization cycle
-   - [x] Review service dependencies order
-   - [x] Add proper error handling for initialization failures
-   - [ ] Fix UIComponentService initialization
-   - [ ] Fix LoadingService state management
-   - [x] Fix API URL configuration
+## High Priority
 
-2. Error Handling
-   - [x] Improve error reporting in UserCardService
-   - [x] Add retry mechanism for failed data loads
-   - [x] Implement graceful degradation for services
-   - [ ] Add network error recovery
-   - [ ] Improve API error handling
-   - [x] Fix API configuration issues
+### Language Handling
+- [x] Verify all services use full language names consistently ('polish', 'english', 'ukrainian')
+- [ ] Add language validation in all places where language is set/used
+- [ ] Implement language change event propagation system
+- [ ] Add language loading state handling
+- [ ] Add language code constants to prevent typos
+- [ ] Add language validation schema
 
-3. Service Dependencies
-   - [x] Document service initialization order
-   - [x] Create service dependency graph
-   - [ ] Implement dependency injection system
-   - [ ] Add service health checks
-   - [ ] Add service recovery mechanisms
+### Service Layer
+- [ ] Standardize initialization pattern across all services
+- [ ] Implement cleanup methods in all services
+- [ ] Add service dependency injection system
+- [ ] Add service state management
 
-## Next Steps
-1. Immediate Fixes
-   - [x] Fix API URL configuration
-   - [ ] Add API fallback mechanisms
-   - [ ] Implement proper error recovery
-   - [ ] Add network status monitoring
-   - [ ] Improve error UI feedback
+### Error Handling
+- [ ] Implement consistent error handling across all services
+- [ ] Add error recovery mechanisms
+- [ ] Improve error logging and reporting
+- [ ] Add error boundary for UI components
 
-2. Code Improvements
-   - [x] Add service health checks
-   - [x] Implement service recovery mechanisms
-   - [x] Add service status monitoring
-   - [ ] Add performance monitoring
-   - [ ] Optimize service initialization
+## Medium Priority
 
-3. Documentation
-   - [x] Update service initialization documentation
-   - [x] Document error handling procedures
-   - [x] Create troubleshooting guide
-   - [ ] Add API documentation
-   - [ ] Add setup instructions
+### Caching
+- [ ] Review and standardize cache TTL values
+- [ ] Implement cache versioning
+- [ ] Add cache warming for critical data
+- [ ] Implement cache invalidation events
 
-## Completed
-- [x] Basic service structure
-- [x] Core service implementations
-- [x] Basic error logging
-- [x] Service singleton pattern
-- [x] Service initialization order
-- [x] Error handling improvements
-- [x] State management
-- [x] Documentation updates
-- [x] API configuration fixes
+### Testing
+- [ ] Add unit tests for language switching
+- [ ] Add integration tests for service initialization
+- [ ] Add error handling tests
+- [ ] Add cache behavior tests
+- [ ] Add language validation tests
 
-## Future Enhancements
-1. Performance
-   - [ ] Add service performance metrics
-   - [ ] Implement caching optimization
-   - [ ] Add load balancing for API calls
-   - [ ] Add request batching
-   - [ ] Implement request prioritization
+### Documentation
+- [ ] Document service initialization patterns
+- [ ] Document error handling patterns
+- [ ] Document caching strategies
+- [ ] Update API documentation
+- [ ] Document language handling system
 
-2. Security
-   - [ ] Add service authentication
-   - [ ] Implement request validation
-   - [ ] Add data encryption
-   - [ ] Add API key management
-   - [ ] Implement rate limiting
+## Low Priority
 
-3. Testing
-   - [ ] Add unit tests for services
-   - [ ] Implement integration tests
-   - [ ] Add performance benchmarks
-   - [ ] Add error scenario tests
-   - [ ] Add network failure tests 
+### Performance
+- [ ] Optimize service initialization
+- [ ] Review and optimize caching strategy
+- [ ] Implement lazy loading where appropriate
+- [ ] Add performance monitoring
+- [ ] Add language-specific performance metrics
+
+### UI/UX
+- [ ] Add loading indicators for language switch
+- [ ] Improve error messages
+- [ ] Add tooltips for debug panel
+- [ ] Implement dark mode support
+- [ ] Add language switch animation
+
+### Maintenance
+- [ ] Clean up unused translations
+- [ ] Remove deprecated code
+- [ ] Update dependencies
+- [ ] Optimize build process
+- [ ] Add automated language file validation

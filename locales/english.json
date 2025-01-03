@@ -41,14 +41,19 @@
     "errorConnection": "Server connection error",
     "leadStatuses": {
         "submitted": "Submitted",
-        "confirmed": "Confirmed by Customer",
-        "accepted": "Accepted for Processing",
-        "ready": "Ready for Pickup",
-        "overdue": "Overdue"
+        "confirmed": "Confirmed",
+        "accepted": "Accepted",
+        "ready": "Ready for pickup",
+        "overdue": "Overdue",
+        "1": "Submitted",
+        "2": "Confirmed",
+        "3": "Accepted"
     },
     "languagePolish": "Polish",
     "languageEnglish": "English",
     "languageUkrainian": "Ukrainian",
+    "languageChanged": "Language has been changed",
+    "errorLanguageChange": "Error changing language",
     "instructionUnzip": "Unzip the downloaded ZIP file",
     "instructionGoTo": "Go to chrome://extensions/",
     "instructionRemove": "Remove current version of Kamila",
@@ -130,5 +135,21 @@
         "success": "User data verified",
         "error": "User data verification error",
         "notFound": "User not found"
-    }
+    },
+    "refreshData": "Refresh data",
+    "errorChangingStore": "Error changing store",
+    "common": {
+        "loading": "Loading...",
+        "error": "Error",
+        "success": "Success",
+        "warning": "Warning"
+    },
+    "errors": {
+        "initialization": "Error initializing application",
+        "loading": "Error loading data",
+        "network": "Network connection problem"
+    },
+    "devMode": "Developer mode",
+    "devModeEnabled": "🔧 Developer mode enabled",
+    "devModeDisabled": "🔧 Developer mode disabled"
 }
