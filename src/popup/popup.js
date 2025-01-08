@@ -6,6 +6,7 @@ import { UpdateManager } from './components/updateManager.js';
 import { UserManager } from './components/userManager.js';
 import { InterfaceManager } from './components/interfaceManager.js';
 import { i18n } from '../services/i18n.js';
+import { progressManager, leadCountManager } from '../services/progressManager.js';
 
 class PopupManager {
     constructor() {
@@ -105,41 +106,71 @@ class PopupManager {
                 counter.classList.remove('count-error', 'count-zero');
             });
 
-            const response = await chrome.runtime.sendMessage({ type: 'POPUP_OPENED' });
+            // Try to get cached lead counts first
+            let counts = await leadCountManager.getLeadCounts();
+            let refreshNeeded = !counts;
             
-            if (!response?.success) {
-                throw new Error(response?.error || 'Nieznany błąd');
+            if (counts) {
+                // Update UI with cached data first
+                this.updateCountersUI(counts);
+                
+                // Check if we need a background refresh
+                const lastUpdate = await chrome.storage.local.get('lastLeadCountUpdate');
+                const now = Date.now();
+                refreshNeeded = !lastUpdate.lastLeadCountUpdate || 
+                              (now - lastUpdate.lastLeadCountUpdate) > leadCountManager.cacheTimeout;
             }
 
-            if (response.counts) {
-                Object.entries(response.counts).forEach(([status, count]) => {
-                    const elementId = this.getCounterElementId(status);
-                    if (!elementId) {
-                        console.warn(`[WARNING] ⚠️ Nieznany status: ${status}`);
-                        return;
+            if (refreshNeeded) {
+                try {
+                    progressManager.show('Aktualizacja liczników...');
+                    counts = await leadCountManager.refreshLeadCounts();
+                    if (counts) {
+                        this.updateCountersUI(counts);
+                        await chrome.storage.local.set({ lastLeadCountUpdate: Date.now() });
+                        progressManager.setSuccess('Liczniki zaktualizowane');
                     }
-                    
-                    const counter = document.getElementById(elementId);
-                    if (counter) {
-                        console.log(`[DEBUG] 🔄 Aktualizuję licznik ${elementId}: ${count}`);
-                        counter.textContent = count;
-                        counter.classList.toggle('count-zero', count === 0);
-                        counter.classList.remove('count-error');
-                    } else {
-                        console.warn(`[WARNING] ⚠️ Nie znaleziono elementu o ID: ${elementId}`);
+                } catch (error) {
+                    console.warn('Background refresh failed:', error);
+                    if (!counts) {
+                        // Only show error if we don't have any data to display
+                        throw error;
                     }
-                });
-                this.debugManager.logToPanel('✅ Zaktualizowano liczniki', 'success');
+                    // If we have cached data, just show a warning
+                    progressManager.setWarning('Nie udało się odświeżyć liczników');
+                }
             }
         } catch (error) {
             console.error('Error in notifyPopupOpened:', error);
             this.debugManager.logToPanel('❌ Błąd podczas ładowania liczników', 'error', error.message);
+            progressManager.setError('Błąd aktualizacji liczników');
             
             document.querySelectorAll('.lead-count').forEach(counter => {
                 counter.textContent = '-';
                 counter.classList.add('count-error');
             });
         }
+    }
+
+    updateCountersUI(counts) {
+        Object.entries(counts).forEach(([status, count]) => {
+            const elementId = this.getCounterElementId(status);
+            if (!elementId) {
+                console.warn(`[WARNING] ⚠️ Nieznany status: ${status}`);
+                return;
+            }
+            
+            const counter = document.getElementById(elementId);
+            if (counter) {
+                console.log(`[DEBUG] 🔄 Aktualizuję licznik ${elementId}: ${count}`);
+                counter.textContent = count;
+                counter.classList.toggle('count-zero', count === 0);
+                counter.classList.remove('count-error');
+            } else {
+                console.warn(`[WARNING] ⚠️ Nie znaleziono elementu o ID: ${elementId}`);
+            }
+        });
+        this.debugManager.logToPanel('✅ Zaktualizowano liczniki', 'success');
     }
 
     getCounterElementId(status) {
