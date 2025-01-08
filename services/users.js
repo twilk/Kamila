@@ -1,5 +1,3 @@
-import { getFromCache, saveToCache } from './cache';
-
 // Lista aktywnych pracowników z ich ID
 const ACTIVE_USERS = [
     { fullName: "Jurij Martiuk", memberId: "84", isManager: false },
@@ -78,23 +76,13 @@ export { ACTIVE_USERS, generateUserJson, generateAllUserFiles };
 
 export async function getUserByMemberId(memberId) {
     try {
-        // Najpierw sprawdź cache
-        const cachedUser = await getFromCache(`user_${memberId}`);
-        if (cachedUser) {
-            return JSON.parse(cachedUser);
-        }
-
-        // Jeśli nie ma w cache, spróbuj załadować z pliku
+        // Spróbuj załadować z pliku
         const response = await fetch(chrome.runtime.getURL(`users/${memberId}.json`));
         if (!response.ok) {
             throw new Error(`User file not found for member ID: ${memberId}`);
         }
 
         const userData = await response.json();
-        
-        // Zapisz w cache na przyszłość
-        await saveToCache(`user_${memberId}`, JSON.stringify(userData));
-        
         return userData;
     } catch (error) {
         console.error('Error loading user data:', error);

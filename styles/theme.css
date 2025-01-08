@@ -65,7 +65,6 @@
   padding: 0.5rem;
   background: var(--gray-200);
   border-radius: var(--radius-md);
-  margin-bottom: 0.5rem;
   transition: all var(--transition-fast);
   cursor: help;
 }

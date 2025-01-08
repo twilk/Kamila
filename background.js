@@ -1,12 +1,11 @@
 import { getDarwinaCredentials } from './config/api.js';
-import { CacheService } from './services/cache.js';
 import { API_CONFIG } from './config/api.js';
 import { stores } from './config/stores.js';
 import { UserCardService } from './services/userCard.js';
+import { STORAGE_KEYS, saveToStorage, getFromStorage } from './services/storage.js';
 
 const FETCH_INTERVAL = 5; // minutes
 const CHECK_INTERVAL = 15; // minutes
-const CACHE_KEY = 'darwina_orders_data';
 
 // Nasłuchuj na instalację
 chrome.runtime.onInstalled.addListener(async () => {
@@ -22,7 +21,7 @@ chrome.runtime.onInstalled.addListener(async () => {
         await checkAndUpdateOrders();
         
         // Inicjalizacja badge'a
-        const { selectedStore } = await chrome.storage.local.get('selectedStore');
+        const selectedStore = await getFromStorage(STORAGE_KEYS.SELECTED_STORE);
         const data = await fetchAndCacheData(selectedStore);
         updateExtensionBadge(data.counts, selectedStore);
         
@@ -95,9 +94,10 @@ async function fetchAndCacheData(selectedStore) {
         log('🔄 Rozpoczynam pobieranie danych', 'info');
         const darwinaConfig = await getDarwinaCredentials();
         const data = await fetchDarwinaData(darwinaConfig, selectedStore);
+        
         if (data.success) {
-            await CacheService.set(getCacheKey(selectedStore), data);
-            log('✅ Dane zapisane w cache', 'success');
+            await saveToStorage(STORAGE_KEYS.STORE_DATA(selectedStore), data);
+            log('✅ Dane zapisane', 'success');
             // Aktualizuj badge po pobraniu nowych danych
             updateExtensionBadge(data.counts, selectedStore);
         }
@@ -131,14 +131,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     if (message.type === 'FETCH_DARWINA_DATA') {
         handleAsyncMessage(async () => {
-            const cacheKey = getCacheKey(message.selectedStore);
-            const cachedData = await CacheService.get(cacheKey);
-            if (cachedData) {
-                console.log('📦 Zwracam dane z cache');
-                updateExtensionBadge(cachedData.counts, message.selectedStore);
-                return cachedData;
+            const storedData = await getFromStorage(STORAGE_KEYS.STORE_DATA(message.selectedStore));
+            
+            if (storedData) {
+                console.log('📦 Zwracam dane z storage');
+                updateExtensionBadge(storedData.counts, message.selectedStore);
+                return storedData;
             }
-            console.log('🔄 Cache pusty, pobieram nowe dane');
+            
+            console.log('🔄 Storage pusty, pobieram nowe dane');
             const data = await fetchAndCacheData(message.selectedStore);
             updateExtensionBadge(data.counts, message.selectedStore);
             return data;

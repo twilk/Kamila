@@ -2,20 +2,18 @@ import { API } from './services/index.js';
 import { API_BASE_URL, API_CONFIG } from './config/api.js';
 import { getDarwinaCredentials, sendLogToPopup } from './config/api.js';
 import { i18n } from './services/i18n.js';
-import { CacheService } from './services/cache.js';
 import { UserCardService } from './services/userCard.js';
 import { DrwnService } from './services/drwn.js';
 import { 
     checkApiStatus, 
     checkAuthStatus, 
-    checkOrdersStatus, 
-    checkCacheStatus 
+    checkOrdersStatus
 } from './services/api.js';
 import { stores } from './config/stores.js';
 import { UpdateManager } from './services/updateManager.js';
 import { ProgressManager } from './services/progressManager.js';
+import { STORAGE_KEYS, getFromStorage, saveToStorage } from './services/storage.js';
 
-const CACHE_KEY = 'darwina_orders_data';
 const REFRESH_INTERVAL = 300000; // 5 minut
 let refreshCount = 0;
 
