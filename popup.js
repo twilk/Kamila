@@ -1,5 +1,5 @@
 import { API } from './services/index.js';
-import { API_BASE_URL, API_CONFIG } from '../config/api.js';
+import { API_BASE_URL, API_CONFIG } from './config/api.js';
 import { getDarwinaCredentials, sendLogToPopup } from './config/api.js';
 import { i18n } from './services/i18n.js';
 import { CacheService } from './services/cache.js';
@@ -12,15 +12,85 @@ import {
     checkCacheStatus 
 } from './services/api.js';
 import { stores } from './config/stores.js';
+import { UpdateManager } from './services/updateManager.js';
+import { ProgressManager } from './services/progressManager.js';
 
 const CACHE_KEY = 'darwina_orders_data';
+const REFRESH_INTERVAL = 300000; // 5 minut
+let refreshCount = 0;
+
+// Status mapping for different lead statuses
+const STATUS_MAP = {
+    'submitted': '1',
+    'confirmed': '2',
+    'accepted': '3',
+    'ready': 'READY',
+    'overdue': 'OVERDUE'
+};
 
 // Globalna zmienna dla tooltipów
 let tooltipList = [];
 
-// Tymczasowo dla testów - 1 minuta
-const REFRESH_INTERVAL = 60000;
-let refreshCount = 0;
+// Inicjalizacja ProgressManager
+const progressManager = new ProgressManager();
+
+// Funkcja obsługująca aktualizacje postępu
+function handleProgressUpdate(data) {
+    console.log('Handling progress update:', data); // Debug log
+    if (!progressManager) {
+        console.error('Progress manager not initialized');
+        return;
+    }
+
+    if (!data) {
+        console.warn('Received undefined progress data');
+        return;
+    }
+
+    switch (data.type) {
+        case 'START_TASK':
+            progressManager.show();
+            progressManager.startTask(data.data?.taskName, data.data?.totalSteps);
+            break;
+        case 'UPDATE_TASK':
+            progressManager.updateTask(data.data?.increment, data.data?.status);
+            break;
+        case 'UPDATE_STATUS':
+            progressManager.setStatus(data.data?.status);
+            break;
+        case 'ERROR':
+            progressManager.setError(data.data?.message);
+            break;
+        case 'SUCCESS':
+            progressManager.setSuccess(data.data?.message);
+            break;
+        case 'WARNING':
+            progressManager.setWarning(data.data?.message);
+            break;
+        case 'COMPLETE':
+            progressManager.setProgress(100, 'Zakończono');
+            break;
+        default:
+            console.warn('Unknown progress update type:', data.type);
+    }
+}
+
+// Modify the message listener to properly handle progress updates
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('Received message:', message); // Debug log
+    
+    if (message.type === 'PROGRESS_UPDATE' && message.data) {
+        handleProgressUpdate(message.data);
+        sendResponse({ received: true });
+        return true;
+    }
+    if (message.type === 'LOG') {
+        const { text, level, data } = message;
+        appendLog(text, level, data);
+        sendResponse({ received: true });
+        return true;
+    }
+});
 
 // Funkcja logowania
 function logToPanel(message, type = 'info', data = null) {
@@ -73,14 +143,21 @@ function logToPanel(message, type = 'info', data = null) {
     }
 }
 
-// Notify background script that popup is opened
+// Modify the notifyPopupOpened function to handle counter updates
 async function notifyPopupOpened() {
     try {
         // Pokaż loader w licznikach podczas ładowania
         document.querySelectorAll('.lead-count').forEach(counter => {
-            counter.textContent = '...';
+            showLoader(counter);
             counter.classList.remove('count-error', 'count-zero');
         });
+
+        // Try to get data from cache first
+        const { leadCounts } = await chrome.storage.local.get('leadCounts');
+        if (leadCounts) {
+            console.log('[DEBUG] 📊 Używam danych z cache:', leadCounts);
+            updateCounters(leadCounts);
+        }
 
         const response = await chrome.runtime.sendMessage({ type: 'POPUP_OPENED' });
         
@@ -88,43 +165,21 @@ async function notifyPopupOpened() {
             throw new Error(response?.error || 'Nieznany błąd');
         }
 
-        // Aktualizuj liczniki otrzymanymi danymi
+        // Update counters with new data if available
         if (response.counts) {
-            // Mapowanie statusów na ID elementów
-            const statusToElementId = {
-                '1': 'count-1',
-                '2': 'count-2',
-                '3': 'count-3',
-                'READY': 'count-ready',
-                'OVERDUE': 'count-overdue'
-            };
-
-            console.log('[DEBUG] 📊 Otrzymane dane:', response.counts);
+            console.log('[DEBUG] 📊 Otrzymane nowe dane:', response.counts);
+            updateCounters(response.counts);
             
-            Object.entries(response.counts).forEach(([status, count]) => {
-                const elementId = statusToElementId[status];
-                if (!elementId) {
-                    console.warn(`[WARNING] ⚠️ Nieznany status: ${status}`);
-                    return;
-                }
-                
-                const counter = document.getElementById(elementId);
-                if (counter) {
-                    console.log(`[DEBUG] 🔄 Aktualizuję licznik ${elementId}: ${count}`);
-                    counter.textContent = count;
-                    counter.classList.toggle('count-zero', count === 0);
-                    counter.classList.remove('count-error');
-                } else {
-                    console.warn(`[WARNING] ⚠️ Nie znaleziono elementu o ID: ${elementId}`);
-                }
-            });
-            logToPanel('✅ Zaktualizowano liczniki', 'success');
+            // Save the new counts to storage
+            await chrome.storage.local.set({ leadCounts: response.counts });
         }
+
+        logToPanel('✅ Zaktualizowano liczniki', 'success');
     } catch (error) {
         console.error('Error in notifyPopupOpened:', error);
         logToPanel('❌ Błąd podczas ładowania liczników', 'error', error.message);
         
-        // Pokaż błąd w licznikach
+        // Show error in counters
         document.querySelectorAll('.lead-count').forEach(counter => {
             counter.textContent = '-';
             counter.classList.add('count-error');
@@ -148,29 +203,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     logToPanel('🚀 Aplikacja uruchomiona');
     
     try {
-        // Notify background script about popup opening
-        notifyPopupOpened();
-
-        // Initialize translations
+        // Initialize translations first
         await i18n.init();
         
-        // Initialize DARWINA configuration
-        const darwinaConfig = await getDarwinaCredentials();
-        console.log('🔑 Got Darwina config:', {
-            hasConfig: !!darwinaConfig,
-            hasApiKey: !!darwinaConfig?.DARWINA_API_KEY,
-            baseUrl: darwinaConfig?.DARWINA_API_BASE_URL
-        });
-
-        // Check orders immediately when extension opens
-        logToPanel('📦 Sprawdzam i aktualizuję formy dostawy...', 'info');
-        await chrome.runtime.sendMessage({ type: 'CHECK_ORDERS_NOW' });
-
-        // Initial data fetch
-        console.log('📡 Starting initial data fetch...');
-        await fetchDarwinaData();
-
-        // Safe UI components initialization
+        // Initialize UI components immediately
         await initializeUIComponents();
         
         // Language initialization
@@ -181,15 +217,254 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Initialize Bootstrap tooltips
         initializeTooltips();
 
+        // Initialize user card
         await updateUserCard();
         
         // Initialize debug mode
         initializeDebugSwitch();
 
+        // Initialize update button
+        initializeUpdateButton();
+
+        // Load data
+        await loadAndUpdateData();
+        
     } catch (error) {
         logToPanel('❌ Błąd inicjalizacji', 'error', error.message);
     }
 });
+
+// Nowa, skonsolidowana funkcja do zarządzania danymi
+async function loadAndUpdateData(forceRefresh = false) {
+    try {
+        // Get data from cache first
+        const { leadCounts } = await chrome.storage.local.get('leadCounts');
+        const lastFetchTime = localStorage.getItem('last_fetch_time');
+        const now = Date.now();
+        
+        // If we have cached data, use it immediately
+        if (leadCounts) {
+            updateCounters(leadCounts);
+        }
+
+        // Check if we need to fetch new data
+        const shouldFetchNewData = forceRefresh || !lastFetchTime || (now - parseInt(lastFetchTime)) >= REFRESH_INTERVAL;
+        
+        if (shouldFetchNewData) {
+            // Show progress only if we're fetching new data
+            progressManager.show(i18n.translate('logs.refreshingData'));
+            progressManager.setProgress(30, i18n.translate('logs.checkingDeliveryForms'));
+
+            try {
+                const response = await chrome.runtime.sendMessage({ type: 'CHECK_ORDERS_NOW' });
+                if (response?.success) {
+                    progressManager.setProgress(50, i18n.translate('logs.updatingCounters'));
+                    logToPanel(i18n.translate('logs.deliveryFormsUpdated'), 'success');
+                }
+            } catch (error) {
+                progressManager.setWarning(i18n.translate('logs.deliveryFormsError'));
+                logToPanel(i18n.translate('logs.deliveryFormsError'), 'warning', error.message);
+            }
+
+            progressManager.setProgress(70, i18n.translate('logs.fetchingData'));
+            
+            // Fetch new data
+            const { selectedStore } = await chrome.storage.local.get('selectedStore');
+            const store = selectedStore || 'ALL';
+
+            const response = await chrome.runtime.sendMessage({
+                type: 'FETCH_DARWINA_DATA',
+                selectedStore: store
+            });
+
+            if (!response || response.error) {
+                throw new Error(response?.error || i18n.translate('logs.dataFetchGenericError'));
+            }
+
+            if (response.counts) {
+                updateCounters(response.counts);
+                await chrome.storage.local.set({ leadCounts: response.counts });
+                localStorage.setItem('last_fetch_time', now.toString());
+            }
+
+            progressManager.setSuccess(i18n.translate('logs.dataUpdated'));
+            setTimeout(() => progressManager.hide(), 2000);
+        } else {
+            logToPanel(i18n.translate('logs.dataUpToDate'), 'info');
+        }
+        
+    } catch (error) {
+        progressManager.setError(i18n.translate('logs.dataFetchError'));
+        logToPanel(i18n.translate('logs.dataFetchError'), 'error', error.message);
+        setTimeout(() => progressManager.hide(), 3000);
+    }
+}
+
+// Nowa funkcja do ładowania danych w tle
+async function loadDataInBackground() {
+    try {
+        progressManager.show(i18n.translate('logs.appStarted'));
+        progressManager.setProgress(10);
+
+        const darwinaConfig = await getDarwinaCredentials();
+        if (!darwinaConfig) {
+            throw new Error(i18n.translate('logs.initError'));
+        }
+        progressManager.setProgress(30, i18n.translate('logs.refreshingData'));
+
+        progressManager.setProgress(50, i18n.translate('logs.checkingDeliveryForms'));
+        try {
+            const response = await chrome.runtime.sendMessage({ type: 'CHECK_ORDERS_NOW' });
+            if (response?.success) {
+                progressManager.setProgress(70, i18n.translate('logs.updatingCounters'));
+                logToPanel(i18n.translate('logs.deliveryFormsUpdated'), 'success');
+            } else {
+                throw new Error(response?.error || i18n.translate('logs.dataFetchGenericError'));
+            }
+        } catch (error) {
+            progressManager.setWarning(i18n.translate('logs.deliveryFormsError'));
+            logToPanel(i18n.translate('logs.deliveryFormsError'), 'warning', error.message);
+        }
+
+        progressManager.setProgress(80, i18n.translate('logs.fetchingData'));
+        try {
+            await fetchDarwinaData();
+            progressManager.setProgress(90, i18n.translate('logs.updatingCounters'));
+        } catch (error) {
+            progressManager.setError(i18n.translate('logs.dataFetchError'));
+            logToPanel(i18n.translate('logs.dataFetchError'), 'error', error.message);
+            throw error;
+        }
+
+        progressManager.setSuccess(i18n.translate('logs.dataUpdated'));
+        
+        setTimeout(() => {
+            progressManager.hide();
+        }, 2000);
+
+    } catch (error) {
+        progressManager.setError(i18n.translate('logs.dataFetchError'));
+        logToPanel(i18n.translate('logs.dataFetchError'), 'error', error.message);
+        
+        setTimeout(() => {
+            progressManager.hide();
+        }, 3000);
+    }
+}
+
+// Modify fetchDarwinaData to handle background loading
+async function fetchDarwinaData() {
+    try {
+        logToPanel(i18n.translate('logs.dataFetchStarted'), 'info');
+        
+        const { selectedStore } = await chrome.storage.local.get('selectedStore');
+        const store = selectedStore || 'ALL';
+        
+        const lastFetchTime = localStorage.getItem('last_fetch_time');
+        const now = Date.now();
+        
+        if (lastFetchTime && (now - parseInt(lastFetchTime)) < REFRESH_INTERVAL) {
+            logToPanel(i18n.translate('logs.dataUpToDate'), 'info');
+            return;
+        }
+
+        if (!progressManager.isVisible) {
+            progressManager.show(i18n.translate('logs.refreshingData'));
+            progressManager.setProgress(20);
+        }
+
+        progressManager.setProgress(40, i18n.translate('logs.fetchingData'));
+
+        const response = await chrome.runtime.sendMessage({
+            type: 'FETCH_DARWINA_DATA',
+            selectedStore: store
+        });
+
+        if (!response || response.error) {
+            throw new Error(response?.error || i18n.translate('logs.dataFetchGenericError'));
+        }
+
+        progressManager.setProgress(70, i18n.translate('logs.updatingCounters'));
+
+        if (response.counts) {
+            updateCounters(response.counts);
+            // Save the new counts to storage
+            await chrome.storage.local.set({ leadCounts: response.counts });
+        }
+
+        localStorage.setItem('last_fetch_time', now.toString());
+        refreshCount++;
+
+        const storeName = store === 'ALL' ? 
+            i18n.translate('allStores') : 
+            i18n.translate('interface.storeStock', { value: store });
+            
+        logToPanel(i18n.translate('logs.storeDataRefreshed', { store: storeName }), 'success');
+
+        progressManager.setSuccess(i18n.translate('logs.dataUpdated'));
+        
+        setTimeout(() => {
+            progressManager.hide();
+        }, 2000);
+
+    } catch (error) {
+        progressManager.setError(i18n.translate('logs.dataFetchError'));
+        handleError(error);
+        
+        setTimeout(() => {
+            progressManager.hide();
+        }, 3000);
+        
+        throw error;
+    }
+}
+
+// Nowa funkcja do aktualizacji liczników
+function updateCounters(counts) {
+    logToPanel('📊 Aktualizuję liczniki zamówień...', 'info');
+    
+    // Define expected status types and their mappings
+    const statusMap = {
+        '1': 'submitted',
+        '2': 'confirmed',
+        '3': 'accepted',
+        'READY': 'ready',
+        'OVERDUE': 'overdue'
+    };
+    
+    // Initialize all counters to 0 first
+    Object.values(statusMap).forEach(status => {
+        const statusElement = document.querySelector(`.lead-status[data-status="${status}"]`);
+        const counter = statusElement?.querySelector('.lead-count');
+        if (counter) {
+            counter.textContent = '0';
+            counter.classList.add('count-zero');
+            counter.classList.remove('count-error');
+        }
+    });
+    
+    // Update counters with actual values
+    Object.entries(counts).forEach(([status, count]) => {
+        const mappedStatus = statusMap[status];
+        if (mappedStatus) {
+            const statusElement = document.querySelector(`.lead-status[data-status="${mappedStatus}"]`);
+            const counter = statusElement?.querySelector('.lead-count');
+            if (counter) {
+                const numericCount = parseInt(count, 10);
+                if (isNaN(numericCount)) {
+                    logToPanel(`⚠️ Nieprawidłowa wartość dla statusu ${mappedStatus}`, 'error');
+                    counter.textContent = '0';
+                    counter.classList.add('count-error');
+                    return;
+                }
+                
+                counter.textContent = numericCount.toString();
+                counter.classList.toggle('count-zero', numericCount === 0);
+                counter.classList.remove('count-error');
+            }
+        }
+    });
+}
 
 // Nowa funkcja do bezpiecznej inicjalizacji komponentów UI
 async function initializeUIComponents() {
@@ -299,6 +574,9 @@ async function initializeUIComponents() {
         // Pierwsze sprawdzenie statusów i aktualizacja liczników
         await updateAllStatuses();
 
+        // Inicjalizacja elementów statusów
+        initializeStatusElements();
+
         // Inicjalizacja linków statusów
         initializeLeadStatusLinks();
 
@@ -356,10 +634,17 @@ async function initializeUserSelector() {
             option.textContent = user.fullName;
             if (selectedUserId === user.id) {
                 option.selected = true;
-                updateUserCard(user);
             }
             userSelect.appendChild(option);
         });
+
+        // Jeśli był zapamiętany użytkownik, załaduj jego kartę od razu
+        if (selectedUserId) {
+            const selectedUser = users.find(u => u.id === selectedUserId);
+            if (selectedUser) {
+                await updateUserCard(selectedUser);
+            }
+        }
 
         // Obsługa zmiany użytkownika
         userSelect.addEventListener('change', async (e) => {
@@ -377,7 +662,9 @@ async function initializeUserSelector() {
 
             // Odśwież content script
             chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-                chrome.tabs.sendMessage(tabs[0].id, { type: 'REFRESH_USER_DATA' });
+                if (tabs[0]) {
+                    chrome.tabs.sendMessage(tabs[0].id, { type: 'REFRESH_USER_DATA' });
+                }
             });
         });
 
@@ -401,6 +688,7 @@ async function updateUserCard(userData = null) {
                 const response = await fetch(chrome.runtime.getURL(`users/${selectedUserId}.json`));
                 if (response.ok) {
                     userData = await response.json();
+                    userData.id = selectedUserId; // Dodaj ID do danych użytkownika
                 }
             }
         }
@@ -424,10 +712,37 @@ async function updateUserCard(userData = null) {
             nameElement.textContent = userData.fullName;
         }
         
-        if (qrElement && userData.qrCodeUrl) {
-            qrElement.src = `https://docs.google.com/thumbnail?id=${userData.qrCodeUrl}&sz=s1000`;
-            qrElement.style.maxWidth = 'none';
-            qrElement.style.width = '100%';
+        if (qrElement) {
+            // Pokaż loader podczas ładowania QR kodu
+            const loaderWrapper = document.createElement('div');
+            loaderWrapper.className = 'loader-wrapper';
+            loaderWrapper.innerHTML = `
+                <div class="loader-circle"></div>
+                <div class="loader-circle"></div>
+                <div class="loader-circle"></div>
+                <div class="loader-shadow"></div>
+                <div class="loader-shadow"></div>
+                <div class="loader-shadow"></div>
+            `;
+            qrElement.parentElement.appendChild(loaderWrapper);
+            
+            // Załaduj QR kod bezpośrednio z pliku
+            const qrImage = new Image();
+            qrImage.onload = () => {
+                qrElement.src = qrImage.src;
+                qrElement.style.maxWidth = 'none';
+                qrElement.style.width = '100%';
+                loaderWrapper.remove();
+            };
+            
+            qrImage.onerror = () => {
+                console.error(`Failed to load QR code for user ${userData.id}`);
+                qrElement.src = chrome.runtime.getURL('assets/default-avatar.jpg');
+                loaderWrapper.remove();
+                logToPanel(`❌ Nie udało się załadować kodu QR dla użytkownika ${userData.id}`, 'error');
+            };
+            
+            qrImage.src = chrome.runtime.getURL(`qrcodes/${userData.id}.png`);
         }
         
         if (cardInner) {
@@ -818,7 +1133,7 @@ function handleError(error) {
     });
 }
 
-// Add this new function to handle store select initialization
+// Modify store selection handler
 async function initializeStoreSelect() {
     const storeSelect = document.getElementById('store-select');
     if (!storeSelect) {
@@ -858,37 +1173,15 @@ async function initializeStoreSelect() {
         storeSelect.addEventListener('change', async (e) => {
             try {
                 const selectedStore = e.target.value;
-                
-                // Clear cache
-                await CacheService.clear(CACHE_KEY);
-                // Remove last refresh timestamp
-                localStorage.removeItem('last_fetch_time');
-                
-                // Save selected store
                 await chrome.storage.local.set({ selectedStore });
                 
-                // Mark counters as loading
-                document.querySelectorAll('.lead-count').forEach(counter => {
-                    counter.textContent = '...';
-                    counter.classList.remove('count-error', 'count-zero');
-                });
+                // Force refresh data for new store
+                await loadAndUpdateData(true);
                 
                 logToPanel('🏪 Zmieniono sklep na: ' + selectedStore, 'info');
-                
-                // Force immediate data refresh
-                await fetchDarwinaData();
-                
             } catch (error) {
                 logToPanel('❌ Błąd podczas zmiany sklepu', 'error', error.message);
                 handleError(error);
-            }
-        });
-
-        // Add event listener for DRWN data updates
-        storeSelect.addEventListener('change', async () => {
-            const activeTab = document.querySelector('.nav-link.active');
-            if (activeTab?.getAttribute('data-target') === '#drwn') {
-                await updateDrwnData();
             }
         });
 
@@ -896,113 +1189,6 @@ async function initializeStoreSelect() {
     } catch (error) {
         logToPanel('❌ Błąd inicjalizacji wyboru sklepu', 'error', error.message);
         handleError(error);
-    }
-}
-
-// Add this function after the imports and before other code
-async function fetchDarwinaData() {
-    try {
-        logToPanel(' Rozpoczynam pobieranie danych...', 'info');
-        
-        const { selectedStore } = await chrome.storage.local.get('selectedStore');
-        const store = selectedStore || 'ALL';
-        
-        const lastFetchTime = localStorage.getItem('last_fetch_time');
-        const now = Date.now();
-        
-        if (lastFetchTime && (now - parseInt(lastFetchTime)) < REFRESH_INTERVAL) {
-            logToPanel('⏳ Dane są aktualne, używam zapisanej wersji', 'info');
-            return;
-        }
-
-        // Show loaders in counters
-        document.querySelectorAll('.lead-count').forEach(counter => {
-            showLoader(counter);
-            counter.classList.remove('count-error', 'count-zero');
-        });
-
-        // Fetch the data
-        const response = await chrome.runtime.sendMessage({
-            type: 'FETCH_DARWINA_DATA',
-            selectedStore: store
-        });
-
-        if (!response || response.error) {
-            throw new Error(response?.error || 'Nie udało się pobrać danych');
-        }
-
-        // Update counters with actual values
-        if (response.counts) {
-            logToPanel('📊 Aktualizuję liczniki zamówień...', 'info');
-            
-            // Define expected status types
-            const expectedStatuses = ['submitted', 'confirmed', 'accepted', 'ready', 'overdue'];
-            
-            // Initialize all counters to 0 first
-            expectedStatuses.forEach(status => {
-                const counter = document.getElementById(`count-${status}`);
-                if (counter) {
-                    counter.textContent = '0';
-                    counter.classList.add('count-zero');
-                    counter.classList.remove('count-error');
-                }
-            });
-            
-            // Update counters with actual values
-            Object.entries(response.counts).forEach(([status, count]) => {
-                // Handle special case for READY and OVERDUE statuses
-                if (status === 'READY' || status === 'OVERDUE') {
-                    const targetStatus = status.toLowerCase();
-                    const counter = document.getElementById(`count-${targetStatus}`);
-                    if (counter) {
-                        const numericCount = parseInt(count, 10);
-                        if (isNaN(numericCount)) {
-                            logToPanel(`⚠️ Nieprawidłowa wartość dla statusu ${targetStatus}`, 'error');
-                            counter.textContent = '0';
-                            counter.classList.add('count-error');
-                            return;
-                        }
-                        
-                        counter.textContent = numericCount.toString();
-                        counter.classList.toggle('count-zero', numericCount === 0);
-                        counter.classList.remove('count-error');
-                    }
-                } else {
-                    const counter = document.getElementById(`count-${status}`);
-                    if (counter) {
-                        const numericCount = parseInt(count, 10);
-                        if (isNaN(numericCount)) {
-                            logToPanel(`⚠️ Nieprawidłowa wartość dla statusu ${status}`, 'error');
-                            counter.textContent = '0';
-                            counter.classList.add('count-error');
-                            return;
-                        }
-                        
-                        counter.textContent = numericCount.toString();
-                        counter.classList.toggle('count-zero', numericCount === 0);
-                        counter.classList.remove('count-error');
-                    }
-                }
-            });
-
-            // Calculate total from numeric values
-            const total = Object.values(response.counts)
-                .map(count => parseInt(count, 10))
-                .filter(count => !isNaN(count))
-                .reduce((a, b) => a + b, 0);
-                
-            logToPanel(`📦 Znaleziono ${total} zamówień w wybranym sklepie`, 'success');
-        }
-
-        localStorage.setItem('last_fetch_time', now.toString());
-        refreshCount++;
-
-        const storeName = store === 'ALL' ? 'wszystkich sklepów' : `sklepu ${store}`;
-        logToPanel(`🔄 Zakończono pobieranie danych dla ${storeName}`, 'success');
-
-    } catch (error) {
-        handleError(error);
-        throw error;
     }
 }
 
@@ -1088,15 +1274,13 @@ function initializeThemeSwitcher() {
 // Modify the function that updates counters to use the loader
 function showLoader(counter) {
     counter.innerHTML = `
-        <div class="loader-wrapper">
-            <div class="loader-circle"></div>
-            <div class="loader-circle"></div>
-            <div class="loader-circle"></div>
-            <div class="loader-shadow"></div>
-            <div class="loader-shadow"></div>
-            <div class="loader-shadow"></div>
+        <div class="loading-dots">
+            <div class="loading-dots--dot"></div>
+            <div class="loading-dots--dot"></div>
+            <div class="loading-dots--dot"></div>
         </div>
     `;
+    counter.classList.add('loading');
 }
 
 // Dodaj tę funkcję do initializeUIComponents
@@ -1437,48 +1621,48 @@ function generateOrdersUrl(status, storeId) {
     return `${baseUrl}?${params.toString()}`;
 }
 
-// Dodaj obsługę kliknięcia dla wszystkich lead-status
-function initializeLeadStatusLinks() {
-    const statusMap = {
-        '1': 'submitted',
-        '2': 'confirmed',
-        '3': 'accepted',
-        'READY': 'ready',
-        'OVERDUE': 'overdue'
-    };
-
-    // Dodaj obsługę dla wszystkich statusów
-    document.querySelectorAll('.lead-status').forEach(statusElement => {
-        const dataStatus = statusElement.getAttribute('data-status');
-        const status = statusMap[dataStatus];
-        
-        if (status) {
-            statusElement.style.cursor = 'pointer';
-            statusElement.addEventListener('click', () => {
-                // Pobierz aktualnie wybrany sklep
-                const storeSelect = document.getElementById('store-select');
-                const selectedStore = storeSelect?.value;
-                
-                // Logowanie dla debugowania
-                console.log('Selected store:', selectedStore);
-                console.log('Store ID:', getStoreId(selectedStore));
-                
-                const selectedStoreId = selectedStore === 'ALL' ? '0' : getStoreId(selectedStore);
-                
-                // Logowanie wygenerowanego URL
-                const url = generateOrdersUrl(status, selectedStoreId);
-                console.log('Generated URL:', url);
-                
-                window.open(url, '_blank');
-            });
-        }
-    });
-}
+// Dodaj obsługę dla wszystkich statusów
+document.querySelectorAll('.lead-status').forEach(statusElement => {
+    const dataStatus = statusElement.getAttribute('data-status');
+    const status = STATUS_MAP[dataStatus];
+    
+    if (status) {
+        statusElement.style.cursor = 'pointer';
+        statusElement.addEventListener('mouseup', (event) => {
+            // Obsługuj tylko lewy (1) i środkowy (2) przycisk myszy
+            if (event.button !== 0 && event.button !== 1) return;
+            
+            // Pobierz aktualnie wybrany sklep
+            const storeSelect = document.getElementById('store-select');
+            const selectedStore = storeSelect?.value;
+            
+            // Logowanie dla debugowania
+            console.log('Selected store:', selectedStore);
+            
+            // Pobierz ID sklepu tylko jeśli nie jest to 'ALL'
+            const selectedStoreId = selectedStore !== 'ALL' ? getStoreId(selectedStore) : null;
+            console.log('Store ID:', selectedStoreId);
+            
+            // Generuj URL tylko z ID sklepu jeśli jest dostępne
+            const url = generateOrdersUrl(status, selectedStoreId || '0');
+            console.log('Generated URL:', url);
+            
+            // Otwórz link w nowej karcie
+            window.open(url, '_blank');
+            
+            // Zapobiegaj domyślnej akcji dla środkowego przycisku
+            if (event.button === 1) {
+                event.preventDefault();
+            }
+        });
+    }
+});
 
 // Funkcja pomocnicza do mapowania kodu sklepu na ID
 function getStoreId(storeCode) {
+    if (storeCode === 'ALL') return null;
     const store = stores.find(s => s.id === storeCode);
-    return store ? store.deliveryId.toString() : '0';
+    return store ? store.deliveryId.toString() : null;
 }
 
 // Funkcja do aktualizacji danych DRWN
@@ -1648,26 +1832,197 @@ function initializeRefreshButton() {
     if (!refreshButton) return;
 
     refreshButton.addEventListener('click', async () => {
-        const selectedStore = document.getElementById('store-select').value;
-        
         // Show loading state
         refreshButton.disabled = true;
-        refreshButton.querySelector('i').classList.add('rotate');
+        const icon = refreshButton.querySelector('.bi-arrow-clockwise');
+        if (icon) {
+            icon.classList.add('rotate');
+        }
         
         try {
-            // Clear cache for the selected store
-            await chrome.storage.local.remove(CACHE_KEY + '_' + selectedStore);
-            // Remove last refresh timestamp
-            localStorage.removeItem('last_fetch_time');
-            // Reload lead counts
-            await fetchDarwinaData();
-            logToPanel('🔄 Odświeżono dane dla sklepu: ' + selectedStore, 'success');
+            // Force refresh data
+            await loadAndUpdateData(true);
+            logToPanel('🔄 Odświeżono dane', 'success');
         } catch (error) {
             logToPanel('❌ Błąd odświeżania danych', 'error', error);
         } finally {
             // Reset button state
             refreshButton.disabled = false;
-            refreshButton.querySelector('i').classList.remove('rotate');
+            const icon = refreshButton.querySelector('.bi-arrow-clockwise');
+            if (icon) {
+                icon.classList.remove('rotate');
+            }
+        }
+    });
+}
+
+// Initialize update button functionality
+function initializeUpdateButton() {
+    const updateButton = document.getElementById('update-button');
+    if (!updateButton) return;
+
+    updateButton.addEventListener('click', async () => {
+        try {
+            const updateManager = new UpdateManager();
+            
+            // Show update modal with progress
+            const updateModal = document.getElementById('updateModal');
+            const modalBody = updateModal.querySelector('.modal-body');
+            const modalTitle = updateModal.querySelector('.modal-title');
+            const confirmBtn = document.getElementById('confirmUpdate');
+            const cancelBtn = document.getElementById('cancelUpdate');
+            
+            // Reset modal state
+            modalTitle.textContent = 'Dostępna aktualizacja';
+            modalBody.innerHTML = `
+                <div class="update-status">
+                    <p>Czy chcesz zaktualizować rozszerzenie do najnowszej wersji?</p>
+                    <div class="progress d-none">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div class="update-message mt-2"></div>
+                </div>
+            `;
+
+            const modal = new bootstrap.Modal(updateModal);
+            modal.show();
+
+            // Handle update confirmation
+            confirmBtn.addEventListener('click', async () => {
+                try {
+                    // Update UI for download phase
+                    updateButton.disabled = true;
+                    confirmBtn.disabled = true;
+                    cancelBtn.disabled = true;
+                    modalTitle.textContent = 'Aktualizacja w toku';
+                    
+                    const progressBar = modalBody.querySelector('.progress');
+                    const progressBarInner = progressBar.querySelector('.progress-bar');
+                    const messageDiv = modalBody.querySelector('.update-message');
+                    
+                    progressBar.classList.remove('d-none');
+                    progressBarInner.style.width = '25%';
+                    messageDiv.innerHTML = '<span class="text-primary">⬇️ Pobieranie aktualizacji...</span>';
+                    logToPanel('🔄 Rozpoczynam aktualizację...', 'info');
+
+                    // Download update
+                    await updateManager.downloadUpdate();
+                    progressBarInner.style.width = '50%';
+                    messageDiv.innerHTML += '<br><span class="text-success">✅ Aktualizacja pobrana</span>';
+                    logToPanel('✅ Aktualizacja pobrana', 'success');
+
+                    // Show extraction instructions
+                    progressBarInner.style.width = '75%';
+                    messageDiv.innerHTML += '<br>📦 Rozpakuj pobrany plik <strong>kamila-update.zip</strong>';
+                    messageDiv.innerHTML += '<br>📂 Skopiuj zawartość folderu do lokalizacji rozszerzenia';
+                    messageDiv.innerHTML += '<br>🔄 Odśwież rozszerzenie w <strong>chrome://extensions</strong>';
+
+                    // Final step
+                    progressBarInner.style.width = '100%';
+                    messageDiv.innerHTML += '<br><span class="text-success">✅ Gotowe! Odśwież rozszerzenie aby zastosować zmiany.</span>';
+                    
+                    // Re-enable buttons
+                    confirmBtn.textContent = 'Zamknij';
+                    confirmBtn.disabled = false;
+                    cancelBtn.classList.add('d-none');
+                    
+                    // Change confirm button to just close the modal
+                    confirmBtn.addEventListener('click', () => {
+                        modal.hide();
+                        updateButton.disabled = false;
+                        updateButton.innerHTML = 'Sprawdź aktualizacje';
+                    }, { once: true });
+
+                } catch (error) {
+                    // Show error in modal
+                    modalBody.querySelector('.progress').classList.add('d-none');
+                    modalBody.querySelector('.update-message').innerHTML = 
+                        `<div class="alert alert-danger">❌ Błąd aktualizacji: ${error.message}</div>`;
+                    logToPanel('❌ Błąd podczas aktualizacji', 'error', error);
+                    
+                    // Re-enable buttons
+                    confirmBtn.disabled = false;
+                    cancelBtn.disabled = false;
+                    updateButton.disabled = false;
+                    updateButton.innerHTML = 'Sprawdź aktualizacje';
+                }
+            });
+
+            // Handle update cancellation
+            cancelBtn.addEventListener('click', () => {
+                modal.hide();
+                updateButton.disabled = false;
+                updateButton.innerHTML = 'Sprawdź aktualizacje';
+            });
+
+        } catch (error) {
+            logToPanel('❌ Błąd aktualizacji', 'error', error);
+            updateButton.disabled = false;
+            updateButton.innerHTML = 'Sprawdź aktualizacje';
+        }
+    });
+}
+
+// Funkcja inicjalizująca linki statusów
+function initializeLeadStatusLinks() {
+    document.querySelectorAll('.lead-status').forEach(statusElement => {
+        const dataStatus = statusElement.getAttribute('data-status');
+        const status = dataStatus; // We already have the correct status from data-status
+        
+        if (status) {
+            statusElement.style.cursor = 'pointer';
+            statusElement.addEventListener('mousedown', (event) => {
+                // Obsługuj tylko lewy (0) i środkowy (1) przycisk myszy
+                if (event.button !== 0 && event.button !== 1) return;
+                
+                // Zapobiegaj domyślnej akcji dla środkowego przycisku
+                if (event.button === 1) {
+                    event.preventDefault();
+                }
+                
+                // Pobierz aktualnie wybrany sklep
+                const storeSelect = document.getElementById('store-select');
+                const selectedStore = storeSelect?.value;
+                
+                // Pobierz ID sklepu tylko jeśli nie jest to 'ALL'
+                const selectedStoreId = selectedStore !== 'ALL' ? getStoreId(selectedStore) : null;
+                
+                // Generuj URL tylko z ID sklepu jeśli jest dostępne
+                const url = generateOrdersUrl(status, selectedStoreId || '0');
+                
+                // Otwórz link w nowej karcie
+                if (event.button === 1) {
+                    // Dla środkowego przycisku używamy window.open aby zachować popup otwarty
+                    window.open(url, '_blank');
+                } else {
+                    // Dla lewego przycisku używamy chrome.tabs.create aby zachować standardowe zachowanie
+                    chrome.tabs.create({ url: url });
+                }
+            });
+        }
+    });
+}
+
+// Funkcja inicjalizująca elementy statusów
+function initializeStatusElements() {
+    const statusElements = document.querySelectorAll('.lead-status');
+    const statusMap = {
+        'count-1': 'submitted',
+        'count-2': 'confirmed',
+        'count-3': 'accepted',
+        'count-ready': 'ready',
+        'count-overdue': 'overdue'
+    };
+
+    statusElements.forEach(element => {
+        const countElement = element.querySelector('.lead-count');
+        if (countElement) {
+            const countId = countElement.id;
+            const status = statusMap[countId];
+            if (status) {
+                element.setAttribute('data-status', status);
+            }
         }
     });
 }

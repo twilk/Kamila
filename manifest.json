@@ -17,7 +17,9 @@
         "https://darwina.pl/*",
         "https://*.darwina.pl/*",
         "https://darwina.weblucy.com/*",
-        "https://docs.google.com/*"
+        "https://docs.google.com/*",
+        "https://github.com/*",
+        "https://raw.githubusercontent.com/*"
     ],
     "action": {
         "default_popup": "popup.html"
@@ -32,7 +34,7 @@
         "type": "module"
     },
     "content_security_policy": {
-        "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://darwina.pl https://*.darwina.pl https://darwina.weblucy.com https://docs.google.com;"
+        "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://darwina.pl https://*.darwina.pl https://darwina.weblucy.com https://docs.google.com https://github.com https://raw.githubusercontent.com;"
     },
     "content_scripts": [{
         "matches": [
@@ -51,12 +53,16 @@
             "config/credentials.json",
             "config/delivery.js",
             "config/stores.js",
-            "config/api.js"
+            "config/api.js",
+            "qrcodes/*",
+            "lib/*",
+            "locales/*"
         ],
         "matches": [
             "https://darwina.pl/*",
             "https://*.darwina.pl/*",
-            "https://darwina.weblucy.com/*"
+            "https://darwina.weblucy.com/*",
+            "https://github.com/*"
         ]
     }],
     "minimum_chrome_version": "88"

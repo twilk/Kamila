@@ -1488,3 +1488,117 @@ body.debug-enabled .tab-content {
 #refresh-store-data:disabled {
     opacity: 0.6;
 }
+
+/* Loading animation */
+.loading-dots {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    height: 100%;
+}
+
+.loading-dots--dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #4CAF50;
+    animation: loading 1s infinite ease-in-out;
+}
+
+.loading-dots--dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.loading-dots--dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes loading {
+    0%, 100% {
+        transform: scale(0.3);
+        opacity: 0.3;
+    }
+    50% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Progress Container Styles */
+.progress-container {
+    width: 100%;
+    padding: 10px;
+    background: var(--gray-100);
+    border-radius: var(--radius-md);
+    margin-top: 10px;
+    transition: all 0.3s ease;
+    opacity: 1;
+}
+
+.progress-container.hidden {
+    opacity: 0;
+    height: 0;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+}
+
+.dark-theme .progress-container {
+    background: var(--gray-800);
+}
+
+.progress-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.progress-container .progress {
+    height: 4px;
+    background: var(--gray-200);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.dark-theme .progress-container .progress {
+    background: var(--gray-700);
+}
+
+.progress-container .progress-bar {
+    background: var(--primary);
+    transition: width 0.3s ease;
+}
+
+.progress-container .progress-status {
+    font-size: 12px;
+    color: var(--gray-700);
+    margin-bottom: 2px;
+}
+
+.dark-theme .progress-container .progress-status {
+    color: var(--gray-300);
+}
+
+.progress-container .progress-percentage {
+    font-size: 11px;
+    color: var(--gray-600);
+    text-align: right;
+}
+
+.dark-theme .progress-container .progress-percentage {
+    color: var(--gray-400);
+}
+
+/* Progress states */
+.progress-container.error .progress-bar {
+    background: #dc3545;
+}
+
+.progress-container.warning .progress-bar {
+    background: #ffc107;
+}
+
+.progress-container.success .progress-bar {
+    background: #28a745;
+}

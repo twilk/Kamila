@@ -310,81 +310,177 @@ async function handleCheckOrdersNow(sendResponse) {
 // Funkcja do pobierania danych z API
 async function fetchDarwinaData(darwinaConfig, selectedStore) {
     let allOrders = [];
+    const statusGroups = ['1', '2', '3', '5'];
     
-    // Definiujemy grupy statusów
-    const statusGroups = ['1', '2', '3', '5']; // Używamy stringów dla API
+    // Oblicz całkowitą liczbę kroków
+    const totalSteps = statusGroups.length;
+    let currentStep = 0;
 
-    console.log('[DEBUG] 📋 Pobieranie danych dla statusów:', statusGroups);
-
-    // Dla każdej grupy statusów wykonaj osobne zapytanie
-    for (const statusGroup of statusGroups) {
-        let currentPage = 1;
-        let totalPages = 1;
-        
-        // Przygotuj parametry dla danej grupy statusów
-        const baseParams = new URLSearchParams();
-        baseParams.append('status_id', statusGroup);
-        baseParams.append('limit', '50');
-
-        // Dodaj filtr sklepu (tylko delivery_id)
-        if (selectedStore && selectedStore !== 'ALL') {
-            const store = stores.find(s => s.id === selectedStore);
-            if (!store) {
-                throw new Error(`Nie znaleziono sklepu o ID: ${selectedStore}`);
+    try {
+        // Wyślij informację o rozpoczęciu zadania
+        await sendMessageToPopup('PROGRESS_UPDATE', {
+            type: 'START_TASK',
+            data: {
+                taskName: 'Pobieranie danych',
+                totalSteps: totalSteps
             }
-            baseParams.append('delivery_id', store.deliveryId.toString());
+        });
+
+        // Sprawdź timestamp ostatniego pełnego update'u
+        const { last_full_update } = await chrome.storage.local.get('last_full_update');
+        const isFirstRun = !last_full_update;
+
+        for (const statusGroup of statusGroups) {
+            try {
+                currentStep++;
+                await sendMessageToPopup('PROGRESS_UPDATE', {
+                    type: 'UPDATE_TASK',
+                    data: {
+                        increment: 1,
+                        status: `Pobieranie statusu ${statusGroup} (${currentStep}/${totalSteps})`
+                    }
+                });
+
+                let currentPage = 1;
+                let totalPages = 1;
+                
+                // Przygotuj parametry dla danej grupy statusów
+                const baseParams = new URLSearchParams();
+                baseParams.append('status_id', statusGroup);
+                baseParams.append('limit', '50');
+
+                // Dodaj filtr sklepu (tylko delivery_id)
+                if (selectedStore && selectedStore !== 'ALL') {
+                    const store = stores.find(s => s.id === selectedStore);
+                    if (!store) {
+                        throw new Error(`Nie znaleziono sklepu o ID: ${selectedStore}`);
+                    }
+                    baseParams.append('delivery_id', store.deliveryId.toString());
+                }
+
+                // Dodaj filtr modified_from jeśli nie jest to pierwsze uruchomienie
+                if (!isFirstRun) {
+                    baseParams.append('modified_from', new Date(last_full_update).toISOString());
+                }
+
+                // Pobierz wszystkie strony dla danego statusu
+                do {
+                    baseParams.set('page', currentPage.toString());
+                    const requestUrl = `${darwinaConfig.DARWINA_API_BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}?${baseParams.toString()}`;
+                    
+                    console.log('[DEBUG] 🔍 Wysyłam zapytanie:', {
+                        url: requestUrl,
+                        page: currentPage,
+                        params: Object.fromEntries(baseParams.entries())
+                    });
+
+                    const response = await fetch(requestUrl, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        }
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`API Error: ${response.status} - ${errorText}`);
+                    }
+
+                    const data = await response.json();
+                    totalPages = data.__metadata?.page_count || 1;
+
+                    if (data.data && Array.isArray(data.data)) {
+                        allOrders = [...allOrders, ...data.data];
+                        await sendMessageToPopup('PROGRESS_UPDATE', {
+                            type: 'UPDATE_STATUS',
+                            data: {
+                                status: `Status ${statusGroup}: strona ${currentPage}/${totalPages}`
+                            }
+                        });
+                    }
+
+                    currentPage++;
+                } while (currentPage <= totalPages);
+
+            } catch (error) {
+                await sendMessageToPopup('PROGRESS_UPDATE', {
+                    type: 'ERROR',
+                    data: {
+                        message: `Błąd pobierania danych dla statusu ${statusGroup}: ${error.message}`
+                    }
+                });
+                throw error;
+            }
         }
 
-        // Pobierz wszystkie strony dla danego statusu
-        do {
-            baseParams.set('page', currentPage.toString());
-            const requestUrl = `${darwinaConfig.DARWINA_API_BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}?${baseParams.toString()}`;
-            
-            console.log('[DEBUG] 🔍 Wysyłam zapytanie:', {
-                url: requestUrl,
-                page: currentPage,
-                params: Object.fromEntries(baseParams.entries())
-            });
-
-            const response = await fetch(requestUrl, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`API Error: ${response.status} - ${errorText}`);
+        // Informuj o rozpoczęciu przetwarzania
+        await sendMessageToPopup('PROGRESS_UPDATE', {
+            type: 'UPDATE_STATUS',
+            data: {
+                status: 'Przetwarzanie danych...'
             }
+        });
 
-            const data = await response.json();
-            totalPages = data.__metadata?.page_count || 1;
+        // Przetwórz dane i przygotuj wynik
+        const result = await processDataWithProgress(allOrders, selectedStore, isFirstRun);
 
-            if (data.data && Array.isArray(data.data)) {
-                allOrders = [...allOrders, ...data.data];
-                console.log(`[DEBUG] 📦 Pobrano ${data.data.length} zamówień dla statusu ${statusGroup} (strona ${currentPage}/${totalPages})`);
+        // Informuj o zakończeniu
+        await sendMessageToPopup('PROGRESS_UPDATE', {
+            type: 'SUCCESS',
+            data: {
+                message: `Pobrano ${result.totalOrders} zamówień`
             }
+        });
 
-            currentPage++;
-        } while (currentPage <= totalPages);
+        return result;
+
+    } catch (error) {
+        await sendMessageToPopup('PROGRESS_UPDATE', {
+            type: 'ERROR',
+            data: {
+                message: `Błąd podczas pobierania danych: ${error.message}`
+            }
+        });
+        throw error;
+    }
+}
+
+// Nowa funkcja do przetwarzania danych z postępem
+async function processDataWithProgress(allOrders, selectedStore, isFirstRun) {
+    // Jeśli to nie jest pierwsze uruchomienie, pobierz poprzednie dane z cache
+    let processedOrders = allOrders;
+    if (!isFirstRun) {
+        const cacheKey = getCacheKey(selectedStore);
+        const cachedData = await CacheService.get(cacheKey);
+        if (cachedData && cachedData.orders) {
+            // Aktualizuj lub dodaj nowe zamówienia
+            const ordersMap = new Map(cachedData.orders.map(order => [order.id, order]));
+            allOrders.forEach(order => {
+                ordersMap.set(order.id, order);
+            });
+            processedOrders = Array.from(ordersMap.values());
+            console.log(`[DEBUG] 🔄 Zaktualizowano ${allOrders.length} zamówień w cache zawierającym ${cachedData.orders.length} zamówień`);
+        }
     }
 
     // Przetwórz wszystkie zebrane zamówienia
-    const statusCounts = processOrders(allOrders);
+    const statusCounts = processOrders(processedOrders);
 
-    const result = {
+    // Zapisz timestamp aktualnego update'u
+    await chrome.storage.local.set({ 
+        'last_full_update': Date.now() 
+    });
+
+    // Zwróć wynik
+    return {
         success: true,
         counts: statusCounts,
-        totalOrders: allOrders.length,
-        store: selectedStore || 'ALL'
+        totalOrders: processedOrders.length,
+        store: selectedStore || 'ALL',
+        orders: processedOrders
     };
-
-    console.log('[DEBUG] 🔍 Końcowy wynik:', result);
-
-    return result;
 }
 
 // Funkcja do przetwarzania zamówień i liczenia statusów
