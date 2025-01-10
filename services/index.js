@@ -5,6 +5,7 @@ export { MetricsManager } from './core/MetricsManager.js';
 export { ErrorHandler } from './core/ErrorHandler.js';
 export { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
 export { UIManager } from './core/UIManager.js';
+export { DebugManager } from './core/DebugManager.js';
 
 // Feature managers
 export { CacheManager } from './cacheManager.js';

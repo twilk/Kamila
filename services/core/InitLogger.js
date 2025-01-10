@@ -59,19 +59,17 @@ export class InitLogger {
         
         this.logs.push(entry);
         
-        // Log to console in development
-        if (process.env.NODE_ENV === 'development') {
-            const prefix = `[${entry.timestamp}] [${componentName}] [${type}]`;
-            switch (type) {
-                case 'error':
-                    console.error(prefix, message);
-                    break;
-                case 'warning':
-                    console.warn(prefix, message);
-                    break;
-                default:
-                    console.log(prefix, message);
-            }
+        // Log to console
+        const prefix = `[${entry.timestamp}] [${componentName}] [${type}]`;
+        switch (type) {
+            case 'error':
+                console.error(prefix, message);
+                break;
+            case 'warning':
+                console.warn(prefix, message);
+                break;
+            default:
+                console.log(prefix, message);
         }
     }
 

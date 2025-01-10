@@ -22,7 +22,8 @@ import {
     RefreshManager,
     UIManager,
     UserManager,
-    ErrorHandler
+    ErrorHandler,
+    DebugManager
 } from './services/index.js';
 
 // Config imports
@@ -57,12 +58,14 @@ BaseManager.initLogger = new InitLogger();
 BaseManager.metricsManager = new MetricsManager();
 
 // Inicjalizacja menedżerów
-let progressManager, loadingManager, uiManager, menuManager, volumeManager,
-    dataManager, statusManager, debugManager, userManager, interfaceManager,
+let progressManager, loadingManager, menuManager, volumeManager,
+    dataManager, statusManager, userManager, interfaceManager,
     updateManager, languageManager, refreshManager;
 
-// Initialize managers
+// Initialize core managers
 const errorHandler = new ErrorHandler();
+const uiManager = new UIManager();
+const debugManager = new DebugManager(uiManager);
 
 // Initialize error handler first
 await errorHandler.initialize();
@@ -70,45 +73,41 @@ await errorHandler.initialize();
 // Funkcja inicjalizująca menedżerów
 async function initializeManagers() {
     try {
-        // Core managers
+        // Initialize core managers sequentially
+        await errorHandler.initialize();
+        await uiManager.initialize();
+        await debugManager.initialize();
+
+        // Initialize other managers
         progressManager = new ProgressManager();
         loadingManager = new LoadingManager();
-        
-        // UI managers
-        uiManager = new UIManager();
-        
-        // Feature managers
         menuManager = new MenuManager();
         volumeManager = new VolumeManager();
         dataManager = new DataManager(uiManager);
         statusManager = new StatusManager(uiManager);
-        debugManager = new DebugManager(uiManager);
         userManager = new UserManager(uiManager);
         interfaceManager = new InterfaceManager(uiManager);
         updateManager = new UpdateManager();
         languageManager = new LanguageManager();
         refreshManager = new RefreshManager(dataManager);
 
-        // Initialize all managers
-        await Promise.all([
-            progressManager.initialize(),
-            loadingManager.initialize(),
-            uiManager.initialize(),
-            menuManager.initialize(),
-            volumeManager.initialize(),
-            dataManager.initialize(),
-            statusManager.initialize(),
-            debugManager.initialize(),
-            userManager.initialize(),
-            interfaceManager.initialize(),
-            updateManager.initialize(),
-            languageManager.initialize(),
-            refreshManager.initialize()
-        ]);
+        // Initialize managers sequentially to avoid race conditions
+        await progressManager.initialize();
+        await loadingManager.initialize();
+        await menuManager.initialize();
+        await volumeManager.initialize();
+        await dataManager.initialize();
+        await statusManager.initialize();
+        await userManager.initialize();
+        await interfaceManager.initialize();
+        await updateManager.initialize();
+        await languageManager.initialize();
+        await refreshManager.initialize();
 
         return true;
     } catch (error) {
         console.error('Error initializing managers:', error);
+        errorHandler.handleError(error, 'INITIALIZATION', 'ERROR');
         return false;
     }
 }
