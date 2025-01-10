@@ -1,99 +1,175 @@
 # Development Notes
 
-## Recent Changes
+## Architecture Overview
 
-### Metrics System Implementation
-- Added MetricsManager for comprehensive performance tracking
-- Integrated metrics into BaseManager initialization
-- Added memory usage monitoring
-- Implemented operation timing tracking
+### Core Services Hierarchy
+```
+BaseManager
+├── MetricsManager
+├── DataManager
+├── CacheManager (new)
+├── UIManager
+│   └── InterfaceManager
+├── ErrorHandler (planned)
+├── LoadingManager
+├── MenuManager
+├── StatusManager
+└── MessageHandler (planned)
+```
 
-### Initialization System Improvements
-- Added InitLogger for tracking initialization progress and performance
-- Integrated logging into BaseManager for all manager initializations
-- Enhanced dependency management in BaseManager
-- Removed statusChecker.js in favor of integrated status checks in DataManager
+### Import Structure Issues
 
-### Core Services
-- DataManager: Added status checking capabilities
-- RefreshManager: Now uses DataManager's status checks
-- BaseManager: Enhanced with initialization logging and metrics
-- MetricsManager: New service for performance monitoring
+#### Duplicate Imports in popup.js
+```javascript
+// Duplicated managers from index.js:
+- UpdateManager
+- ProgressManager
+- LanguageManager
+- RankingManager
+- MenuManager
+- LoadingManager
+- StatusManager
+- InterfaceManager
+```
 
-### Optimization Progress
-- Improved initialization tracking and debugging
-- Better dependency management between managers
-- Streamlined status checking functionality
-- Added comprehensive metrics collection
+#### Module Organization
+```
+services/
+├── core/               # Core framework
+│   ├── BaseManager.js
+│   ├── InitLogger.js
+│   ├── MetricsManager.js
+│   ├── ErrorHandler.js
+│   ├── ErrorTypes.js
+│   └── UIManager.js
+│
+├── managers/          # Feature managers (should be moved here)
+│   ├── CacheManager.js
+│   ├── DataManager.js
+│   ├── MenuManager.js
+│   └── ...
+│
+└── services/         # Business services (should be moved here)
+    ├── i18n.js
+    ├── api.js
+    ├── stores.js
+    └── ...
+```
 
-## Current Status
+### Import Path Issues
+1. Direct core imports should be avoided:
+   ```javascript
+   // Bad
+   import { ErrorHandler } from './services/core/ErrorHandler.js';
+   
+   // Good
+   import { ErrorHandler } from './services/index.js';
+   ```
 
-### Completed
-- Basic manager framework
-- Initialization logging system
-- Status checking integration
-- Dependency management
-- Error handling framework
-- Performance metrics system
+2. Duplicate manager definitions:
+   - Some managers are imported both from index.js and directly
+   - Need to standardize import approach
 
-### In Progress
-- Performance optimization
-- UI state management
-- Event system refinement
-- Memory usage monitoring
+3. Missing module organization:
+   - Core modules in services/core/
+   - Feature managers scattered in services/
+   - Business services mixed with managers
 
-### TODO
-- Complete UI manager implementation
-- Enhance error reporting
-- Add performance benchmarks
-- Implement caching improvements
+### Required Changes
+1. Reorganize directory structure:
+   ```
+   services/
+   ├── core/      # Framework components
+   ├── managers/  # Feature managers
+   └── services/  # Business services
+   ```
 
-## Architecture Notes
+2. Update import paths in index.js:
+   ```javascript
+   // Core
+   export * from './core/index.js';
+   
+   // Managers
+   export * from './managers/index.js';
+   
+   // Services
+   export * from './services/index.js';
+   ```
 
-### Manager Hierarchy
-- BaseManager (core)
-  - MetricsManager (new)
-  - DataManager
-  - UIManager
-  - RefreshManager
-  - ErrorHandler
-  - LoadingManager
-  - MenuManager
-  - VolumeManager
-  - ProgressManager
-  - InterfaceManager
-  - StatusManager
+3. Clean up duplicate imports in popup.js:
+   - Remove direct imports of managers
+   - Use only index.js imports
+   - Group imports by type (core/managers/services)
 
-### Initialization Flow
-1. BaseManager handles core initialization
-2. Dependencies are resolved automatically
-3. Initialization progress is logged
-4. Metrics are collected for performance analysis
-5. Memory usage is monitored
+### Service Dependencies
+```
+DataManager
+├── CacheManager (data caching)
+├── MetricsManager (performance tracking)
+└── ErrorHandler (error handling)
 
-### Error Handling
-- Centralized through ErrorHandler
-- Integrated with initialization logging
-- Proper error propagation
-- Performance impact tracking
+UIManager
+├── LoadingManager (loading states)
+├── MenuManager (navigation)
+└── InterfaceManager (UI components)
 
-### Status Management
-- Integrated into DataManager
-- Real-time status updates
-- Efficient cache validation
-- Performance metrics collection
+MessageHandler (planned)
+├── ErrorHandler
+└── MetricsManager
+```
+
+### Core Functionality Flow
+1. **Initialization Chain**
+   - BaseManager initialization
+   - Dependencies resolution
+   - Services startup
+   - UI components mounting
+
+2. **Data Flow**
+   - API Request → CacheManager check
+   - Cache hit/miss handling
+   - Data processing
+   - UI update
+
+3. **Event System**
+   - Chrome Extension messaging
+   - Inter-service communication
+   - UI event handling
+   - Error propagation
 
 ### Performance Monitoring
 - Operation timing tracking
 - Memory usage monitoring
-- Initialization metrics
-- Component-level performance data
+- Cache hit/miss ratio
+- API call frequency
+- UI render performance
 
-## Next Steps
-1. Complete remaining manager implementations
-2. Add comprehensive logging
-3. Implement performance monitoring
-4. Enhance error recovery
-5. Optimize initialization sequence
-6. Add performance benchmarks
-7. Implement memory optimization 
+### Current Status
+
+#### Completed
+- ✅ Basic manager framework
+- ✅ Initialization system
+- ✅ Cache system
+- ✅ UI optimization
+- ✅ Metrics collection
+
+#### In Progress
+- 🔄 Error handling system
+- 🔄 Message handling
+- 🔄 Integration tests
+- 🔄 Performance optimization
+- 🔄 Module organization
+
+#### Planned
+- ⏳ Memory optimization
+- ⏳ Full test coverage
+- ⏳ Documentation update
+- ⏳ Performance benchmarks
+- ⏳ Directory restructuring
+
+### Next Development Focus
+1. Directory restructuring and import cleanup
+2. Error handling system implementation
+3. Message handling system
+4. Integration tests
+5. Performance optimization 

@@ -1,35 +1,33 @@
-// Core services
-import { API } from './services/index.js';
-import { API_BASE_URL, API_CONFIG, getDarwinaCredentials, sendLogToPopup } from './config/api.js';
-import { i18n } from './services/i18n.js';
-import { UserCardService } from './services/userCard.js';
-import { DrwnService } from './services/drwn.js';
+// Import all services from index
 import { 
-    checkApiStatus, 
-    checkAuthStatus, 
-    checkOrdersStatus,
-    checkCacheStatus 
-} from './services/api.js';
-import { stores } from './services/stores.js';
+    API,
+    InitLogger,
+    MetricsManager,
+    BaseManager,
+    CacheManager,
+    DataManager,
+    MenuManager,
+    LoadingManager,
+    ProgressManager,
+    UpdateManager,
+    InterfaceManager,
+    StatusManager,
+    i18n,
+    stores,
+    UserCardService,
+    DrwnService,
+    LanguageManager,
+    RankingManager,
+    VolumeManager,
+    RefreshManager,
+    UIManager,
+    UserManager,
+    ErrorHandler
+} from './services/index.js';
 
-// Managers
-import { UpdateManager } from './services/updateManager.js';
-import { ProgressManager } from './services/progressManager.js';
+// Config imports
+import { API_BASE_URL, API_CONFIG, getDarwinaCredentials, sendLogToPopup } from './config/api.js';
 import { STORAGE_KEYS, getFromStorage, saveToStorage } from './services/storage.js';
-import { LanguageManager } from './services/languageManager.js';
-import { RankingManager } from './services/rankingManager.js';
-import { MenuManager } from './services/menuManager.js';
-import { VolumeManager } from './services/volumeManager.js';
-import { LoadingManager } from './services/loadingManager.js';
-import { RefreshManager } from './services/refreshManager.js';
-
-// UI Components
-import { UIManager } from './services/uiManager.js';
-import { DataManager } from './services/dataManager.js';
-import { StatusManager } from './services/statusManager.js';
-import { DebugManager } from './services/debugManager.js';
-import { UserManager } from './services/userManager.js';
-import { InterfaceManager } from './services/interfaceManager.js';
 
 // Test Runner
 import testRunner from './services/testRunner.js';
@@ -38,7 +36,6 @@ import testRunner from './services/testRunner.js';
 import './tests/integration/translation.test.js';
 
 import { themeService } from './services/theme.js';
-import { ErrorHandler } from './services/core/ErrorHandler.js';
 
 const REFRESH_INTERVAL = 300000; // 5 minut
 let refreshCount = 0;
@@ -54,6 +51,10 @@ const STATUS_MAP = {
 
 // Globalna zmienna dla tooltipów
 let tooltipList = [];
+
+// Initialize static fields of BaseManager
+BaseManager.initLogger = new InitLogger();
+BaseManager.metricsManager = new MetricsManager();
 
 // Inicjalizacja menedżerów
 let progressManager, loadingManager, uiManager, menuManager, volumeManager,

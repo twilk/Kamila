@@ -11,20 +11,28 @@ export class UIManager extends BaseManager {
         this.tooltipList = [];
         this.messageTimeouts = new Map();
         this.debugPanelVisible = false;
+        this.updateDebounceTimeout = null;
+        this.resizeObserver = null;
 
         // Bind methods
         this.adjustWindowHeight = this.adjustWindowHeight.bind(this);
         this.handleWindowResize = this.handleWindowResize.bind(this);
+        this.debouncedUpdateCounters = this.debouncedUpdateCounters.bind(this);
     }
 
     async initialize() {
+        return await BaseManager.metricsManager.trackOperation('UIManager_initialize', async () => {
         try {
             await super.initialize();
-            await this.initializeUIComponents();
-            await this.initializeCounters();
-            await this.initializeStoreSelect();
-            await this.initializeButtons();
-            await this.initializeDebugPanel();
+                
+                // Initialize components in parallel
+                await Promise.all([
+                    this.initializeUIComponents(),
+                    this.initializeCounters(),
+                    this.initializeStoreSelect(),
+                    this.initializeButtons(),
+                    this.initializeDebugPanel()
+                ]);
             
             // Add store change listener
             document.addEventListener('storeChange', async (event) => {
@@ -32,8 +40,8 @@ export class UIManager extends BaseManager {
                 await this.loadAndUpdateCounters(event.detail.store);
             });
 
-            // Add resize listener
-            window.addEventListener('resize', this.handleWindowResize);
+                // Setup ResizeObserver instead of window resize event
+                this.setupResizeObserver();
             this.adjustWindowHeight();
 
             return true;
@@ -43,20 +51,45 @@ export class UIManager extends BaseManager {
             });
             return false;
         }
+        });
+    }
+
+    setupResizeObserver() {
+        // Use ResizeObserver for better performance
+        this.resizeObserver = new ResizeObserver(entries => {
+            requestAnimationFrame(() => {
+                this.adjustWindowHeight();
+            });
+        });
+        this.resizeObserver.observe(document.body);
     }
 
     async initializeUIComponents() {
-        try {
-            // Initialize tooltips
-            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+        return await BaseManager.metricsManager.trackOperation('UIManager_initComponents', async () => {
+            try {
+                // Create document fragment for better performance
+                const fragment = document.createDocumentFragment();
+                
+                // Initialize tooltips in batches
+                const tooltipElements = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+                for (let i = 0; i < tooltipElements.length; i += 10) {
+                    const batch = Array.from(tooltipElements).slice(i, i + 10);
+                    await Promise.all(batch.map(el => {
                 const tooltip = new bootstrap.Tooltip(el);
                 this.tooltipList.push(tooltip);
-            });
+                        return Promise.resolve();
+                    }));
+                }
 
-            // Initialize popovers
-            document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => {
+                // Initialize popovers in batches
+                const popoverElements = document.querySelectorAll('[data-bs-toggle="popover"]');
+                for (let i = 0; i < popoverElements.length; i += 10) {
+                    const batch = Array.from(popoverElements).slice(i, i + 10);
+                    await Promise.all(batch.map(el => {
                 new bootstrap.Popover(el);
-            });
+                        return Promise.resolve();
+                    }));
+                }
 
             // Initialize modals
             document.querySelectorAll('.modal').forEach(modalElement => {
@@ -73,18 +106,22 @@ export class UIManager extends BaseManager {
             });
             return false;
         }
+        });
     }
 
     async initializeCounters() {
+        return await BaseManager.metricsManager.trackOperation('UIManager_initCounters', async () => {
         try {
-            // Get counter elements
+                // Use more efficient selector
             const counterElements = document.querySelectorAll('[data-counter]');
-            counterElements.forEach(element => {
-                const counterId = element.getAttribute('data-counter');
-                if (counterId) {
-                    this.counters.set(counterId, element);
-                }
-            });
+                
+                // Pre-allocate Map size
+                this.counters = new Map(
+                    Array.from(counterElements).map(element => [
+                        element.getAttribute('data-counter'),
+                        element
+                    ]).filter(([id]) => id)
+                );
 
             // Load initial counter values
             await this.loadAndUpdateCounters(this.selectedStore);
@@ -96,25 +133,41 @@ export class UIManager extends BaseManager {
             });
             return false;
         }
+        });
+    }
+
+    debouncedUpdateCounters(counts) {
+        if (this.updateDebounceTimeout) {
+            clearTimeout(this.updateDebounceTimeout);
+        }
+        
+        this.updateDebounceTimeout = setTimeout(() => {
+            requestAnimationFrame(() => {
+                this.updateCounters(counts);
+            });
+        }, 100);
     }
 
     async loadAndUpdateCounters(store) {
+        return await BaseManager.metricsManager.trackOperation('UIManager_loadCounters', async () => {
         try {
             if (!store) return;
 
-            // Show loading state
+                // Show loading state using requestAnimationFrame
+                requestAnimationFrame(() => {
             this.counters.forEach(counter => {
                 const countElement = counter.querySelector('.count');
                 if (countElement) {
                     countElement.textContent = '...';
                     countElement.classList.add('loading');
                 }
+                    });
             });
 
             // Load saved counts from storage
             const { leadCounts } = await chrome.storage.local.get('leadCounts');
             if (leadCounts) {
-                this.updateCounters(leadCounts);
+                    this.debouncedUpdateCounters(leadCounts);
             }
 
             // Fetch new data
@@ -133,7 +186,7 @@ export class UIManager extends BaseManager {
 
             if (response?.counts) {
                 await chrome.storage.local.set({ leadCounts: response.counts });
-                this.updateCounters(response.counts);
+                    this.debouncedUpdateCounters(response.counts);
             }
 
             return true;
@@ -144,16 +197,22 @@ export class UIManager extends BaseManager {
             });
             return false;
         }
+        });
     }
 
     updateCounters(counts) {
+        return BaseManager.metricsManager.trackOperation('UIManager_updateCounters', () => {
         try {
             if (!counts) return;
 
-            // Update each counter element
+                // Create a document fragment for batch updates
+                const updates = [];
+
+                // Prepare all updates
             Object.entries(counts).forEach(([counterId, value]) => {
                 const element = this.counters.get(counterId);
                 if (element) {
+                        updates.push(() => {
                     // Update count value
                     const countElement = element.querySelector('.count');
                     if (countElement) {
@@ -164,8 +223,14 @@ export class UIManager extends BaseManager {
                     // Update counter status
                     element.classList.toggle('has-items', value > 0);
                     element.classList.toggle('no-items', value === 0);
+                        });
                 }
             });
+
+                // Apply updates in the next animation frame
+                requestAnimationFrame(() => {
+                    updates.forEach(update => update());
+                });
 
             return true;
         } catch (error) {
@@ -175,6 +240,7 @@ export class UIManager extends BaseManager {
             });
             return false;
         }
+        });
     }
 
     async initializeStoreSelect() {
@@ -367,9 +433,9 @@ export class UIManager extends BaseManager {
 
     hideAllMessages() {
         try {
-            document.querySelectorAll('.error-message, .loading-message').forEach(el => {
-                el.classList.add('d-none');
-            });
+        document.querySelectorAll('.error-message, .loading-message').forEach(el => {
+            el.classList.add('d-none');
+        });
 
             // Clear all timeouts
             this.messageTimeouts.forEach((timeoutId) => {
@@ -518,12 +584,12 @@ export class UIManager extends BaseManager {
 
     adjustWindowHeight() {
         try {
-            const debugPanel = document.querySelector('.debug-panel');
+        const debugPanel = document.querySelector('.debug-panel');
             if (debugPanel && this.debugPanelVisible) {
-                const debugPanelHeight = debugPanel.offsetHeight;
+            const debugPanelHeight = debugPanel.offsetHeight;
                 document.body.style.height = `calc(var(--window-height) + ${debugPanelHeight}px)`;
-            } else {
-                document.body.style.height = 'var(--window-height)';
+        } else {
+            document.body.style.height = 'var(--window-height)';
             }
 
             // Emit height change event
@@ -703,46 +769,32 @@ export class UIManager extends BaseManager {
         }
     }
 
-    dispose() {
-        try {
-            // Restore console
-            this.restoreConsole();
+    /**
+     * Clean up resources and dispose of the manager
+     */
+    async dispose() {
+        // Clean up ResizeObserver
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+            this.resizeObserver = null;
+        }
 
-            // Remove event listeners
-            window.removeEventListener('resize', this.handleWindowResize);
-            
-            // Clear resize timeout
-            if (this.resizeTimeout) {
-                clearTimeout(this.resizeTimeout);
-            }
+        // Clear debounce timeout
+        if (this.updateDebounceTimeout) {
+            clearTimeout(this.updateDebounceTimeout);
+        }
 
-            // Clear all tooltips
+        // Dispose tooltips
             this.tooltipList.forEach(tooltip => {
-                try {
-                    tooltip?.dispose();
-                } catch (e) {
-                    // Ignore disposal errors
-                }
+            tooltip.dispose();
             });
             this.tooltipList = [];
 
-            // Clear all counters
+        // Clear other resources
             this.counters.clear();
-            
-            // Clear store selection
-            this.selectedStore = null;
-
-            // Clear message timeouts
-            this.messageTimeouts.forEach((timeoutId) => {
-                clearTimeout(timeoutId);
-            });
+        this.messageTimeouts.forEach(timeout => clearTimeout(timeout));
             this.messageTimeouts.clear();
 
-            super.dispose();
-        } catch (error) {
-            this.handleError(error, ErrorType.UNKNOWN, ErrorSeverity.ERROR, {
-                method: 'dispose'
-            });
-        }
+        await super.dispose();
     }
 } 

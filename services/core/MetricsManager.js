@@ -1,4 +1,4 @@
-import { BaseManager } from './BaseManager';
+import { BaseManager } from './BaseManager.js';
 
 /**
  * Manager for tracking system metrics and performance

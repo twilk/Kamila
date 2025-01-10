@@ -1,15 +1,13 @@
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { IInitializable } from './IInitializable.js';
-import { InitLogger } from './InitLogger';
-import { MetricsManager } from './MetricsManager';
 
 /**
  * Base class for all managers
  * @implements {IInitializable}
  */
 export class BaseManager extends IInitializable {
-    static initLogger = new InitLogger();
-    static metricsManager = new MetricsManager();
+    static initLogger = null;
+    static metricsManager = null;
 
     constructor(dependencies = []) {
         super();

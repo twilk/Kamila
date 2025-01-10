@@ -57,30 +57,30 @@ export class RankingManager extends BaseManager {
 
     setupEventListeners() {
         try {
-            // Sorting
-            document.querySelectorAll('#ranking-data th[data-sort]').forEach(th => {
-                th.addEventListener('click', () => this.handleSort(th.dataset.sort));
-            });
+        // Sorting
+        document.querySelectorAll('#ranking-data th[data-sort]').forEach(th => {
+            th.addEventListener('click', () => this.handleSort(th.dataset.sort));
+        });
 
-            // Filtering
+        // Filtering
             document.getElementById('name-filter')?.addEventListener('input', (e) => {
-                this.filters.name = e.target.value.toLowerCase();
-                this.applyFilters();
-            });
+            this.filters.name = e.target.value.toLowerCase();
+            this.applyFilters();
+        });
 
             document.getElementById('position-filter')?.addEventListener('change', (e) => {
-                this.filters.position = e.target.value;
-                this.applyFilters();
-            });
+            this.filters.position = e.target.value;
+            this.applyFilters();
+        });
 
             document.getElementById('trend-filter')?.addEventListener('change', (e) => {
-                this.filters.trend = e.target.value;
-                this.applyFilters();
-            });
+            this.filters.trend = e.target.value;
+            this.applyFilters();
+        });
 
             document.getElementById('reset-filters')?.addEventListener('click', () => {
-                this.resetFilters();
-            });
+            this.resetFilters();
+        });
 
             // Refresh button
             document.getElementById('refresh-ranking')?.addEventListener('click', async () => {
@@ -285,30 +285,30 @@ export class RankingManager extends BaseManager {
 
     calculateHistoricalTrends() {
         try {
-            // Dla każdej osoby oblicz trendy
-            this.data = this.data.map(person => {
-                const trends = this.availableMonths.map(month => {
-                    const monthData = this.historicalData[month];
-                    const personData = monthData.find(p => p.name === person.name);
-                    return personData ? {
-                        sales: personData.sales,
-                        ranking: personData.totalRanking,
-                        position: personData.position
-                    } : null;
-                }).filter(t => t !== null);
+        // Dla każdej osoby oblicz trendy
+        this.data = this.data.map(person => {
+            const trends = this.availableMonths.map(month => {
+                const monthData = this.historicalData[month];
+                const personData = monthData.find(p => p.name === person.name);
+                return personData ? {
+                    sales: personData.sales,
+                    ranking: personData.totalRanking,
+                    position: personData.position
+                } : null;
+            }).filter(t => t !== null);
 
-                // Oblicz trendy
-                const salesTrend = this.calculateTrend(trends.map(t => t.sales));
-                const rankingTrend = this.calculateTrend(trends.map(t => t.ranking));
+            // Oblicz trendy
+            const salesTrend = this.calculateTrend(trends.map(t => t.sales));
+            const rankingTrend = this.calculateTrend(trends.map(t => t.ranking));
                 const positionTrend = this.calculateTrend(trends.map(t => t.position), true);
 
-                return {
-                    ...person,
-                    salesTrend,
-                    rankingTrend,
+            return {
+                ...person,
+                salesTrend,
+                rankingTrend,
                     positionTrend
-                };
-            });
+            };
+        });
         } catch (error) {
             this.handleError(error, ErrorType.DATA, ErrorSeverity.WARNING, {
                 method: 'calculateHistoricalTrends'
@@ -349,14 +349,14 @@ export class RankingManager extends BaseManager {
 
     handleSort(column) {
         try {
-            if (this.sortConfig.column === column) {
-                this.sortConfig.direction = this.sortConfig.direction === 'asc' ? 'desc' : 'asc';
-            } else {
-                this.sortConfig.column = column;
-                this.sortConfig.direction = 'asc';
-            }
+        if (this.sortConfig.column === column) {
+            this.sortConfig.direction = this.sortConfig.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            this.sortConfig.column = column;
+            this.sortConfig.direction = 'asc';
+        }
 
-            this.updateTable();
+        this.updateTable();
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
                 method: 'handleSort',
@@ -367,8 +367,8 @@ export class RankingManager extends BaseManager {
 
     applyFilters() {
         try {
-            this.filteredData = this.data.filter(item => {
-                const nameMatch = item.name.toLowerCase().includes(this.filters.name);
+        this.filteredData = this.data.filter(item => {
+            const nameMatch = item.name.toLowerCase().includes(this.filters.name);
                 const positionMatch = !this.filters.position || item.position === this.filters.position;
                 
                 let trendMatch = true;
@@ -376,12 +376,12 @@ export class RankingManager extends BaseManager {
                     const trendValue = item[`${this.filters.trend}Trend`];
                     trendMatch = trendValue > 0;
                 }
+            
+            return nameMatch && positionMatch && trendMatch;
+        });
 
-                return nameMatch && positionMatch && trendMatch;
-            });
-
-            this.updateTable();
-            this.updateCharts();
+        this.updateTable();
+        this.updateCharts();
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
                 method: 'applyFilters',
@@ -392,20 +392,20 @@ export class RankingManager extends BaseManager {
 
     resetFilters() {
         try {
-            this.filters = {
-                name: '',
-                position: '',
-                trend: ''
-            };
+        this.filters = {
+            name: '',
+            position: '',
+            trend: ''
+        };
 
             // Reset input values
-            document.getElementById('name-filter').value = '';
-            document.getElementById('position-filter').value = '';
-            document.getElementById('trend-filter').value = '';
+        document.getElementById('name-filter').value = '';
+        document.getElementById('position-filter').value = '';
+        document.getElementById('trend-filter').value = '';
 
-            this.filteredData = [...this.data];
-            this.updateTable();
-            this.updateCharts();
+        this.filteredData = [...this.data];
+        this.updateTable();
+        this.updateCharts();
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
                 method: 'resetFilters'
@@ -415,11 +415,11 @@ export class RankingManager extends BaseManager {
 
     updateTable() {
         try {
-            const tbody = document.querySelector('#ranking-data tbody');
-            if (!tbody) return;
+        const tbody = document.querySelector('#ranking-data tbody');
+        if (!tbody) return;
 
-            // Sort data
-            const sortedData = [...this.filteredData].sort((a, b) => {
+        // Sort data
+        const sortedData = [...this.filteredData].sort((a, b) => {
                 const aValue = a[this.sortConfig.column];
                 const bValue = b[this.sortConfig.column];
                 const direction = this.sortConfig.direction === 'asc' ? 1 : -1;
@@ -431,15 +431,15 @@ export class RankingManager extends BaseManager {
             });
 
             // Update table
-            tbody.innerHTML = sortedData.map(item => `
-                <tr>
-                    <td>${item.position}</td>
-                    <td>${item.name}</td>
+        tbody.innerHTML = sortedData.map(item => `
+            <tr>
+                <td>${item.position}</td>
+                <td>${item.name}</td>
                     <td>${item.totalRanking.toFixed(2)}</td>
-                    <td>${item.leads}</td>
+                <td>${item.leads}</td>
                     <td>${item.sales}</td>
                     <td>${item.units}</td>
-                    <td>${(item.margin * 100).toFixed(2)}%</td>
+                <td>${(item.margin * 100).toFixed(2)}%</td>
                     <td>${item.skuNew}</td>
                     <td>${item.skuFix}</td>
                     <td>${item.skuDub}</td>
@@ -464,9 +464,9 @@ export class RankingManager extends BaseManager {
                         <span class="trend ${item.positionTrend > 0 ? 'up' : 'down'}">
                             ${item.positionTrend.toFixed(2)}
                         </span>
-                    </td>
-                </tr>
-            `).join('');
+                </td>
+            </tr>
+        `).join('');
 
             // Update sort indicators
             document.querySelectorAll('#ranking-data th[data-sort]').forEach(th => {
@@ -540,9 +540,9 @@ export class RankingManager extends BaseManager {
             const chartConfigs = {
                 salesChart: {
                     type: 'line',
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
                         plugins: {
                             title: {
                                 display: true,
@@ -553,10 +553,10 @@ export class RankingManager extends BaseManager {
                 },
                 rankingChart: {
                     type: 'line',
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
                             title: {
                                 display: true,
                                 text: 'Ranking w czasie'
@@ -590,7 +590,7 @@ export class RankingManager extends BaseManager {
         try {
             if (!this.charts.salesChart || !this.charts.rankingChart) return;
 
-            const colors = [
+                const colors = [
                 '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
                 '#FF9F40', '#FF6384', '#C9CBCF', '#7BC225', '#FF85AD'
             ];
@@ -598,12 +598,12 @@ export class RankingManager extends BaseManager {
             const datasets = this.filteredData.slice(0, 10).map((person, index) => {
                 const color = colors[index % colors.length];
                 const monthlyData = this.availableMonths.map(month => {
-                    const monthData = this.historicalData[month];
-                    const personData = monthData.find(p => p.name === person.name);
+                        const monthData = this.historicalData[month];
+                        const personData = monthData.find(p => p.name === person.name);
                     return personData || null;
                 }).filter(data => data !== null);
 
-                return {
+                    return {
                     sales: {
                         label: person.name,
                         data: monthlyData.map(data => data.sales),
@@ -618,8 +618,8 @@ export class RankingManager extends BaseManager {
                         backgroundColor: color + '20',
                         tension: 0.4
                     }
-                };
-            });
+                    };
+                });
 
             // Update sales chart
             this.charts.salesChart.data = {

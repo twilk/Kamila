@@ -1,10 +1,200 @@
+# Sprawdzenie i naprawa importów
+
+TODO:
+1. [🔄] Sprawdzenie importów w popup.js
+2. [✅] Sprawdzenie importów w services/core/*
+3. [✅] Sprawdzenie importów w services/index.js
+4. [✅] Sprawdzenie importów w services/*.js (managery)
+5. [ ] Sprawdzenie importów w tests/*
+
+DETAILS:
+
+1. Sprawdzenie importów w popup.js
+   - ✅ Przeanalizować wszystkie importy
+   - ✅ Sprawdzić czy pliki istnieją
+   - ✅ Sprawdzić czy ścieżki są poprawne
+   - ✅ Sprawdzić czy nie ma duplikatów
+   - ⚠️ Znalezione problemy:
+     1. Duplikaty importów managerów (z index.js i bezpośrednio)
+     2. ErrorHandler importowany bezpośrednio z core zamiast przez index.js
+   - 🔄 Do naprawy:
+     1. Usunąć duplikaty importów
+     2. Poprawić import ErrorHandler
+   - ⏳ Sprawdzić czy wszystkie importowane elementy są używane
+
+2. Sprawdzenie importów w services/core/*
+   - ✅ Sprawdzić BaseManager.js
+     - Poprawne importy: ErrorTypes.js, IInitializable.js, InitLogger.js, MetricsManager.js
+   - ✅ Sprawdzić InitLogger.js
+     - Brak importów - OK
+   - ✅ Sprawdzić MetricsManager.js
+     - Poprawny import: BaseManager.js
+   - ✅ Sprawdzić ErrorHandler.js
+     - Poprawne importy: BaseManager.js, ErrorTypes.js
+   - ✅ Sprawdzić ErrorTypes.js
+     - Brak importów - OK
+   - ✅ Sprawdzić UIManager.js
+     - Poprawne importy: ErrorTypes.js, BaseManager.js
+   - ✅ Wszystkie zależności są poprawne
+   - ✅ Brak problemów z importami w core
+
+3. Sprawdzenie importów w services/index.js
+   - ✅ Sprawdzić eksporty core services
+     - Wszystkie core moduły są eksportowane
+   - ✅ Sprawdzić eksporty feature managers
+     - Wszystkie managery są eksportowane
+   - ✅ Sprawdzić eksporty services
+     - Wszystkie serwisy są eksportowane
+   - ✅ Sprawdzić ścieżki
+     - Wszystkie ścieżki są poprawne
+   - ✅ Brak brakujących eksportów
+   - ✅ Brak nieużywanych eksportów
+   - ✅ Brak problemów z importami w index.js
+
+4. Sprawdzenie importów w services/*.js (managery)
+   - ✅ Sprawdzić CacheManager.js
+     - Poprawne importy: BaseManager.js, ErrorTypes.js
+   - ✅ Sprawdzić DataManager.js
+     - Poprawne importy: BaseManager.js, ErrorTypes.js, API_BASE_URL
+   - ✅ Sprawdzić MenuManager.js
+     - Poprawne importy: UIManager.js, i18n.js
+   - ✅ Sprawdzić LoadingManager.js
+     - Poprawne importy: BaseManager.js, ErrorTypes.js
+   - ✅ Sprawdzić ProgressManager.js
+     - Poprawne importy: BaseManager.js, ErrorTypes.js
+   - ✅ Sprawdzić UpdateManager.js
+     - Poprawne importy: BaseManager.js, ErrorTypes.js, i18n.js
+   - ✅ Sprawdzić InterfaceManager.js
+     - Poprawne importy: UIManager.js, ErrorTypes.js, i18n.js, themeService
+   - ✅ Sprawdzić StatusManager.js
+     - Poprawne importy: BaseManager.js, ErrorTypes.js
+   - ⚠️ Znalezione problemy:
+     1. DataManager używa własnej implementacji cache zamiast CacheManager
+     2. MenuManager powinien importować i18n przez index.js
+     3. UpdateManager powinien importować i18n przez index.js
+     4. InterfaceManager powinien importować i18n i themeService przez index.js
+   - 🔄 Do naprawy:
+     1. Zintegrować CacheManager z DataManager
+     2. Poprawić importy i18n i themeService we wszystkich managerach
+
+5. Sprawdzenie importów w tests/*
+   - Sprawdzić czy ścieżki do testowanych modułów są poprawne
+   - Sprawdzić czy wszystkie mocki są poprawnie zaimportowane
+   - Sprawdzić czy importy testów integracyjnych są poprawne
+
+# Plan rozwoju i optymalizacji
+
+## 1. Systemy w trakcie implementacji
+
+### 1.1. System obsługi błędów [PRIORYTET WYSOKI]
+- [ ] Utworzenie ErrorHandler
+  - [ ] Centralne zarządzanie błędami
+  - [ ] Integracja z MetricsManager
+  - [ ] System raportowania błędów
+  - [ ] Strategie recovery
+
+### 1.2. System komunikacji [PRIORYTET WYSOKI]
+- [ ] Implementacja MessageHandler
+  - [ ] Obsługa chrome.runtime.onMessage
+  - [ ] Routing wiadomości
+  - [ ] Kolejkowanie i retry
+  - [ ] Monitoring wydajności
+
+### 1.3. Zarządzanie interwałami [PRIORYTET ŚREDNI]
+- [ ] Utworzenie IntervalManager
+  - [ ] Centralne zarządzanie timerami
+  - [ ] Optymalizacja zużycia zasobów
+  - [ ] Synchronizacja z alarmami Chrome
+
+## 2. Integracja systemów
+
+### 2.1. Integracja CacheManager [PRIORYTET WYSOKI]
+- [ ] Integracja z DataManager
+  - [ ] Strategie cachowania
+  - [ ] Invalidacja cache
+  - [ ] Monitoring wydajności
+- [ ] Integracja z UIManager
+  - [ ] Cache komponentów UI
+  - [ ] Optymalizacja renderowania
+- [ ] Integracja z MessageHandler
+  - [ ] Cache wiadomości
+  - [ ] Synchronizacja stanu
+
+### 2.2. Integracja ErrorHandler [PRIORYTET WYSOKI]
+- [ ] Integracja z DataManager
+- [ ] Integracja z UIManager
+- [ ] Integracja z MessageHandler
+- [ ] Integracja z CacheManager
+
+## 3. Testy i monitoring
+
+### 3.1. Testy integracyjne [PRIORYTET WYSOKI]
+- [ ] Setup środowiska testowego
+- [ ] Testy komunikacji między managerami
+- [ ] Testy przepływu danych
+- [ ] Testy obsługi błędów
+
+### 3.2. Monitoring wydajności [PRIORYTET ŚREDNI]
+- [ ] Implementacja metryk
+  - [ ] Czas odpowiedzi
+  - [ ] Zużycie pamięci
+  - [ ] Cache hit ratio
+  - [ ] Liczba błędów
+- [ ] Dashboard monitoringu
+- [ ] Alerty wydajnościowe
+
+## 4. Optymalizacja
+
+### 4.1. Optymalizacja pamięci [PRIORYTET WYSOKI]
+- [ ] Analiza wykorzystania pamięci
+- [ ] Implementacja strategii czyszczenia
+- [ ] Monitoring zużycia
+- [ ] Optymalizacja cache
+
+### 4.2. Optymalizacja wydajności [PRIORYTET ŚREDNI]
+- [ ] Profilowanie operacji
+- [ ] Optymalizacja wąskich gardeł
+- [ ] Redukcja liczby operacji DOM
+- [ ] Optymalizacja komunikacji
+
+## 5. Dokumentacja
+
+### 5.1. Dokumentacja techniczna [PRIORYTET NISKI]
+- [ ] Architektura systemu
+- [ ] Przepływy danych
+- [ ] API managerów
+- [ ] Strategie obsługi błędów
+
+### 5.2. Dokumentacja użytkowa [PRIORYTET NISKI]
+- [ ] Instrukcje konfiguracji
+- [ ] Przewodnik rozwiązywania problemów
+- [ ] FAQ
+
+## Kolejność implementacji:
+
+1. ErrorHandler + testy
+2. MessageHandler + testy
+3. Integracja CacheManager
+4. Integracja ErrorHandler
+5. IntervalManager
+6. Monitoring wydajności
+7. Optymalizacja pamięci
+8. Dokumentacja
+
+## Metryki sukcesu:
+- [ ] Zero nieobsłużonych błędów
+- [ ] Cache hit ratio > 85%
+- [ ] Czas odpowiedzi < 100ms
+- [ ] Zużycie pamięci < 50MB
+- [ ] Pokrycie testami > 80%
+
 # Plan optymalizacji inicjalizacji
 
 ## 1. Analiza obecnego stanu
 ### 1.1. Zidentyfikowane problemy:
 - ✅ Nieoptymalna kolejność inicjalizacji
 - ✅ Zduplikowane funkcje inicjalizujące
-- Nieużywane inicjalizacje
+- ✅ Nieużywane inicjalizacje
 - ✅ Brak spójnego systemu inicjalizacji
 - ✅ Nieprawidłowe zależności między komponentami
 
@@ -24,11 +214,11 @@
 - initializeLeadStatusLinks()
 - initializeStatusElements()
 
-❌ Do naprawy:
-- initializeMenu() - brak wywołania
-- initializeVolumeControl() - do usunięcia
-- initializeTestProgress() - brak integracji
-- initializeUserSelector() - duplikacja
+✅ Naprawione:
+- initializeMenu() - zintegrowane z MenuManager
+- initializeVolumeControl() - usunięte
+- initializeTestProgress() - zintegrowane z ProgressManager
+- initializeUserSelector() - zrefaktoryzowane
 
 ## 2. Plan refaktoryzacji
 
@@ -54,7 +244,7 @@ class BaseManager implements IInitializable {
 ```
 
 ### 2.2. Kolejność inicjalizacji:
-✅ Zdefiniowana:
+✅ Zdefiniowana i zaimplementowana:
 1. Core Services:
    - i18n
    - Storage
@@ -84,34 +274,34 @@ class BaseManager implements IInitializable {
 ### 3.1. Przygotowanie [DZIEŃ 1-2]
 - ✅ Utworzenie interfejsów i klas bazowych
 - ✅ Implementacja systemu zależności
-- [ ] Dodanie logowania inicjalizacji
-- [ ] Przygotowanie testów
+- ✅ Dodanie logowania inicjalizacji
+- ✅ Przygotowanie testów
 
 ### 3.2. Refaktoryzacja [DZIEŃ 3-5]
-- [ ] Core Services
+- ✅ Core Services
   - ✅ Implementacja IInitializable
   - ✅ Dodanie dispose
-  - [ ] Obsługa błędów
-  - [ ] Logowanie stanu
+  - ✅ Obsługa błędów
+  - ✅ Logowanie stanu
 
-- [ ] Base Managers
+- ✅ Base Managers
   - ✅ Migracja do nowej struktury
   - ✅ Implementacja zależności
-  - [ ] Dodanie walidacji
-  - [ ] Testy jednostkowe
+  - ✅ Dodanie walidacji
+  - ✅ Testy jednostkowe
 
-- [ ] UI Managers
-  - [ ] Uporządkowanie kolejności
-  - [ ] Usunięcie duplikatów
-  - [ ] Optymalizacja wydajności
+- ✅ UI Managers
+  - ✅ Uporządkowanie kolejności
+  - ✅ Usunięcie duplikatów
+  - ✅ Optymalizacja wydajności
   - [ ] Testy integracyjne
 
 ### 3.3. Optymalizacja [DZIEŃ 6-7]
-- [ ] System metryk
-  - [ ] Czas inicjalizacji
-  - [ ] Zużycie pamięci
-  - [ ] Kolejność operacji
-  - [ ] Błędy inicjalizacji
+- ✅ System metryk
+  - ✅ Czas inicjalizacji
+  - ✅ Zużycie pamięci
+  - ✅ Kolejność operacji
+  - ✅ Błędy inicjalizacji
 
 ### 3.4. Integracja [DZIEŃ 8-10]
 - [ ] Migracja istniejącego kodu
@@ -119,52 +309,47 @@ class BaseManager implements IInitializable {
 - [ ] Dokumentacja
 - [ ] Code review
 
+## 4. Następne kroki:
+1. Przeprowadzenie testów integracyjnych
+2. Migracja pozostałego kodu
+3. Przygotowanie dokumentacji
+4. Code review
+5. Monitoring wydajności
+6. Optymalizacja pamięci
+
 # Plan optymalizacji systemu cache'owania
 
 ## 1. Analiza obecnego stanu
 ### 1.1. Zidentyfikowane systemy cache:
-- CacheManager (services/cacheManager.js)
-- Cache (services/cache.js)
-- Storage (services/storage.js)
-- Lokalne cache przeglądarki
-- Cache API responses
+- ✅ CacheManager (services/cacheManager.js)
+- ✅ Cache (services/cache.js)
+- ✅ Storage (services/storage.js)
+- ✅ Lokalne cache przeglądarki
+- ✅ Cache API responses
 
 ### 1.2. Problemy do rozwiązania:
-- Duplikacja funkcjonalności
-- Brak hierarchii cache'owania
-- Nieoptymalny czas życia danych
-- Brak strategii invalidacji
-- Nieefektywne wykorzystanie pamięci
+- ✅ Duplikacja funkcjonalności
+- ✅ Brak hierarchii cache'owania
+- ✅ Nieoptymalny czas życia danych
+- ✅ Brak strategii invalidacji
+- ✅ Nieefektywne wykorzystanie pamięci
 
 ## 2. Plan refaktoryzacji
 
 ### 2.1. Nowa struktura cache'owania:
-```typescript
-interface ICacheProvider {
-    get<T>(key: string): Promise<T | null>;
-    set<T>(key: string, value: T, options?: CacheOptions): Promise<void>;
-    delete(key: string): Promise<void>;
-    clear(pattern?: string): Promise<void>;
-    has(key: string): Promise<boolean>;
-}
-
-interface CacheOptions {
-    ttl?: number;          // Czas życia w ms
-    priority?: number;     // Priorytet (1-5)
-    persistent?: boolean;  // Czy ma przetrwać restart
-    compression?: boolean; // Czy kompresować dane
-}
-
-class CacheManager implements ICacheProvider {
-    private memoryCache: Map<string, CacheEntry>;
-    private storageCache: Storage;
-    private browserCache: Cache;
-    
-    // Implementacja metod...
+✅ Zaimplementowane:
+```javascript
+class CacheManager extends BaseManager {
+    // Hierarchical caching system
+    // Memory and storage cache layers
+    // Priority-based caching
+    // Compression for large data
+    // Automatic cleanup
 }
 ```
 
 ### 2.2. Hierarchia cache'owania:
+✅ Zaimplementowane:
 1. Memory Cache (najszybszy, krótki TTL)
    - Dane często używane
    - Małe objętości danych
@@ -183,42 +368,42 @@ class CacheManager implements ICacheProvider {
 ## 3. Zadania do wykonania [w kolejności]:
 
 ### 3.1. Przygotowanie [TYDZIEŃ 1]
-- [ ] Utworzenie nowego CacheManager
-- [ ] Implementacja podstawowych interfejsów
-- [ ] Dodanie systemu logowania operacji cache
-- [ ] Konfiguracja TTL dla różnych typów danych
+- ✅ Utworzenie nowego CacheManager
+- ✅ Implementacja podstawowych interfejsów
+- ✅ Dodanie systemu logowania operacji cache
+- ✅ Konfiguracja TTL dla różnych typów danych
 
 ### 3.2. Implementacja [TYDZIEŃ 2]
-- [ ] Memory Cache
-  - [ ] Implementacja Map z TTL
-  - [ ] System priorytetów
-  - [ ] Automatyczne czyszczenie
-  - [ ] Kompresja danych
+- ✅ Memory Cache
+  - ✅ Implementacja Map z TTL
+  - ✅ System priorytetów
+  - ✅ Automatyczne czyszczenie
+  - ✅ Kompresja danych
 
-- [ ] Storage Cache
-  - [ ] Integracja z chrome.storage
-  - [ ] Obsługa limitów pamięci
-  - [ ] Mechanizm synchronizacji
-  - [ ] Backup krytycznych danych
+- ✅ Storage Cache
+  - ✅ Integracja z chrome.storage
+  - ✅ Obsługa limitów pamięci
+  - ✅ Mechanizm synchronizacji
+  - ✅ Backup krytycznych danych
 
-- [ ] Browser Cache
-  - [ ] Integracja z Cache API
-  - [ ] Strategie cache'owania
-  - [ ] Obsługa wersjonowania
-  - [ ] Garbage collection
+- ✅ Browser Cache
+  - ✅ Integracja z Cache API
+  - ✅ Strategie cache'owania
+  - ✅ Obsługa wersjonowania
+  - ✅ Garbage collection
 
 ### 3.3. Optymalizacja [TYDZIEŃ 3]
-- [ ] System metryk i monitoringu
-  - [ ] Czas dostępu
-  - [ ] Współczynnik trafień
-  - [ ] Wykorzystanie pamięci
-  - [ ] Częstotliwość czyszczenia
+- ✅ System metryk i monitoringu
+  - ✅ Czas dostępu
+  - ✅ Współczynnik trafień
+  - ✅ Wykorzystanie pamięci
+  - ✅ Częstotliwość czyszczenia
 
-- [ ] Strategie invalidacji
-  - [ ] Time-based
-  - [ ] Version-based
-  - [ ] Event-based
-  - [ ] Manual
+- ✅ Strategie invalidacji
+  - ✅ Time-based
+  - ✅ Version-based
+  - ✅ Event-based
+  - ✅ Manual
 
 ### 3.4. Integracja [TYDZIEŃ 4]
 - [ ] Migracja istniejących systemów
@@ -226,31 +411,20 @@ class CacheManager implements ICacheProvider {
 - [ ] Dokumentacja
 - [ ] Code review
 
-## 4. Priorytety cache'owania:
-
-### 4.1. Wysoki priorytet (Memory Cache)
-- Aktywny sklep
-- Status użytkownika
-- Liczniki
-- Bieżące filtry
-
-### 4.2. Średni priorytet (Storage Cache)
-- Ustawienia użytkownika
-- Konfiguracja aplikacji
-- Historia operacji
-- Ostatnie wyniki
-
-### 4.3. Niski priorytet (Browser Cache)
-- Historyczne dane
-- Rzadko używane zasoby
-- Backup danych
-- Logi debugowania
+## 4. Następne kroki:
+1. [ ] Integracja z DataManager
+2. [ ] Integracja z UIManager
+3. [ ] Integracja z MenuManager
+4. [ ] Integracja z LoadingManager
+5. [ ] Testy end-to-end
+6. [ ] Monitoring wydajności
+7. [ ] Optymalizacja pamięci
 
 ## 5. Metryki sukcesu:
-- Redukcja czasu ładowania o 50%
-- Zmniejszenie użycia pamięci o 30%
-- Zwiększenie hit ratio do 85%
-- Zmniejszenie liczby zapytań API o 40%
+- [ ] Redukcja czasu ładowania o 50%
+- [ ] Zmniejszenie użycia pamięci o 30%
+- [ ] Zwiększenie hit ratio do 85%
+- [ ] Zmniejszenie liczby zapytań API o 40%
 
 # TODO: Refaktoryzacja serwisów
 

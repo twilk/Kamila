@@ -22,7 +22,7 @@ export class InterfaceManager extends UIManager {
             await this.initializeLanguage();
             await this.initializeTooltips();
             await this.initializeIntervalSettings();
-
+            
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
@@ -71,7 +71,7 @@ export class InterfaceManager extends UIManager {
             });
 
             // Update tab panes
-            const tabPanes = document.querySelectorAll('.tab-pane');
+        const tabPanes = document.querySelectorAll('.tab-pane');
             tabPanes.forEach(pane => {
                 pane.classList.remove('show', 'active');
             });
@@ -232,14 +232,14 @@ export class InterfaceManager extends UIManager {
 
     async initializeLanguage() {
         try {
-            const languageButtons = document.querySelectorAll('[data-lang]');
-            const currentLang = localStorage.getItem('language') || 'polish';
-
-            languageButtons.forEach(btn => {
+        const languageButtons = document.querySelectorAll('[data-lang]');
+        const currentLang = localStorage.getItem('language') || 'polish';
+        
+        languageButtons.forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.lang === currentLang);
-
-                btn.addEventListener('click', async () => {
-                    const lang = btn.dataset.lang;
+            
+            btn.addEventListener('click', async () => {
+                const lang = btn.dataset.lang;
                     await this.updateLanguage(lang);
                 });
             });
@@ -258,8 +258,8 @@ export class InterfaceManager extends UIManager {
             });
 
             // Save selected language
-            localStorage.setItem('language', lang);
-
+                localStorage.setItem('language', lang);
+                
             // Load new translations
             await i18n.init();
 
@@ -455,9 +455,9 @@ export class InterfaceManager extends UIManager {
                     tabButton.addEventListener('click', (e) => {
                         e.preventDefault();
                         this.switchTab(`#${tabId}`);
-                    });
-                }
-            });
+                });
+            }
+        });
 
             // Switch to last active tab or first available
             if (lastActiveTab && document.querySelector(lastActiveTab)) {
@@ -525,10 +525,10 @@ export class InterfaceManager extends UIManager {
             switch (action) {
                 case 'refresh':
                     await this.emit('refreshRequested');
-                    break;
+                break;
                 case 'clear':
                     await this.emit('clearRequested');
-                    break;
+                break;
                 default:
                     throw new Error(`Unknown status action: ${action}`);
             }
