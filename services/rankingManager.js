@@ -1,7 +1,10 @@
 import Chart from '../lib/chart.js';
+import { BaseManager } from './core/BaseManager.js';
+import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
 
-export class RankingManager {
+export class RankingManager extends BaseManager {
     constructor() {
+        super();
         this.data = [];
         this.historicalData = {};
         this.filteredData = [];
@@ -21,6 +24,7 @@ export class RankingManager {
 
     async initialize() {
         try {
+            await super.initialize();
             this.setupEventListeners();
             await this.fetchAllData();
             
@@ -28,7 +32,6 @@ export class RankingManager {
             const rankingTab = document.querySelector('button[data-target="#ranking"]');
             if (rankingTab) {
                 rankingTab.addEventListener('shown.bs.tab', () => {
-                    console.log('Ranking tab shown, initializing charts...');
                     this.initializeCharts();
                     this.updateCharts();
                 });
@@ -37,42 +40,79 @@ export class RankingManager {
             // Jeśli zakładka ranking jest aktywna, zainicjuj wykresy od razu
             const activeTab = document.querySelector('.nav-link.active');
             if (activeTab && activeTab.getAttribute('data-target') === '#ranking') {
-                console.log('Ranking tab is active, initializing charts...');
                 setTimeout(() => {
                     this.initializeCharts();
                     this.updateCharts();
-                }, 100); // Małe opóźnienie, aby upewnić się, że DOM jest gotowy
+                }, 100);
             }
+
+            return true;
         } catch (error) {
-            console.error('Error during initialization:', error);
+            this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
+                method: 'initialize'
+            });
+            return false;
         }
     }
 
     setupEventListeners() {
-        // Sorting
-        document.querySelectorAll('#ranking-data th[data-sort]').forEach(th => {
-            th.addEventListener('click', () => this.handleSort(th.dataset.sort));
-        });
+        try {
+            // Sorting
+            document.querySelectorAll('#ranking-data th[data-sort]').forEach(th => {
+                th.addEventListener('click', () => this.handleSort(th.dataset.sort));
+            });
 
-        // Filtering
-        document.getElementById('name-filter').addEventListener('input', (e) => {
-            this.filters.name = e.target.value.toLowerCase();
-            this.applyFilters();
-        });
+            // Filtering
+            document.getElementById('name-filter')?.addEventListener('input', (e) => {
+                this.filters.name = e.target.value.toLowerCase();
+                this.applyFilters();
+            });
 
-        document.getElementById('position-filter').addEventListener('change', (e) => {
-            this.filters.position = e.target.value;
-            this.applyFilters();
-        });
+            document.getElementById('position-filter')?.addEventListener('change', (e) => {
+                this.filters.position = e.target.value;
+                this.applyFilters();
+            });
 
-        document.getElementById('trend-filter').addEventListener('change', (e) => {
-            this.filters.trend = e.target.value;
-            this.applyFilters();
-        });
+            document.getElementById('trend-filter')?.addEventListener('change', (e) => {
+                this.filters.trend = e.target.value;
+                this.applyFilters();
+            });
 
-        document.getElementById('reset-filters').addEventListener('click', () => {
-            this.resetFilters();
-        });
+            document.getElementById('reset-filters')?.addEventListener('click', () => {
+                this.resetFilters();
+            });
+
+            // Refresh button
+            document.getElementById('refresh-ranking')?.addEventListener('click', async () => {
+                try {
+                    const button = document.getElementById('refresh-ranking');
+                    if (button) {
+                        button.disabled = true;
+                        button.classList.add('loading');
+                    }
+                    
+                    await this.fetchAllData();
+                    
+                    if (button) {
+                        button.disabled = false;
+                        button.classList.remove('loading');
+                    }
+                } catch (error) {
+                    this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
+                        method: 'refreshRanking'
+                    });
+                    const button = document.getElementById('refresh-ranking');
+                    if (button) {
+                        button.disabled = false;
+                        button.classList.remove('loading');
+                    }
+                }
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                method: 'setupEventListeners'
+            });
+        }
     }
 
     async fetchAllData() {
@@ -94,7 +134,9 @@ export class RankingManager {
             this.updateSummary();
             this.updateCharts();
         } catch (error) {
-            console.error('Error fetching all data:', error);
+            this.handleError(error, ErrorType.DATA, ErrorSeverity.ERROR, {
+                method: 'fetchAllData'
+            });
             throw error;
         }
     }
@@ -211,7 +253,7 @@ export class RankingManager {
                     leads: this.parseNumber(row.c[columnMap.leads]?.v),
                     sales: this.parseNumber(row.c[columnMap.sales]?.v),
                     units: this.parseNumber(row.c[columnMap.units]?.v),
-                    margin: this.parseNumber(row.c[columnMap.margin]?.v) / 100, // Konwersja na wartość dziesiętną
+                    margin: this.parseNumber(row.c[columnMap.margin]?.v) / 100,
                     skuNew: this.parseNumber(row.c[columnMap.skuNew]?.v),
                     skuFix: this.parseNumber(row.c[columnMap.skuFix]?.v),
                     skuDub: this.parseNumber(row.c[columnMap.skuDub]?.v),
@@ -225,432 +267,396 @@ export class RankingManager {
                 }))
                 .filter(item => item.position && item.name);
         } catch (error) {
-            console.error(`Error fetching data for ${month}:`, error);
+            this.handleError(error, ErrorType.NETWORK, ErrorSeverity.ERROR, {
+                method: 'fetchMonthData',
+                month
+            });
             return [];
         }
     }
 
-    calculateHistoricalTrends() {
-        // Dla każdej osoby oblicz trendy
-        this.data = this.data.map(person => {
-            const trends = this.availableMonths.map(month => {
-                const monthData = this.historicalData[month];
-                const personData = monthData.find(p => p.name === person.name);
-                return personData ? {
-                    sales: personData.sales,
-                    ranking: personData.totalRanking,
-                    position: personData.position
-                } : null;
-            }).filter(t => t !== null);
-
-            // Oblicz trendy
-            const salesTrend = this.calculateTrend(trends.map(t => t.sales));
-            const rankingTrend = this.calculateTrend(trends.map(t => t.ranking));
-            const positionTrend = this.calculateTrend(trends.map(t => t.position), true); // true dla pozycji (niższa = lepsza)
-
-            return {
-                ...person,
-                salesTrend,
-                rankingTrend,
-                positionTrend,
-                historicalTrends: trends
-            };
-        });
-    }
-
-    calculateTrend(values, inversed = false) {
-        if (values.length < 2) return 'stable';
-        
-        const last = values[0];
-        const prev = values[1];
-        const change = last - prev;
-        const percentChange = (change / Math.abs(prev)) * 100;
-
-        if (Math.abs(percentChange) < 5) return 'stable';
-        if (inversed) {
-            return change < 0 ? 'up' : 'down';
-        }
-        return change > 0 ? 'up' : 'down';
-    }
-
     parseNumber(value) {
-        if (value === null || value === undefined || value === '') return 0;
-        if (typeof value === 'number') return value;
-        if (typeof value === 'string') {
-            // Usuń spacje i zamień przecinki na kropki
-            const cleanValue = value.replace(/\s/g, '').replace(',', '.');
-            return parseFloat(cleanValue) || 0;
+        if (value === null || value === undefined || value === '') {
+            return 0;
         }
-        return 0;
+        const parsed = parseFloat(value);
+        return isNaN(parsed) ? 0 : parsed;
+    }
+
+    calculateHistoricalTrends() {
+        try {
+            // Dla każdej osoby oblicz trendy
+            this.data = this.data.map(person => {
+                const trends = this.availableMonths.map(month => {
+                    const monthData = this.historicalData[month];
+                    const personData = monthData.find(p => p.name === person.name);
+                    return personData ? {
+                        sales: personData.sales,
+                        ranking: personData.totalRanking,
+                        position: personData.position
+                    } : null;
+                }).filter(t => t !== null);
+
+                // Oblicz trendy
+                const salesTrend = this.calculateTrend(trends.map(t => t.sales));
+                const rankingTrend = this.calculateTrend(trends.map(t => t.ranking));
+                const positionTrend = this.calculateTrend(trends.map(t => t.position), true);
+
+                return {
+                    ...person,
+                    salesTrend,
+                    rankingTrend,
+                    positionTrend
+                };
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.DATA, ErrorSeverity.WARNING, {
+                method: 'calculateHistoricalTrends'
+            });
+        }
+    }
+
+    calculateTrend(values, reverse = false) {
+        try {
+            if (!values || values.length < 2) return 0;
+
+            const n = values.length;
+            let sumX = 0;
+            let sumY = 0;
+            let sumXY = 0;
+            let sumXX = 0;
+
+            for (let i = 0; i < n; i++) {
+                const x = i;
+                const y = values[i];
+                sumX += x;
+                sumY += y;
+                sumXY += x * y;
+                sumXX += x * x;
+            }
+
+            const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+            return reverse ? -slope : slope;
+        } catch (error) {
+            this.handleError(error, ErrorType.DATA, ErrorSeverity.WARNING, {
+                method: 'calculateTrend',
+                values,
+                reverse
+            });
+            return 0;
+        }
     }
 
     handleSort(column) {
-        if (this.sortConfig.column === column) {
-            this.sortConfig.direction = this.sortConfig.direction === 'asc' ? 'desc' : 'asc';
-        } else {
-            this.sortConfig.column = column;
-            this.sortConfig.direction = 'asc';
-        }
+        try {
+            if (this.sortConfig.column === column) {
+                this.sortConfig.direction = this.sortConfig.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.sortConfig.column = column;
+                this.sortConfig.direction = 'asc';
+            }
 
-        this.updateTable();
+            this.updateTable();
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                method: 'handleSort',
+                column
+            });
+        }
     }
 
     applyFilters() {
-        this.filteredData = this.data.filter(item => {
-            const nameMatch = item.name.toLowerCase().includes(this.filters.name);
-            const positionMatch = this.matchPosition(item.position, this.filters.position);
-            const trendMatch = !this.filters.trend || item.trend === this.filters.trend;
-            
-            return nameMatch && positionMatch && trendMatch;
-        });
+        try {
+            this.filteredData = this.data.filter(item => {
+                const nameMatch = item.name.toLowerCase().includes(this.filters.name);
+                const positionMatch = !this.filters.position || item.position === this.filters.position;
+                
+                let trendMatch = true;
+                if (this.filters.trend) {
+                    const trendValue = item[`${this.filters.trend}Trend`];
+                    trendMatch = trendValue > 0;
+                }
 
-        this.updateTable();
-        this.updateSummary();
-        this.updateCharts();
-    }
+                return nameMatch && positionMatch && trendMatch;
+            });
 
-    matchPosition(position, filter) {
-        if (!filter) return true;
-        position = parseInt(position);
-        
-        switch (filter) {
-            case 'top10': return position <= 10;
-            case '11-20': return position > 10 && position <= 20;
-            case '21-50': return position > 20 && position <= 50;
-            case '50+': return position > 50;
-            default: return true;
+            this.updateTable();
+            this.updateCharts();
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                method: 'applyFilters',
+                filters: this.filters
+            });
         }
     }
 
     resetFilters() {
-        this.filters = {
-            name: '',
-            position: '',
-            trend: ''
-        };
+        try {
+            this.filters = {
+                name: '',
+                position: '',
+                trend: ''
+            };
 
-        // Reset form inputs
-        document.getElementById('name-filter').value = '';
-        document.getElementById('position-filter').value = '';
-        document.getElementById('trend-filter').value = '';
+            // Reset input values
+            document.getElementById('name-filter').value = '';
+            document.getElementById('position-filter').value = '';
+            document.getElementById('trend-filter').value = '';
 
-        this.filteredData = [...this.data];
-        this.updateTable();
-        this.updateSummary();
-        this.updateCharts();
+            this.filteredData = [...this.data];
+            this.updateTable();
+            this.updateCharts();
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                method: 'resetFilters'
+            });
+        }
     }
 
     updateTable() {
-        const tbody = document.querySelector('#ranking-data tbody');
-        if (!tbody) return;
+        try {
+            const tbody = document.querySelector('#ranking-data tbody');
+            if (!tbody) return;
 
-        // Sort data
-        const sortedData = [...this.filteredData].sort((a, b) => {
-            const aVal = a[this.sortConfig.column];
-            const bVal = b[this.sortConfig.column];
-            const modifier = this.sortConfig.direction === 'asc' ? 1 : -1;
+            // Sort data
+            const sortedData = [...this.filteredData].sort((a, b) => {
+                const aValue = a[this.sortConfig.column];
+                const bValue = b[this.sortConfig.column];
+                const direction = this.sortConfig.direction === 'asc' ? 1 : -1;
+                
+                if (typeof aValue === 'string') {
+                    return direction * aValue.localeCompare(bValue);
+                }
+                return direction * (aValue - bValue);
+            });
 
-            if (typeof aVal === 'number') {
-                return (aVal - bVal) * modifier;
-            }
-            return aVal.toString().localeCompare(bVal.toString()) * modifier;
-        });
-
-        // Update sort indicators
-        document.querySelectorAll('#ranking-data th').forEach(th => {
-            th.classList.remove('sort-asc', 'sort-desc');
-            if (th.dataset.sort === this.sortConfig.column) {
-                th.classList.add(`sort-${this.sortConfig.direction}`);
-            }
-        });
-
-        // Render table
-        tbody.innerHTML = sortedData.map(item => `
-            <tr>
-                <td>${item.position}</td>
-                <td>${item.name}</td>
-                <td>${item.totalRanking.toLocaleString(undefined, {maximumFractionDigits: 2})} pkt</td>
-                <td>${item.leads}</td>
-                <td>${item.sales.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} zł</td>
-                <td>${item.units.toFixed(2)}</td>
-                <td>${(item.margin * 100).toFixed(2)}%</td>
-                <td>
-                    <div class="sku-stats">
-                        ${item.skuNew > 0 ? `<span class="sku-new" title="Nowe SKU">${item.skuNew}</span>` : ''}
-                        ${item.skuFix > 0 ? `<span class="sku-fix" title="Poprawki SKU">${item.skuFix}</span>` : ''}
-                        ${item.skuDub > 0 ? `<span class="sku-dub" title="Duplikaty SKU">${item.skuDub}</span>` : ''}
-                        ${item.skuKat > 0 ? `<span class="sku-kat" title="Katalogowanie SKU">${item.skuKat}</span>` : ''}
-                        ${item.skuArt > 0 ? `<span class="sku-art" title="Artykuły SKU">${item.skuArt}</span>` : ''}
-                    </div>
-                </td>
-                <td>${item.training || '-'}</td>
-                <td>${item.employeeRating || '-'}</td>
-                <td>${item.storeRating || '-'}</td>
-                <td>
-                    <div class="trend-stats">
-                        <span class="trend trend-${item.salesTrend}" title="Trend sprzedaży">
-                            ${this.getTrendIcon(item.salesTrend)}
+            // Update table
+            tbody.innerHTML = sortedData.map(item => `
+                <tr>
+                    <td>${item.position}</td>
+                    <td>${item.name}</td>
+                    <td>${item.totalRanking.toFixed(2)}</td>
+                    <td>${item.leads}</td>
+                    <td>${item.sales}</td>
+                    <td>${item.units}</td>
+                    <td>${(item.margin * 100).toFixed(2)}%</td>
+                    <td>${item.skuNew}</td>
+                    <td>${item.skuFix}</td>
+                    <td>${item.skuDub}</td>
+                    <td>${item.skuKat}</td>
+                    <td>${item.skuArt}</td>
+                    <td>${item.training}</td>
+                    <td>${item.employeeRating}</td>
+                    <td>${item.storeRating}</td>
+                    <td>${item.groupOrders}</td>
+                    <td>${item.delay}</td>
+                    <td>
+                        <span class="trend ${item.salesTrend > 0 ? 'up' : 'down'}">
+                            ${item.salesTrend.toFixed(2)}
                         </span>
-                        <span class="trend trend-${item.rankingTrend}" title="Trend rankingu">
-                            ${this.getTrendIcon(item.rankingTrend)}
+                    </td>
+                    <td>
+                        <span class="trend ${item.rankingTrend > 0 ? 'up' : 'down'}">
+                            ${item.rankingTrend.toFixed(2)}
                         </span>
-                        <span class="trend trend-${item.positionTrend}" title="Trend pozycji">
-                            ${this.getTrendIcon(item.positionTrend)}
+                    </td>
+                    <td>
+                        <span class="trend ${item.positionTrend > 0 ? 'up' : 'down'}">
+                            ${item.positionTrend.toFixed(2)}
                         </span>
-                    </div>
-                </td>
-            </tr>
-        `).join('');
-    }
+                    </td>
+                </tr>
+            `).join('');
 
-    getTrendIcon(trend) {
-        switch (trend) {
-            case 'up': return '↑';
-            case 'down': return '↓';
-            default: return '→';
+            // Update sort indicators
+            document.querySelectorAll('#ranking-data th[data-sort]').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+                if (th.dataset.sort === this.sortConfig.column) {
+                    th.classList.add(`sort-${this.sortConfig.direction}`);
+                }
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
+                method: 'updateTable'
+            });
         }
     }
 
     updateSummary() {
-        const totalSales = this.filteredData.reduce((sum, item) => sum + item.sales, 0);
-        const avgMargin = this.filteredData.reduce((sum, item) => sum + item.margin, 0) / this.filteredData.length;
-        const totalLeads = this.filteredData.reduce((sum, item) => sum + item.leads, 0);
-        const avgUnits = this.filteredData.reduce((sum, item) => sum + item.units, 0) / this.filteredData.length;
-        
-        const topPerformer = this.filteredData.reduce((best, item) => 
-            item.totalRanking > (best?.totalRanking || 0) ? item : best, null);
-            
-        const topSeller = this.filteredData.reduce((best, item) => 
-            item.sales > (best?.sales || 0) ? item : best, null);
+        try {
+            const summary = {
+                totalLeads: 0,
+                totalSales: 0,
+                totalUnits: 0,
+                averageMargin: 0,
+                totalSkuNew: 0,
+                totalSkuFix: 0,
+                totalSkuDub: 0,
+                totalSkuKat: 0,
+                totalSkuArt: 0,
+                totalGroupOrders: 0,
+                totalDelay: 0
+            };
 
-        const skuStats = this.filteredData.reduce((stats, item) => {
-            stats.new += item.skuNew;
-            stats.fix += item.skuFix;
-            stats.dub += item.skuDub;
-            stats.kat += item.skuKat;
-            stats.art += item.skuArt;
-            return stats;
-        }, { new: 0, fix: 0, dub: 0, kat: 0, art: 0 });
+            this.filteredData.forEach(item => {
+                summary.totalLeads += item.leads;
+                summary.totalSales += item.sales;
+                summary.totalUnits += item.units;
+                summary.averageMargin += item.margin;
+                summary.totalSkuNew += item.skuNew;
+                summary.totalSkuFix += item.skuFix;
+                summary.totalSkuDub += item.skuDub;
+                summary.totalSkuKat += item.skuKat;
+                summary.totalSkuArt += item.skuArt;
+                summary.totalGroupOrders += item.groupOrders;
+                summary.totalDelay += item.delay;
+            });
 
-        document.getElementById('total-sales').textContent = `${totalSales.toLocaleString()} zł`;
-        document.getElementById('avg-margin').textContent = `${(avgMargin * 100).toFixed(1)}%`;
-        document.getElementById('total-leads').textContent = totalLeads.toString();
-        document.getElementById('avg-units').textContent = avgUnits.toFixed(2);
-        document.getElementById('top-performer').textContent = topPerformer ? 
-            `${topPerformer.name} (${topPerformer.totalRanking.toLocaleString()} pkt)` : '-';
-        document.getElementById('top-seller').textContent = topSeller ? 
-            `${topSeller.name} (${topSeller.sales.toLocaleString()} zł)` : '-';
-        document.getElementById('sku-stats').innerHTML = `
-            <span class="sku-new" title="Nowe SKU">${skuStats.new}</span>
-            <span class="sku-fix" title="Poprawki SKU">${skuStats.fix}</span>
-            <span class="sku-dub" title="Duplikaty SKU">${skuStats.dub}</span>
-            <span class="sku-kat" title="Katalogowanie SKU">${skuStats.kat}</span>
-            <span class="sku-art" title="Artykuły SKU">${skuStats.art}</span>
-        `;
+            summary.averageMargin = summary.averageMargin / this.filteredData.length;
+
+            // Update summary elements
+            Object.entries(summary).forEach(([key, value]) => {
+                const element = document.getElementById(`summary-${key}`);
+                if (element) {
+                    element.textContent = key === 'averageMargin' 
+                        ? `${(value * 100).toFixed(2)}%` 
+                        : value.toString();
+                }
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                method: 'updateSummary'
+            });
+        }
     }
 
     initializeCharts() {
         try {
-            console.log('Initializing charts...');
-            this.destroyCharts(); // Wyczyść istniejące wykresy
-            
-            // Performance Chart
-            const performanceCanvas = document.getElementById('performance-chart');
-            if (!performanceCanvas) {
-                console.error('Performance chart canvas not found');
-                return;
-            }
+            // Destroy existing charts
+            Object.values(this.charts).forEach(chart => chart.destroy());
+            this.charts = {};
 
-            performanceCanvas.width = performanceCanvas.offsetWidth;
-            performanceCanvas.height = performanceCanvas.offsetHeight;
-
-            const ctx = performanceCanvas.getContext('2d');
-            if (!ctx) {
-                console.error('Failed to get 2D context for performance chart');
-                return;
-            }
-
-            console.log('Creating performance chart...');
-            this.charts.performance = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        label: 'Sprzedaż (zł)',
-                        data: [],
-                        backgroundColor: 'rgba(114, 47, 55, 0.5)',
-                        borderColor: 'rgb(114, 47, 55)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return value.toLocaleString() + ' zł';
-                                }
+            // Initialize new charts
+            const chartConfigs = {
+                salesChart: {
+                    type: 'line',
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Sprzedaż w czasie'
                             }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            display: false
                         }
                     }
-                }
-            });
-
-            // Historical Trends Chart
-            const historicalCanvas = document.getElementById('historical-chart');
-            if (!historicalCanvas) {
-                console.error('Historical chart canvas not found');
-                return;
-            }
-
-            historicalCanvas.width = historicalCanvas.offsetWidth;
-            historicalCanvas.height = historicalCanvas.offsetHeight;
-
-            const ctx2 = historicalCanvas.getContext('2d');
-            if (!ctx2) {
-                console.error('Failed to get 2D context for historical chart');
-                return;
-            }
-
-            console.log('Creating historical chart...');
-            this.charts.historical = new Chart(ctx2, {
-                type: 'line',
-                data: {
-                    labels: this.availableMonths.slice().reverse(),
-                    datasets: []
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return value.toLocaleString() + ' zł';
-                                }
-                            }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            position: 'right',
-                            labels: {
-                                boxWidth: 12,
-                                font: {
-                                    size: 10
-                                }
+                rankingChart: {
+                    type: 'line',
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Ranking w czasie'
                             }
                         }
                     }
                 }
-            });
+            };
 
-            console.log('Charts initialized successfully');
-            this.updateCharts(); // Od razu zaktualizuj dane na wykresach
+            Object.entries(chartConfigs).forEach(([chartId, config]) => {
+                const canvas = document.getElementById(chartId);
+                if (canvas) {
+                    this.charts[chartId] = new Chart(canvas, {
+                        type: config.type,
+                        data: {
+                            labels: [],
+                            datasets: []
+                        },
+                        options: config.options
+                    });
+                }
+            });
         } catch (error) {
-            console.error('Error initializing charts:', error);
+            this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
+                method: 'initializeCharts'
+            });
         }
     }
 
     updateCharts() {
         try {
-            console.log('Updating charts...');
-            
-            // Update Performance Chart
-            if (this.charts.performance) {
-                console.log('Updating performance chart...');
-                const topPerformers = [...this.filteredData]
-                    .sort((a, b) => b.sales - a.sales)
-                    .slice(0, 5);
+            if (!this.charts.salesChart || !this.charts.rankingChart) return;
 
-                console.log('Top performers:', topPerformers);
+            const colors = [
+                '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+                '#FF9F40', '#FF6384', '#C9CBCF', '#7BC225', '#FF85AD'
+            ];
 
-                this.charts.performance.data.labels = topPerformers.map(item => item.name);
-                this.charts.performance.data.datasets[0].data = topPerformers.map(item => item.sales);
-                this.charts.performance.update();
-            } else {
-                console.warn('Performance chart not initialized');
-            }
+            const datasets = this.filteredData.slice(0, 10).map((person, index) => {
+                const color = colors[index % colors.length];
+                const monthlyData = this.availableMonths.map(month => {
+                    const monthData = this.historicalData[month];
+                    const personData = monthData.find(p => p.name === person.name);
+                    return personData || null;
+                }).filter(data => data !== null);
 
-            // Update Historical Chart
-            if (this.charts.historical) {
-                console.log('Updating historical chart...');
-                const topPerformers = [...this.data]
-                    .sort((a, b) => b.sales - a.sales)
-                    .slice(0, 5);
-
-                console.log('Historical top performers:', topPerformers);
-
-                const colors = [
-                    'rgb(255, 99, 132)',
-                    'rgb(54, 162, 235)',
-                    'rgb(255, 206, 86)',
-                    'rgb(75, 192, 192)',
-                    'rgb(153, 102, 255)'
-                ];
-
-                this.charts.historical.data.datasets = topPerformers.map((person, index) => {
-                    const monthlyData = this.availableMonths.slice().reverse().map(month => {
-                        const monthData = this.historicalData[month];
-                        const personData = monthData.find(p => p.name === person.name);
-                        return personData ? personData.sales : 0;
-                    });
-
-                    console.log(`Historical data for ${person.name}:`, monthlyData);
-
-                    return {
+                return {
+                    sales: {
                         label: person.name,
-                        data: monthlyData,
-                        borderColor: colors[index],
-                        backgroundColor: colors[index].replace('rgb', 'rgba').replace(')', ', 0.1)'),
-                        tension: 0.3,
-                        borderWidth: 2,
-                        pointRadius: 3
-                    };
-                });
+                        data: monthlyData.map(data => data.sales),
+                        borderColor: color,
+                        backgroundColor: color + '20',
+                        tension: 0.4
+                    },
+                    ranking: {
+                        label: person.name,
+                        data: monthlyData.map(data => data.totalRanking),
+                        borderColor: color,
+                        backgroundColor: color + '20',
+                        tension: 0.4
+                    }
+                };
+            });
 
-                this.charts.historical.update();
-            } else {
-                console.warn('Historical chart not initialized');
-            }
+            // Update sales chart
+            this.charts.salesChart.data = {
+                labels: this.availableMonths,
+                datasets: datasets.map(d => d.sales)
+            };
+            this.charts.salesChart.update();
 
-            console.log('Charts updated successfully');
+            // Update ranking chart
+            this.charts.rankingChart.data = {
+                labels: this.availableMonths,
+                datasets: datasets.map(d => d.ranking)
+            };
+            this.charts.rankingChart.update();
         } catch (error) {
-            console.error('Error updating charts:', error);
-            try {
-                console.log('Attempting to reinitialize charts...');
-                this.destroyCharts();
-                this.initializeCharts();
-            } catch (reinitError) {
-                console.error('Failed to reinitialize charts:', reinitError);
-            }
+            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                method: 'updateCharts'
+            });
         }
     }
 
-    destroyCharts() {
+    dispose() {
         try {
-            console.log('Destroying charts...');
-            if (this.charts.performance) {
-                this.charts.performance.destroy();
-                console.log('Performance chart destroyed');
-            }
-            if (this.charts.historical) {
-                this.charts.historical.destroy();
-                console.log('Historical chart destroyed');
-            }
-        } catch (error) {
-            console.error('Error destroying charts:', error);
-        } finally {
+            // Destroy charts
+            Object.values(this.charts).forEach(chart => chart.destroy());
             this.charts = {};
+
+            // Clear data
+            this.data = [];
+            this.historicalData = {};
+            this.filteredData = [];
+
+            super.dispose();
+        } catch (error) {
+            this.handleError(error, ErrorType.UNKNOWN, ErrorSeverity.ERROR, {
+                method: 'dispose'
+            });
         }
     }
 } 

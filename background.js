@@ -316,6 +316,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             console.error('Error updating alarms:', error);
         });
     }
+
+    if (message.type === 'REFRESH_DATA_REQUEST') {
+        (async () => {
+            try {
+                // Notify popup that refresh has started
+                await sendMessageToPopup('REFRESH_STATUS', { 
+                    payload: { status: 'started' }
+                });
+                
+                // Clear cache and timestamps
+                await chrome.storage.local.remove([
+                    'last_fetch_time',
+                    'last_full_update',
+                    'leadCounts',
+                    'store_updates'
+                ]);
+                
+                // Force a full data refresh
+                const { selectedStore } = await chrome.storage.local.get('selectedStore');
+                const data = await fetchAndCacheData(selectedStore);
+                
+                // Update badge and storage
+                updateExtensionBadge(data.counts, selectedStore);
+                await chrome.storage.local.set({ 
+                    lastUpdate: Date.now(),
+                    leadCounts: data.counts 
+                });
+                
+                // Notify popup that refresh is complete
+                await sendMessageToPopup('REFRESH_STATUS', { 
+                    payload: { status: 'completed' }
+                });
+                
+                // Send response back to the popup
+                sendResponse({ success: true, data: data.counts });
+            } catch (error) {
+                // Notify popup of failure
+                await sendMessageToPopup('REFRESH_STATUS', { 
+                    payload: { 
+                        status: 'failed',
+                        error: error.message 
+                    }
+                });
+                sendResponse({ success: false, error: error.message });
+            }
+        })();
+        return true; // Keep the message channel open
+    }
 });
 
 // Handler dla FETCH_DARWINA_DATA
@@ -605,22 +653,23 @@ async function fetchOrdersByStatus(darwinaConfig, statusGroup, selectedStore, la
 async function processDataWithProgress(allOrders, selectedStore, isFirstRun) {
     let processedOrders;
     
+    // Clear old data first
     if (isFirstRun) {
-        // Dla pierwszego uruchomienia - użyj wszystkich pobranych zamówień
+        // For first run, clear all stored data
+        await chrome.storage.local.remove(['leadCounts', 'last_full_update']);
         processedOrders = allOrders;
         console.log(`[DEBUG] 📥 Pierwsze uruchomienie - zapisuję ${allOrders.length} zamówień`);
     } else {
-        // Dla kolejnych uruchomień - pobierz istniejące dane i zaktualizuj je
+        // For incremental updates, get existing data
         const storedData = await getFromStorage(STORAGE_KEYS.STORE_DATA(selectedStore));
         if (storedData && storedData.orders) {
-            // Stwórz mapę istniejących zamówień
+            // Create map of existing orders
             const ordersMap = new Map(storedData.orders.map(order => [order.id, order]));
             
-            // Zliczaj aktualizacje i nowe zamówienia
             let updateCount = 0;
             let newCount = 0;
             
-            // Aktualizuj lub dodaj nowe zamówienia
+            // Update or add new orders
             allOrders.forEach(order => {
                 if (ordersMap.has(order.id)) {
                     updateCount++;
@@ -636,21 +685,23 @@ async function processDataWithProgress(allOrders, selectedStore, isFirstRun) {
                 - Dodano nowych: ${newCount} zamówień
                 - Łącznie w storage: ${processedOrders.length} zamówień`);
         } else {
-            // Jeśli nie ma danych w storage, traktuj jak pierwsze uruchomienie
+            // If no data in storage, treat as first run
+            await chrome.storage.local.remove(['leadCounts', 'last_full_update']);
             processedOrders = allOrders;
             console.log(`[DEBUG] ⚠️ Brak danych w storage - zapisuję ${allOrders.length} zamówień`);
         }
     }
 
-    // Przetwórz wszystkie zebrane zamówienia
+    // Process all collected orders
     const statusCounts = processOrders(processedOrders);
 
-    // Zapisz timestamp aktualnego update'u
+    // Save current update timestamp and data
     await chrome.storage.local.set({ 
-        'last_full_update': Date.now() 
+        'last_full_update': Date.now(),
+        'leadCounts': statusCounts
     });
 
-    // Zwróć wynik
+    // Return result
     return {
         success: true,
         counts: statusCounts,

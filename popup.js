@@ -4,7 +4,12 @@ import { API_BASE_URL, API_CONFIG, getDarwinaCredentials, sendLogToPopup } from 
 import { i18n } from './services/i18n.js';
 import { UserCardService } from './services/userCard.js';
 import { DrwnService } from './services/drwn.js';
-import { checkApiStatus, checkAuthStatus, checkOrdersStatus } from './services/api.js';
+import { 
+    checkApiStatus, 
+    checkAuthStatus, 
+    checkOrdersStatus,
+    checkCacheStatus 
+} from './services/api.js';
 import { stores } from './services/stores.js';
 
 // Managers
@@ -13,6 +18,10 @@ import { ProgressManager } from './services/progressManager.js';
 import { STORAGE_KEYS, getFromStorage, saveToStorage } from './services/storage.js';
 import { LanguageManager } from './services/languageManager.js';
 import { RankingManager } from './services/rankingManager.js';
+import { MenuManager } from './services/menuManager.js';
+import { VolumeManager } from './services/volumeManager.js';
+import { LoadingManager } from './services/loadingManager.js';
+import { RefreshManager } from './services/refreshManager.js';
 
 // UI Components
 import { UIManager } from './services/uiManager.js';
@@ -29,6 +38,7 @@ import testRunner from './services/testRunner.js';
 import './tests/integration/translation.test.js';
 
 import { themeService } from './services/theme.js';
+import { ErrorHandler } from './services/core/ErrorHandler.js';
 
 const REFRESH_INTERVAL = 300000; // 5 minut
 let refreshCount = 0;
@@ -45,8 +55,112 @@ const STATUS_MAP = {
 // Globalna zmienna dla tooltipów
 let tooltipList = [];
 
-// Inicjalizacja ProgressManager
-const progressManager = new ProgressManager();
+// Inicjalizacja menedżerów
+let progressManager, loadingManager, uiManager, menuManager, volumeManager,
+    dataManager, statusManager, debugManager, userManager, interfaceManager,
+    updateManager, languageManager, refreshManager;
+
+// Initialize managers
+const errorHandler = new ErrorHandler();
+
+// Initialize error handler first
+await errorHandler.initialize();
+
+// Funkcja inicjalizująca menedżerów
+async function initializeManagers() {
+    try {
+        // Core managers
+        progressManager = new ProgressManager();
+        loadingManager = new LoadingManager();
+        
+        // UI managers
+        uiManager = new UIManager();
+        
+        // Feature managers
+        menuManager = new MenuManager();
+        volumeManager = new VolumeManager();
+        dataManager = new DataManager(uiManager);
+        statusManager = new StatusManager(uiManager);
+        debugManager = new DebugManager(uiManager);
+        userManager = new UserManager(uiManager);
+        interfaceManager = new InterfaceManager(uiManager);
+        updateManager = new UpdateManager();
+        languageManager = new LanguageManager();
+        refreshManager = new RefreshManager(dataManager);
+
+        // Initialize all managers
+        await Promise.all([
+            progressManager.initialize(),
+            loadingManager.initialize(),
+            uiManager.initialize(),
+            menuManager.initialize(),
+            volumeManager.initialize(),
+            dataManager.initialize(),
+            statusManager.initialize(),
+            debugManager.initialize(),
+            userManager.initialize(),
+            interfaceManager.initialize(),
+            updateManager.initialize(),
+            languageManager.initialize(),
+            refreshManager.initialize()
+        ]);
+
+        return true;
+    } catch (error) {
+        console.error('Error initializing managers:', error);
+        return false;
+    }
+}
+
+// Funkcja czyszcząca zasoby menedżerów
+function disposeManagers() {
+    console.log('🧹 Czyszczenie zasobów menedżerów...');
+    
+    try {
+        // Dispose wszystkich menedżerów w odwrotnej kolejności
+        [
+            languageManager,
+            updateManager,
+            interfaceManager,
+            userManager,
+            debugManager,
+            statusManager,
+            dataManager,
+            volumeManager,
+            menuManager,
+            uiManager,
+            loadingManager,
+            progressManager
+        ].forEach(manager => {
+            try {
+                manager?.dispose();
+            } catch (error) {
+                console.error(`Error disposing manager:`, error);
+            }
+        });
+
+        // Wyczyść referencje
+        languageManager = null;
+        updateManager = null;
+        interfaceManager = null;
+        userManager = null;
+        debugManager = null;
+        statusManager = null;
+        dataManager = null;
+        volumeManager = null;
+        menuManager = null;
+        uiManager = null;
+        loadingManager = null;
+        progressManager = null;
+
+        // Na końcu dispose ErrorHandler
+        errorHandler?.dispose();
+        
+        console.log('✅ Zasoby menedżerów wyczyszczone');
+    } catch (error) {
+        console.error('❌ Błąd podczas czyszczenia zasobów:', error);
+    }
+}
 
 // Funkcja obsługująca aktualizacje postępu
 function handleProgressUpdate(data) {
@@ -161,8 +275,10 @@ function logToPanel(message, type = 'info', data = null) {
 async function notifyPopupOpened() {
     try {
         // Pokaż loader w licznikach podczas ładowania
+        const loaderIds = [];
         document.querySelectorAll('.lead-count').forEach(counter => {
-            showLoader(counter);
+            const loaderId = loadingManager.showLoader(counter);
+            if (loaderId) loaderIds.push(loaderId);
             counter.classList.remove('count-error', 'count-zero');
         });
 
@@ -174,6 +290,9 @@ async function notifyPopupOpened() {
         }
 
         const response = await chrome.runtime.sendMessage({ type: 'POPUP_OPENED' });
+        
+        // Ukryj wszystkie loadery
+        loaderIds.forEach(id => loadingManager.hideLoader(id));
         
         if (!response?.success) {
             throw new Error(response?.error || 'Nieznany błąd');
@@ -211,46 +330,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-// Initialization
+// Aktualizujemy główny event listener
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('🚀 DOMContentLoaded event fired');
-    logToPanel('🚀 Aplikacja uruchomiona');
-    
     try {
-        // Initialize translations first
+        // Inicjalizacja tłumaczeń
         await i18n.init();
         
-        // Initialize UI components immediately
-        await initializeUIComponents();
+        // Inicjalizacja managerów
+        await initializeManagers();
         
-        // Initialize volume control
-        initializeVolumeControl();
-        
-        // Language initialization
+        // Aktualizacja interfejsu
         i18n.updateDataI18n();
-        updateInterface(i18n.translations);
-        logToPanel('✅ Język zainicjalizowany', 'success');
-
-        // Initialize Bootstrap tooltips
-        initializeTooltips();
-
-        // Initialize user card
-        await updateUserCard();
+        interfaceManager.updateInterface(i18n.translations);
         
-        // Initialize debug mode
-        initializeDebugSwitch();
-
-        // Initialize update button
-        initializeUpdateButton();
-
-        // Load data
-        await loadAndUpdateData();
+        // Inicjalizacja karty użytkownika
+        await userManager.updateUserCard();
+        
+        // Inicjalizacja trybu debug
+        debugManager.initializeDebugPanel();
+        debugManager.initializeDebugSwitch();
+        
+        // Inicjalizacja przycisku aktualizacji
+        updateManager.initializeUpdateButton();
+        
+        // Załadowanie danych
+        await notifyPopupOpened();
         
         // Inicjalizacja ustawień interwałów
-        await initializeIntervalSettings();
+        await interfaceManager.initializeIntervalSettings();
         
+        debugManager.logToPanel('✅ Aplikacja zainicjalizowana pomyślnie', 'success');
     } catch (error) {
-        logToPanel('❌ Błąd inicjalizacji', 'error', error.message);
+        console.error('❌ Błąd inicjalizacji:', error);
+        if (debugManager) {
+            debugManager.logToPanel('Błąd inicjalizacji: ' + error.message, 'error');
+        }
     }
 });
 
@@ -876,28 +990,11 @@ function updateInterface(translations) {
         });
     }
 
-    // Menu updates
-    updateMenuItems();
-    initializeTooltips();
-    initializeMenu();
+    // Zaktualizuj menu używając MenuManager
+    menuManager.updateMenuItems();
+    menuManager.initializeTooltips();
+    menuManager.initializeMenu();
 }
-
-// Inicjalizacja tooltipów - niżej mamy nową funkcję initializeTooltips 
-// function initializeTooltips() {
-//     console.log('🔄 Inicjalizuję tooltips...');
-//     const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-//     tooltipTriggerList.forEach(element => {
-//         const tooltipKey = element.getAttribute('data-i18n-tooltip');
-//         if (tooltipKey) {
-//             console.log(`📝 Ustawiam tooltip dla klucza: ${tooltipKey}`);
-//             const translation = i18n.translate(tooltipKey);
-//             if (translation) {
-//                 element.title = translation;
-//             }
-//         }
-//         new bootstrap.Tooltip(element);
-//     });
-// }
 
 // Funkcje pomocnicze do obsługi komunikatów
 function showMessage(type, key) {
@@ -1747,34 +1844,22 @@ async function updateRankingData() {
     }
 }
 
-// Global instance for ranking manager
-let rankingManager = null;
+// Funkcja czyszcząca ranking
+function cleanupRanking() {
+    if (rankingManager) {
+        rankingManager.destroyCharts();
+        rankingManager = null;
+    }
+}
 
 // Initialize ranking functionality
 document.querySelectorAll('.nav-link').forEach(tab => {
     tab.addEventListener('click', async function (event) {
         const targetId = this.getAttribute('data-target');
         if (targetId === '#ranking') {
-            try {
-                if (!rankingManager) {
-                    rankingManager = new RankingManager();
-                    await rankingManager.initialize();
-                    logToPanel('✅ Zaktualizowano ranking', 'success');
-                } else {
-                    await rankingManager.fetchData();
-                    logToPanel('✅ Odświeżono ranking', 'success');
-                }
-            } catch (error) {
-                console.error('Błąd podczas inicjalizacji rankingu:', error);
-                logToPanel('❌ Błąd podczas inicjalizacji rankingu', 'error', error.message);
-                
-                const tbody = document.querySelector('#ranking-data tbody');
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Błąd podczas pobierania danych</td></tr>';
-            }
+            await initializeRanking();
         } else if (rankingManager) {
-            // Clean up charts when switching away from ranking tab
-            rankingManager.destroyCharts();
-            rankingManager = null;
+            cleanupRanking();
         }
     });
 });
@@ -1805,114 +1890,6 @@ function initializeRefreshButton() {
             if (icon) {
                 icon.classList.remove('rotate');
             }
-        }
-    });
-}
-
-// Initialize update button functionality
-function initializeUpdateButton() {
-    const updateButton = document.getElementById('update-button');
-    if (!updateButton) return;
-
-    updateButton.addEventListener('click', async () => {
-        try {
-            const updateManager = new UpdateManager();
-            
-            // Show update modal with progress
-            const updateModal = document.getElementById('updateModal');
-            const modalBody = updateModal.querySelector('.modal-body');
-            const modalTitle = updateModal.querySelector('.modal-title');
-            const confirmBtn = document.getElementById('confirmUpdate');
-            const cancelBtn = document.getElementById('cancelUpdate');
-            
-            // Reset modal state
-            modalTitle.textContent = 'Dostępna aktualizacja';
-            modalBody.innerHTML = `
-                <div class="update-status">
-                    <p>Czy chcesz zaktualizować rozszerzenie do najnowszej wersji?</p>
-                    <div class="progress d-none">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                             role="progressbar" style="width: 0%"></div>
-                    </div>
-                    <div class="update-message mt-2"></div>
-                </div>
-            `;
-
-            const modal = new bootstrap.Modal(updateModal);
-            modal.show();
-
-            // Handle update confirmation
-            confirmBtn.addEventListener('click', async () => {
-                try {
-                    // Update UI for download phase
-                    updateButton.disabled = true;
-                    confirmBtn.disabled = true;
-                    cancelBtn.disabled = true;
-                    modalTitle.textContent = i18n.translate('interface.updateInProgress');
-                    
-                    const progressBar = modalBody.querySelector('.progress');
-                    const progressBarInner = progressBar.querySelector('.progress-bar');
-                    const messageDiv = modalBody.querySelector('.update-message');
-                    
-                    progressBar.classList.remove('d-none');
-                    progressBarInner.style.width = '25%';
-                    messageDiv.innerHTML = `<span class="text-primary">${i18n.translate('interface.downloadingUpdate')}</span>`;
-                    logToPanel(i18n.translate('logs.updateStarted'), 'info');
-
-                    // Download update
-                    await updateManager.downloadUpdate();
-                    progressBarInner.style.width = '50%';
-                    messageDiv.innerHTML += `<br><span class="text-success">${i18n.translate('interface.updateDownloaded')}</span>`;
-                    logToPanel(i18n.translate('logs.updateDownloaded'), 'success');
-
-                    // Show extraction instructions
-                    progressBarInner.style.width = '75%';
-                    messageDiv.innerHTML += `<br>${i18n.translate('interface.unzipFile')} <strong>kamila-update.zip</strong>`;
-                    messageDiv.innerHTML += `<br>${i18n.translate('interface.copyFolder')}`;
-                    messageDiv.innerHTML += `<br>${i18n.translate('interface.refreshExtension')} <strong>chrome://extensions</strong>`;
-
-                    // Final step
-                    progressBarInner.style.width = '100%';
-                    messageDiv.innerHTML += `<br><span class="text-success">${i18n.translate('interface.updateComplete')}</span>`;
-                    
-                    // Re-enable buttons
-                    confirmBtn.textContent = i18n.translate('close');
-                    confirmBtn.disabled = false;
-                    cancelBtn.classList.add('d-none');
-                    
-                    // Change confirm button to just close the modal
-                    confirmBtn.addEventListener('click', () => {
-                        modal.hide();
-                        updateButton.disabled = false;
-                        updateButton.innerHTML = i18n.translate('checkUpdates');
-                    }, { once: true });
-
-                } catch (error) {
-                    // Show error in modal
-                    modalBody.querySelector('.progress').classList.add('d-none');
-                    modalBody.querySelector('.update-message').innerHTML = 
-                        `<div class="alert alert-danger">❌ Błąd aktualizacji: ${error.message}</div>`;
-                    logToPanel('❌ Błąd podczas aktualizacji', 'error', error);
-                    
-                    // Re-enable buttons
-                    confirmBtn.disabled = false;
-                    cancelBtn.disabled = false;
-                    updateButton.disabled = false;
-                    updateButton.innerHTML = 'Sprawdź aktualizacje';
-                }
-            });
-
-            // Handle update cancellation
-            cancelBtn.addEventListener('click', () => {
-                modal.hide();
-                updateButton.disabled = false;
-                updateButton.innerHTML = 'Sprawdź aktualizacje';
-            });
-
-        } catch (error) {
-            logToPanel('❌ Błąd aktualizacji', 'error', error);
-            updateButton.disabled = false;
-            updateButton.innerHTML = 'Sprawdź aktualizacje';
         }
     });
 }
@@ -2208,42 +2185,6 @@ window.addEventListener('unload', () => {
     }
 });
 
-// Inicjalizacja ustawień interwałów
-async function initializeIntervalSettings() {
-    try {
-        const intervals = await getIntervalSettings();
-        
-        // Ustaw wartości w polach
-        document.getElementById('background-check-interval').value = intervals.backgroundCheck;
-        document.getElementById('full-refresh-interval').value = intervals.fullRefresh;
-        document.getElementById('data-freshness-interval').value = intervals.dataFreshness;
-        
-        // Dodaj obsługę przycisku zapisu
-        document.getElementById('save-intervals').addEventListener('click', async () => {
-            const newIntervals = {
-                backgroundCheck: parseInt(document.getElementById('background-check-interval').value),
-                fullRefresh: parseInt(document.getElementById('full-refresh-interval').value),
-                dataFreshness: parseInt(document.getElementById('data-freshness-interval').value)
-            };
-            
-            try {
-                await saveIntervalSettings(newIntervals);
-                // Wyślij wiadomość do background script o zmianie interwałów
-                chrome.runtime.sendMessage({ 
-                    type: 'UPDATE_INTERVALS',
-                    intervals: newIntervals
-                });
-                logToPanel('✅ Zapisano ustawienia interwałów', 'success');
-            } catch (error) {
-                logToPanel('❌ Błąd podczas zapisywania ustawień', 'error', error);
-            }
-        });
-        
-    } catch (error) {
-        logToPanel('❌ Błąd podczas inicjalizacji ustawień', 'error', error);
-    }
-}
-
 // Volume Control Functionality
 function initializeVolumeControl() {
     const volumeButton = document.getElementById('volume-button');
@@ -2338,7 +2279,21 @@ function initializeMenu() {
     console.log('🔄 Inicjalizuję menu...');
     const menuLinks = document.querySelectorAll('.menu .link');
     
+    // Wczytaj ostatnio aktywną zakładkę
+    const lastActiveTab = localStorage.getItem('lastActiveTab') || '#orders';
+    
     menuLinks.forEach(link => {
+        const targetId = link.getAttribute('data-target');
+        
+        // Ustaw aktywną zakładkę
+        if (targetId === lastActiveTab) {
+            link.classList.add('active');
+            const targetPane = document.querySelector(targetId);
+            if (targetPane) {
+                targetPane.classList.add('show', 'active');
+            }
+        }
+        
         link.addEventListener('click', (e) => {
             e.preventDefault();
             
@@ -2351,6 +2306,9 @@ function initializeMenu() {
             // Pokaż odpowiednią zakładkę
             const targetId = link.getAttribute('data-target');
             if (targetId) {
+                // Zapisz aktywną zakładkę
+                localStorage.setItem('lastActiveTab', targetId);
+                
                 const tabPanes = document.querySelectorAll('.tab-pane');
                 tabPanes.forEach(pane => {
                     pane.classList.remove('show', 'active');
@@ -2364,4 +2322,16 @@ function initializeMenu() {
         });
     });
 }
+
+// Cleanup when popup is closed
+window.addEventListener('unload', () => {
+    disposeManagers();
+});
+
+// Add error listener for UI feedback
+errorHandler.addListener((error) => {
+    if (error.severity === 'critical' || error.severity === 'error') {
+        uiManager.showMessage('error', error.message);
+    }
+});
 

@@ -1,49 +1,53 @@
-import { sendLogToPopup } from '../config/api.js';
+import { BaseManager } from './core/BaseManager.js';
+import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
+import { i18n } from './i18n.js';
 
-export class UpdateManager {
+export class UpdateManager extends BaseManager {
     constructor() {
-        // Using GitHub's archive download URL
-        this.updateUrl = 'https://github.com/twilk/Kamila/archive/refs/heads/main.zip';
-        this.updateInProgress = false;
+        super();
+        this.currentVersion = chrome.runtime.getManifest().version;
     }
 
-    async downloadUpdate() {
-        if (this.updateInProgress) {
-            throw new Error('Update already in progress');
-        }
-
-        this.updateInProgress = true;
+    async initialize() {
         try {
-            // Use chrome.downloads API for better handling
-            const downloadId = await chrome.downloads.download({
-                url: this.updateUrl,
-                filename: 'kamila-update.zip',
-                conflictAction: 'overwrite'
-            });
-
-            return new Promise((resolve, reject) => {
-                chrome.downloads.onChanged.addListener(function onChanged(delta) {
-                    if (delta.id === downloadId) {
-                        if (delta.state?.current === 'complete') {
-                            chrome.downloads.onChanged.removeListener(onChanged);
-                            resolve(true);
-                        } else if (delta.error) {
-                            chrome.downloads.onChanged.removeListener(onChanged);
-                            reject(new Error(`Download failed: ${delta.error.current}`));
-                        }
-                    }
-                });
-            });
+            await super.initialize();
+            await this.initializeUpdateButton();
+            return true;
         } catch (error) {
-            console.error('Download error:', error);
-            throw new Error(error.message || 'Failed to download update');
-        } finally {
-            this.updateInProgress = false;
+            this.handleError(error, ErrorType.UNKNOWN, ErrorSeverity.ERROR, {
+                method: 'initialize'
+            });
+            return false;
         }
     }
 
-    async applyUpdate() {
-        // Reload the extension
-        await chrome.runtime.reload();
+    async initializeUpdateButton() {
+        try {
+            const updateButton = document.getElementById('check-update');
+            if (!updateButton) return;
+
+            // Disable update button
+            updateButton.style.display = 'none';
+
+            // Show current version
+            const versionElement = document.getElementById('version');
+            if (versionElement) {
+                versionElement.textContent = i18n.translate('version').replace('{version}', this.currentVersion);
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                method: 'initializeUpdateButton'
+            });
+        }
+    }
+
+    dispose() {
+        try {
+            super.dispose();
+        } catch (error) {
+            this.handleError(error, ErrorType.UNKNOWN, ErrorSeverity.ERROR, {
+                method: 'dispose'
+            });
+        }
     }
 }

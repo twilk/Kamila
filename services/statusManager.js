@@ -1,104 +1,172 @@
-import { i18n } from './i18n.js';
-import { 
-    checkApiStatus, 
-    checkAuthStatus, 
-    checkOrdersStatus, 
-    checkCacheStatus 
-} from './api.js';
+import { BaseManager } from './core/BaseManager.js';
+import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
 
-export class StatusManager {
+export class StatusManager extends BaseManager {
     constructor() {
-        this.tooltipList = [];
+        super();
+        this.leadCounts = null;
+        this.statusElements = new Map();
+        this.updateCallbacks = new Set();
     }
 
-    async updateAllStatuses(fullTest = false) {
+    async initialize() {
         try {
-            // Pokaż loader dla wszystkich statusów
-            ['api', 'auth', 'orders', 'cache'].forEach(service => {
-                const dot = document.getElementById(`${service}-status`);
-                if (dot) {
-                    dot.className = 'status-dot';
-                    dot.style.opacity = '0.5';
-                }
-            });
-
-            const statuses = {
-                'api-status': await checkApiStatus(),
-                'auth-status': await checkAuthStatus(),
-                'orders-status': await checkOrdersStatus(),
-                'cache-status': await checkCacheStatus()
-            };
-
-            // Aktualizuj kropki statusu
-            Object.entries(statuses).forEach(([id, status]) => {
-                const dot = document.getElementById(id);
-                if (dot) {
-                    dot.className = `status-dot status-${status ? 'green' : 'red'}`;
-                    dot.style.opacity = '1';
-                }
-            });
-
-            if (fullTest) {
-                logToPanel(i18n.translate('testsCompleted'), 'success');
-            }
+            await super.initialize();
+            await this.loadLeadCounts();
+            await this.initializeStatusElements();
+            return true;
         } catch (error) {
-            logToPanel(i18n.translate('errorStatusCheck'), 'error', error);
+            this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
+                method: 'initialize'
+            });
+            return false;
         }
     }
 
-    async updateLeadCounts(newCounts, oldCounts = {}) {
+    async initializeStatusElements() {
         try {
-            const { leadCounts: currentCounts } = await chrome.storage.local.get('leadCounts');
-            if (JSON.stringify(newCounts) !== JSON.stringify(currentCounts)) {
-                await chrome.storage.local.set({ leadCounts: newCounts });
-                
-                for (const [status, count] of Object.entries(newCounts)) {
-                    const countElement = document.getElementById(`count-${status}`);
-                    if (!countElement) continue;
-
-                    const previousCount = oldCounts[status] || 0;
-                    
-                    countElement.textContent = count;
-                    countElement.classList.toggle('count-zero', count === 0);
-                    countElement.classList.add('count-updated');
-                    setTimeout(() => countElement.classList.remove('count-updated'), 1000);
-
-                    if ((status === '1' || status === '2') && count > previousCount) {
-                        chrome.notifications.create(`status-update-${status}`, {
-                            type: 'basic',
-                            iconUrl: 'icon128.png',
-                            title: i18n.translate('statusUpdate'),
-                            message: i18n.translate('statusChangeFormat', {
-                                status: status,
-                                previous: previousCount,
-                                current: count
-                            }),
-                            priority: 1
-                        });
-                    }
+            // Initialize status elements
+            const statusContainers = document.querySelectorAll('[data-status]');
+            statusContainers.forEach(container => {
+                const status = container.getAttribute('data-status');
+                if (status) {
+                    this.statusElements.set(status, container);
                 }
-            }
+            });
         } catch (error) {
-            console.error('Error updating lead counts:', error);
-            logToPanel(i18n.translate('errorCounterUpdate'), 'error', error);
+            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                method: 'initializeStatusElements'
+            });
         }
     }
 
     async loadLeadCounts() {
         try {
             const { leadCounts } = await chrome.storage.local.get('leadCounts');
-            if (leadCounts) {
-                for (const [status, count] of Object.entries(leadCounts)) {
-                    const countElement = document.getElementById(`count-${status}`);
+            this.leadCounts = leadCounts || {};
+            return this.leadCounts;
+        } catch (error) {
+            this.handleError(error, ErrorType.DATA, ErrorSeverity.ERROR, {
+                method: 'loadLeadCounts'
+            });
+            return {};
+        }
+    }
+
+    async updateLeadCounts(newCounts, oldCounts = null) {
+        try {
+            if (!oldCounts) {
+                oldCounts = this.leadCounts || {};
+            }
+
+            // Update stored counts
+            this.leadCounts = newCounts;
+            await chrome.storage.local.set({ leadCounts: newCounts });
+
+            // Update UI elements
+            Object.entries(newCounts).forEach(([status, count]) => {
+                const element = this.statusElements.get(status);
+                if (element) {
+                    // Update count
+                    const countElement = element.querySelector('.count');
                     if (countElement) {
                         countElement.textContent = count;
-                        countElement.classList.toggle('count-zero', count === 0);
+                    }
+
+                    // Add animation if count changed
+                    const oldCount = oldCounts[status] || 0;
+                    if (count !== oldCount) {
+                        element.classList.add('count-changed');
+                        setTimeout(() => {
+                            element.classList.remove('count-changed');
+                        }, 1000);
                     }
                 }
+            });
+
+            // Notify listeners
+            this.notifyUpdateListeners(newCounts, oldCounts);
+        } catch (error) {
+            this.handleError(error, ErrorType.DATA, ErrorSeverity.ERROR, {
+                method: 'updateLeadCounts',
+                newCounts,
+                oldCounts
+            });
+        }
+    }
+
+    async updateAllStatuses(fullTest = false) {
+        try {
+            const statusElements = document.querySelectorAll('[data-status]');
+            const updates = [];
+
+            statusElements.forEach(element => {
+                const status = element.getAttribute('data-status');
+                if (status) {
+                    updates.push(this.updateStatus(status, element, fullTest));
+                }
+            });
+
+            await Promise.all(updates);
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
+                method: 'updateAllStatuses',
+                fullTest
+            });
+        }
+    }
+
+    async updateStatus(status, element, fullTest = false) {
+        try {
+            const count = this.leadCounts?.[status] || 0;
+            const countElement = element.querySelector('.count');
+            if (countElement) {
+                countElement.textContent = count;
+            }
+
+            // Update status indicator
+            const indicator = element.querySelector('.status-indicator');
+            if (indicator) {
+                indicator.classList.toggle('active', count > 0);
+                indicator.classList.toggle('warning', fullTest && count === 0);
             }
         } catch (error) {
-            console.error('Error loading lead counts:', error);
-            logToPanel('❌ Błąd ładowania liczników', 'error', error);
+            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                method: 'updateStatus',
+                status,
+                fullTest
+            });
+        }
+    }
+
+    addUpdateListener(callback) {
+        this.updateCallbacks.add(callback);
+        return () => this.updateCallbacks.delete(callback);
+    }
+
+    notifyUpdateListeners(newCounts, oldCounts) {
+        this.updateCallbacks.forEach(callback => {
+            try {
+                callback(newCounts, oldCounts);
+            } catch (error) {
+                this.handleError(error, ErrorType.UNKNOWN, ErrorSeverity.WARNING, {
+                    method: 'notifyUpdateListeners',
+                    callback: callback.name
+                });
+            }
+        });
+    }
+
+    dispose() {
+        try {
+            this.updateCallbacks.clear();
+            this.statusElements.clear();
+            this.leadCounts = null;
+            super.dispose();
+        } catch (error) {
+            this.handleError(error, ErrorType.UNKNOWN, ErrorSeverity.ERROR, {
+                method: 'dispose'
+            });
         }
     }
 } 
