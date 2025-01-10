@@ -1,18 +1,34 @@
+// Core services
 import { API } from './services/index.js';
-import { API_BASE_URL, API_CONFIG } from './config/api.js';
-import { getDarwinaCredentials, sendLogToPopup } from './config/api.js';
+import { API_BASE_URL, API_CONFIG, getDarwinaCredentials, sendLogToPopup } from './config/api.js';
 import { i18n } from './services/i18n.js';
 import { UserCardService } from './services/userCard.js';
 import { DrwnService } from './services/drwn.js';
-import { 
-    checkApiStatus, 
-    checkAuthStatus, 
-    checkOrdersStatus
-} from './services/api.js';
-import { stores } from './config/stores.js';
+import { checkApiStatus, checkAuthStatus, checkOrdersStatus } from './services/api.js';
+import { stores } from './services/stores.js';
+
+// Managers
 import { UpdateManager } from './services/updateManager.js';
 import { ProgressManager } from './services/progressManager.js';
 import { STORAGE_KEYS, getFromStorage, saveToStorage } from './services/storage.js';
+import { LanguageManager } from './services/languageManager.js';
+import { RankingManager } from './services/rankingManager.js';
+
+// UI Components
+import { UIManager } from './services/uiManager.js';
+import { DataManager } from './services/dataManager.js';
+import { StatusManager } from './services/statusManager.js';
+import { DebugManager } from './services/debugManager.js';
+import { UserManager } from './services/userManager.js';
+import { InterfaceManager } from './services/interfaceManager.js';
+
+// Test Runner
+import testRunner from './services/testRunner.js';
+
+// Tests
+import './tests/integration/translation.test.js';
+
+import { themeService } from './services/theme.js';
 
 const REFRESH_INTERVAL = 300000; // 5 minut
 let refreshCount = 0;
@@ -207,6 +223,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Initialize UI components immediately
         await initializeUIComponents();
         
+        // Initialize volume control
+        initializeVolumeControl();
+        
         // Language initialization
         i18n.updateDataI18n();
         updateInterface(i18n.translations);
@@ -226,6 +245,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Load data
         await loadAndUpdateData();
+        
+        // Inicjalizacja ustawień interwałów
+        await initializeIntervalSettings();
         
     } catch (error) {
         logToPanel('❌ Błąd inicjalizacji', 'error', error.message);
@@ -801,9 +823,19 @@ async function handleWallpaperUpload(e) {
 
 // Bezpieczna aktualizacja elementu
 function safeUpdateElement(selector, updateFn) {
-    const element = document.querySelector(selector);
-    if (element) {
-        updateFn(element);
+    try {
+        console.log(`🔍 Szukam elementu: ${selector}`);
+        const element = document.querySelector(selector);
+        if (element) {
+            console.log(`✅ Znaleziono element: ${selector}`);
+            console.log(`📝 Obecna zawartość:`, element.innerHTML);
+            updateFn(element);
+            console.log(`✨ Zaktualizowana zawartość:`, element.innerHTML);
+        } else {
+            console.warn(`⚠️ Nie znaleziono elementu: ${selector}`);
+        }
+    } catch (error) {
+        console.error(`❌ Błąd aktualizacji elementu ${selector}:`, error);
     }
 }
 
@@ -826,89 +858,8 @@ function safeUpdateElements(selector, updateFn) {
 }
 
 function updateInterface(translations) {
-    // Najpierw aktualizujemy wszystkie elementy z data-i18n
-    i18n.updateDataI18n();
-
-    // Nagłówek
-    safeUpdateElement('#welcome-message', el => el.innerHTML = i18n.translate('welcome'));
+    console.log('🖥 Rozpoczynam aktualizację interfejsu...');
     
-    // Panel zapytań
-    safeUpdateElement('label[for="query"]', el => el.textContent = i18n.translate('queryLabel'));
-    safeUpdateElement('#query', el => el.placeholder = i18n.translate('queryPlaceholder'));
-    safeUpdateElement('#send', el => el.textContent = i18n.translate('send'));
-    
-    // Zakładki
-    safeUpdateElement('[data-target="#chat"]', el => el.textContent = i18n.translate('chat'));
-    safeUpdateElement('[data-target="#settings"]', el => el.textContent = i18n.translate('settings'));
-    safeUpdateElement('[data-target="#about"]', el => el.textContent = i18n.translate('about'));
-    safeUpdateElement('[data-target="#status"]', el => el.textContent = i18n.translate('status'));
-    
-    // Ustawienia
-    safeUpdateElement('.settings-section h6:nth-of-type(1)', el => el.textContent = i18n.translate('theme'));
-    safeUpdateElement('input[value="light"] + label', el => el.textContent = i18n.translate('themeLight'));
-    safeUpdateElement('input[value="dark"] + label', el => el.textContent = i18n.translate('themeDark'));
-    safeUpdateElement('.settings-section h6:nth-of-type(2)', el => el.textContent = i18n.translate('background'));
-    safeUpdateElement('.default-wallpaper span', el => el.textContent = i18n.translate('defaultBackground'));
-    safeUpdateElement('label[for="wallpaper-upload"]', el => el.innerHTML = `<i class="fas fa-upload"></i> ${i18n.translate('addCustomWallpaper')}`);
-    safeUpdateElement('.custom-wallpaper small', el => el.textContent = i18n.translate('wallpaperRequirements'));
-    safeUpdateElement('label[for="debug-switch"]', el => el.textContent = i18n.translate('debugMode'));
-    
-    // O aplikacji
-    safeUpdateElement('#about h5', el => el.textContent = i18n.translate('about'));
-    safeUpdateElement('#about p:nth-of-type(1)', el => el.textContent = i18n.translate('creator'));
-    safeUpdateElement('#about p:nth-of-type(2)', el => el.textContent = i18n.translate('purpose'));
-    safeUpdateElement('#update-button', el => el.textContent = i18n.translate('checkUpdates'));
-    safeUpdateElement('#instructions-button', el => el.textContent = i18n.translate('instructions'));
-    
-    // Status
-    safeUpdateElement('#status h5', el => el.textContent = i18n.translate('serviceStatus'));
-    safeUpdateElements('.service-name', (el, index) => {
-        const keys = ['apiDarwina', 'authorization', 'orders', 'cache'];
-        el.textContent = i18n.translate(keys[index]);
-    });
-    safeUpdateElements('.legend-item span:not(.status-dot)', (el, index) => {
-        const keys = ['workingProperly', 'hasIssues', 'notWorking'];
-        el.textContent = i18n.translate(keys[index]);
-    });
-    safeUpdateElement('#run-tests', el => el.textContent = i18n.translate('runTests'));
-    safeUpdateElement('#check-status', el => el.textContent = i18n.translate('refreshStatus'));
-    
-    // Panel debugowania
-    safeUpdateElement('.debug-header span', el => el.textContent = i18n.translate('debugPanelTitle'));
-    safeUpdateElement('#clear-logs', el => el.textContent = i18n.translate('debugPanelClear'));
-    safeUpdateElement('.log-entry.log-empty', el => el.textContent = i18n.translate('debugPanelEmpty'));
-
-    // Modalne okna
-    safeUpdateElement('#leadDetailsModal .modal-title', el => el.textContent = i18n.translate('leadDetails'));
-    safeUpdateElement('#updateModal .modal-title', el => el.textContent = i18n.translate('updateAvailable'));
-    safeUpdateElement('#instructionsModal .modal-title', el => el.textContent = i18n.translate('instructionsTitle'));
-    safeUpdateElement('#cancelUpdate', el => el.textContent = i18n.translate('cancel'));
-    safeUpdateElement('#confirmUpdate', el => el.textContent = i18n.translate('update'));
-
-    // Statusy leadów
-    safeUpdateElements('[data-bs-toggle="tooltip"]', (el, index) => {
-        const statusKeys = ['submitted', 'confirmed', 'accepted', 'ready', 'overdue'];
-        const key = statusKeys[index];
-        if (key && i18n.translations?.leadStatuses?.[key]) {
-            const status = i18n.translate(`leadStatuses.${key}`);
-            if (status) {
-                el.title = status;
-            }
-        }
-    });
-
-    // Tooltips dla statusów leadów
-    safeUpdateElements('.lead-status', (el, index) => {
-        const statusKeys = ['submitted', 'confirmed', 'accepted', 'ready', 'overdue'];
-        const key = statusKeys[index];
-        if (key && i18n.translations?.leadStatuses?.[key]) {
-            const status = i18n.translate(`leadStatuses.${key}`);
-            if (status) {
-                el.setAttribute('title', status);
-            }
-        }
-    });
-
     // Komunikaty błędów i ładowania
     safeUpdateElements('.loading-message', el => el.textContent = i18n.translate('loading'));
     safeUpdateElements('.error-empty-query', el => el.textContent = i18n.translate('errorEmptyQuery'));
@@ -925,47 +876,28 @@ function updateInterface(translations) {
         });
     }
 
-    // Aktualizacja tooltipów po zmianie języka
-    initTooltips();
+    // Menu updates
+    updateMenuItems();
+    initializeTooltips();
+    initializeMenu();
 }
 
-// Inicjalizacja tooltipów
-function initTooltips() {
-    try {
-        if (typeof bootstrap === 'undefined') {
-            throw new Error('Bootstrap nie jest załadowany');
-        }
-
-        // Usuń stare tooltips
-        if (tooltipList?.length) {
-            tooltipList.forEach(tooltip => {
-                try {
-                    tooltip?.dispose();
-                } catch (e) {
-                    // Ignoruj błędy przy usuwaniu tooltipów
-                }
-            });
-        }
-        
-        // Inicjalizuj nowe
-        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-        tooltipList = [...tooltipTriggerList].map(el => {
-            try {
-                return new bootstrap.Tooltip(el, {
-                    animation: true,
-                    delay: { show: 100, hide: 100 },
-                    placement: 'auto',
-                    trigger: 'hover focus'
-                });
-            } catch (e) {
-                logToPanel('❌ Błąd inicjalizacji tooltipa', 'error', e);
-                return null;
-            }
-        }).filter(Boolean);
-    } catch (error) {
-        logToPanel('❌ Błąd inicjalizacji tooltipów', 'error', error);
-    }
-}
+// Inicjalizacja tooltipów - niżej mamy nową funkcję initializeTooltips 
+// function initializeTooltips() {
+//     console.log('🔄 Inicjalizuję tooltips...');
+//     const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+//     tooltipTriggerList.forEach(element => {
+//         const tooltipKey = element.getAttribute('data-i18n-tooltip');
+//         if (tooltipKey) {
+//             console.log(`📝 Ustawiam tooltip dla klucza: ${tooltipKey}`);
+//             const translation = i18n.translate(tooltipKey);
+//             if (translation) {
+//                 element.title = translation;
+//             }
+//         }
+//         new bootstrap.Tooltip(element);
+//     });
+// }
 
 // Funkcje pomocnicze do obsługi komunikatów
 function showMessage(type, key) {
@@ -1141,7 +1073,7 @@ async function initializeStoreSelect() {
 
     try {
         // Import stores dynamically
-        const { stores } = await import('./config/stores.js');
+        const { stores } = await import('./services/stores.js');
         
         // Clear existing options
         storeSelect.innerHTML = '';
@@ -1241,32 +1173,20 @@ function initializeLanguageSwitcher() {
     initializeTooltips();
 }
 
-// Dodaj funkcję inicjalizacji motywu
+// Inicjalizacja przełącznika motywu
 function initializeThemeSwitcher() {
-    const lightTheme = document.getElementById('light-theme');
-    const darkTheme = document.getElementById('dark-theme');
-    
-    if (!lightTheme || !darkTheme) return;
+    const themeSwitch = document.getElementById('theme-switch');
+    if (!themeSwitch) return;
 
     // Ustaw początkowy stan
-    const currentTheme = localStorage.getItem('theme') || 'light';
-    document.body.classList.toggle('dark-theme', currentTheme === 'dark');
-    
-    if (currentTheme === 'dark') {
-        darkTheme.checked = true;
-    } else {
-        lightTheme.checked = true;
-    }
+    const currentTheme = themeService.getCurrentTheme();
+    themeSwitch.checked = currentTheme === 'dark';
 
     // Obsługa zmiany motywu
-    function handleThemeChange(theme) {
-        document.body.classList.toggle('dark-theme', theme === 'dark');
-        localStorage.setItem('theme', theme);
-        logToPanel(`🎨 Zmieniono motyw na: ${theme === 'dark' ? 'ciemny' : 'jasny'}`, 'success');
-    }
-
-    lightTheme.addEventListener('change', () => handleThemeChange('light'));
-    darkTheme.addEventListener('change', () => handleThemeChange('dark'));
+    themeSwitch.addEventListener('change', (e) => {
+        const newTheme = e.target.checked ? 'dark' : 'light';
+        themeService.applyTheme(newTheme);
+    });
 }
 
 // Modify the function that updates counters to use the loader
@@ -1488,23 +1408,36 @@ async function verifyDebugPassword() {
 
 // Funkcja inicjalizująca przełącznik debug mode
 function initializeDebugSwitch() {
-    const debugSwitch = document.getElementById('debug-switch');
-    if (!debugSwitch) return;
+    const debugButton = document.getElementById('debug-button');
+    if (!debugButton) return;
     
-    debugSwitch.checked = false;
-    document.body.classList.remove('debug-enabled');
-    chrome.storage.local.set({ debugMode: false });
+    // Ustaw początkowy stan
+    const isDebugEnabled = localStorage.getItem('debug-enabled') === 'true';
+    document.body.classList.toggle('debug-enabled', isDebugEnabled);
+    if (isDebugEnabled) {
+        debugButton.classList.add('active');
+    }
     
-    debugSwitch.addEventListener('change', async (e) => {
-        if (e.target.checked) {
-            if (!await checkDebugAccess()) {
-                e.target.checked = false;
+    debugButton.addEventListener('click', async () => {
+        const isCurrentlyEnabled = document.body.classList.contains('debug-enabled');
+        
+        if (!isCurrentlyEnabled) {
+            if (await verifyDebugPassword()) {
+                document.body.classList.add('debug-enabled');
+                debugButton.classList.add('active');
+                await chrome.storage.local.set({ debugMode: true });
+                localStorage.setItem('debug-enabled', 'true');
+                logToPanel(i18n.translate('debugEnabled'), 'success');
             }
         } else {
             document.body.classList.remove('debug-enabled');
+            debugButton.classList.remove('active');
             await chrome.storage.local.set({ debugMode: false });
+            localStorage.setItem('debug-enabled', 'false');
             logToPanel(i18n.translate('debugDisabled'), 'info');
         }
+        
+        setTimeout(adjustWindowHeight, 50);
     });
 }
 
@@ -1814,12 +1747,34 @@ async function updateRankingData() {
     }
 }
 
-// Dodajemy nasłuchiwanie na zmianę zakładki
+// Global instance for ranking manager
+let rankingManager = null;
+
+// Initialize ranking functionality
 document.querySelectorAll('.nav-link').forEach(tab => {
-    tab.addEventListener('click', function (event) {
+    tab.addEventListener('click', async function (event) {
         const targetId = this.getAttribute('data-target');
         if (targetId === '#ranking') {
-            updateRankingData();
+            try {
+                if (!rankingManager) {
+                    rankingManager = new RankingManager();
+                    await rankingManager.initialize();
+                    logToPanel('✅ Zaktualizowano ranking', 'success');
+                } else {
+                    await rankingManager.fetchData();
+                    logToPanel('✅ Odświeżono ranking', 'success');
+                }
+            } catch (error) {
+                console.error('Błąd podczas inicjalizacji rankingu:', error);
+                logToPanel('❌ Błąd podczas inicjalizacji rankingu', 'error', error.message);
+                
+                const tbody = document.querySelector('#ranking-data tbody');
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Błąd podczas pobierania danych</td></tr>';
+            }
+        } else if (rankingManager) {
+            // Clean up charts when switching away from ranking tab
+            rankingManager.destroyCharts();
+            rankingManager = null;
         }
     });
 });
@@ -1893,7 +1848,7 @@ function initializeUpdateButton() {
                     updateButton.disabled = true;
                     confirmBtn.disabled = true;
                     cancelBtn.disabled = true;
-                    modalTitle.textContent = 'Aktualizacja w toku';
+                    modalTitle.textContent = i18n.translate('interface.updateInProgress');
                     
                     const progressBar = modalBody.querySelector('.progress');
                     const progressBarInner = progressBar.querySelector('.progress-bar');
@@ -1901,27 +1856,27 @@ function initializeUpdateButton() {
                     
                     progressBar.classList.remove('d-none');
                     progressBarInner.style.width = '25%';
-                    messageDiv.innerHTML = '<span class="text-primary">⬇️ Pobieranie aktualizacji...</span>';
-                    logToPanel('🔄 Rozpoczynam aktualizację...', 'info');
+                    messageDiv.innerHTML = `<span class="text-primary">${i18n.translate('interface.downloadingUpdate')}</span>`;
+                    logToPanel(i18n.translate('logs.updateStarted'), 'info');
 
                     // Download update
                     await updateManager.downloadUpdate();
                     progressBarInner.style.width = '50%';
-                    messageDiv.innerHTML += '<br><span class="text-success">✅ Aktualizacja pobrana</span>';
-                    logToPanel('✅ Aktualizacja pobrana', 'success');
+                    messageDiv.innerHTML += `<br><span class="text-success">${i18n.translate('interface.updateDownloaded')}</span>`;
+                    logToPanel(i18n.translate('logs.updateDownloaded'), 'success');
 
                     // Show extraction instructions
                     progressBarInner.style.width = '75%';
-                    messageDiv.innerHTML += '<br>📦 Rozpakuj pobrany plik <strong>kamila-update.zip</strong>';
-                    messageDiv.innerHTML += '<br>📂 Skopiuj zawartość folderu do lokalizacji rozszerzenia';
-                    messageDiv.innerHTML += '<br>🔄 Odśwież rozszerzenie w <strong>chrome://extensions</strong>';
+                    messageDiv.innerHTML += `<br>${i18n.translate('interface.unzipFile')} <strong>kamila-update.zip</strong>`;
+                    messageDiv.innerHTML += `<br>${i18n.translate('interface.copyFolder')}`;
+                    messageDiv.innerHTML += `<br>${i18n.translate('interface.refreshExtension')} <strong>chrome://extensions</strong>`;
 
                     // Final step
                     progressBarInner.style.width = '100%';
-                    messageDiv.innerHTML += '<br><span class="text-success">✅ Gotowe! Odśwież rozszerzenie aby zastosować zmiany.</span>';
+                    messageDiv.innerHTML += `<br><span class="text-success">${i18n.translate('interface.updateComplete')}</span>`;
                     
                     // Re-enable buttons
-                    confirmBtn.textContent = 'Zamknij';
+                    confirmBtn.textContent = i18n.translate('close');
                     confirmBtn.disabled = false;
                     cancelBtn.classList.add('d-none');
                     
@@ -1929,7 +1884,7 @@ function initializeUpdateButton() {
                     confirmBtn.addEventListener('click', () => {
                         modal.hide();
                         updateButton.disabled = false;
-                        updateButton.innerHTML = 'Sprawdź aktualizacje';
+                        updateButton.innerHTML = i18n.translate('checkUpdates');
                     }, { once: true });
 
                 } catch (error) {
@@ -2022,6 +1977,391 @@ function initializeStatusElements() {
                 element.setAttribute('data-status', status);
             }
         }
+    });
+}
+
+// Dodaj listener dla wiadomości z testRunner.js
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'show-alert') {
+        alert(message.message);
+    }
+    
+    // Obsługa wyników testów
+    if (message.action === 'test-results' && message.results) {
+        const results = message.results;
+        
+        // Aktualizuj liczniki
+        document.querySelector('#passed-tests').textContent = results.passed;
+        document.querySelector('#failed-tests').textContent = results.failed;
+        document.querySelector('#test-duration').textContent = `${results.duration}ms`;
+
+        // Aktualizuj szczegóły testów
+        const detailsContainer = document.querySelector('#test-details');
+        if (detailsContainer && results.testResults) {
+            detailsContainer.innerHTML = ''; // Wyczyść poprzednie wyniki
+            
+            results.testResults.forEach(test => {
+                const testElement = document.createElement('div');
+                testElement.className = `test-item d-flex justify-content-between align-items-center p-2 ${
+                    test.status === 'passed' ? 'text-success' : 'text-danger'
+                }`;
+                
+                testElement.innerHTML = `
+                    <div class="test-name">
+                        <i class="bi ${test.status === 'passed' ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}"></i>
+                        ${test.name}
+                    </div>
+                    <div class="test-info">
+                        ${test.status === 'failed' ? `<span class="error-message me-2">${test.error}</span>` : ''}
+                        <span class="duration">${test.duration}ms</span>
+                    </div>
+                `;
+                
+                detailsContainer.appendChild(testElement);
+            });
+        }
+    }
+    
+    // Obsługa błędów testów
+    if (message.action === 'test-error') {
+        console.error('Test error:', message.error);
+        alert(`Test error: ${message.error}`);
+    }
+
+    // Zawsze wysyłaj odpowiedź
+    sendResponse({ received: true });
+    return true; // Informuje Chrome, że odpowiedź będzie wysłana asynchronicznie
+});
+
+// Modify the click handler
+document.getElementById('run-all-tests')?.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ 
+        action: 'run-all-tests',
+        source: 'popup'
+    }, (response) => {
+        if (chrome.runtime.lastError) {
+            console.log('Expected message port closure');
+            return;
+        }
+        console.log('Message sent, response:', response);
+    });
+});
+
+// W listenerze wiadomości
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('Received message:', message);
+    
+    if (message.action === 'show-alert') {
+        alert(message.message);
+        sendResponse({ received: true });
+    }
+    
+    if (message.action === 'test-results' && message.results) {
+        const results = message.results;
+        updateTestResults(results);  // Wydzielamy aktualizację UI do osobnej funkcji
+        sendResponse({ received: true });
+    }
+    
+    if (message.action === 'test-error') {
+        console.error('Test error:', message.error);
+        alert(`Test error: ${message.error}`);
+        sendResponse({ received: true });
+    }
+
+    return true;
+});
+
+// Nowa funkcja do aktualizacji UI z wynikami testów
+function updateTestResults(results) {
+    const passedElement = document.querySelector('#passed-tests');
+    const failedElement = document.querySelector('#failed-tests');
+    const durationElement = document.querySelector('#test-duration');
+    const testPanel = document.querySelector('#testPanel');
+
+    if (passedElement) passedElement.textContent = results.passed;
+    if (failedElement) failedElement.textContent = results.failed;
+    if (durationElement) durationElement.textContent = `${results.duration}ms`;
+
+    if (testPanel && results.testResults) {
+        // Zachowaj pozycję scrolla
+        const oldDetails = document.querySelector('#test-details');
+        const scrollTop = oldDetails ? oldDetails.scrollTop : 0;
+
+        const detailsContainer = document.createElement('div');
+        detailsContainer.id = 'test-details';
+        detailsContainer.className = 'mt-2';
+        
+        results.testResults.forEach(test => {
+            const testRow = document.createElement('div');
+            testRow.className = `test-row d-flex justify-content-between align-items-center p-1 ${
+                test.status === 'passed' ? 'text-success' : 'text-danger'
+            }`;
+            
+            const statusIcon = test.status === 'passed' ? 
+                '<i class="bi bi-check-circle-fill text-success"></i>' : 
+                '<i class="bi bi-x-circle-fill text-danger"></i>';
+
+            const errorDetails = test.error ? `
+                <div class="error-details small text-danger mt-1">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    ${test.error}
+                    ${test.details ? `
+                        <div class="mt-1">
+                            <strong>Expected:</strong> ${JSON.stringify(test.details.expected)}<br>
+                            <strong>Actual:</strong> ${JSON.stringify(test.details.actual)}
+                        </div>
+                    ` : ''}
+                </div>
+            ` : '';
+            
+            testRow.innerHTML = `
+                <div class="test-info flex-grow-1">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="test-name">
+                            ${statusIcon}
+                            <span class="ms-2">${test.name}</span>
+                        </span>
+                        <span class="test-meta">
+                            <small class="text-muted">${test.duration}ms</small>
+                        </span>
+                    </div>
+                    ${errorDetails}
+                </div>
+            `;
+            
+            detailsContainer.appendChild(testRow);
+        });
+
+        // Usuń poprzednie wyniki jeśli istnieją
+        if (oldDetails) {
+            oldDetails.remove();
+        }
+
+        // Dodaj nowe wyniki
+        testPanel.appendChild(detailsContainer);
+
+        // Przywróć pozycję scrolla
+        if (scrollTop > 0) {
+            detailsContainer.scrollTop = scrollTop;
+        }
+    }
+}
+
+// Funkcja inicjalizująca paski postępu dla testów
+function initializeTestProgress(tests) {
+    const progressContainer = document.getElementById('test-progress');
+    if (!progressContainer) return;
+
+    progressContainer.classList.remove('hidden');
+    progressContainer.innerHTML = '';
+
+    tests.forEach((test, index) => {
+        const progressItem = document.createElement('div');
+        progressItem.className = 'test-progress-item';
+        progressItem.id = `test-progress-${index}`;
+        progressItem.innerHTML = `
+            <div class="test-name">
+                <span>${test.name}</span>
+                <span class="duration">0ms</span>
+            </div>
+            <div class="progress">
+                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+            </div>
+        `;
+        progressContainer.appendChild(progressItem);
+    });
+}
+
+// Funkcja aktualizująca pasek postępu dla testu
+function updateTestProgress(index, progress, status, duration) {
+    const progressItem = document.getElementById(`test-progress-${index}`);
+    if (!progressItem) return;
+
+    const progressBar = progressItem.querySelector('.progress-bar');
+    const durationElement = progressItem.querySelector('.duration');
+
+    progressBar.style.width = `${progress}%`;
+    durationElement.textContent = `${duration}ms`;
+
+    // Usuń poprzednie klasy statusu
+    progressItem.classList.remove('completed', 'failed', 'running');
+
+    // Dodaj odpowiednią klasę statusu
+    switch (status) {
+        case 'completed':
+            progressItem.classList.add('completed');
+            break;
+        case 'failed':
+            progressItem.classList.add('failed');
+            break;
+        case 'running':
+            progressItem.classList.add('running');
+            break;
+    }
+}
+
+// Cleanup on extension unload
+window.addEventListener('unload', () => {
+    if (rankingManager) {
+        rankingManager.destroyCharts();
+        rankingManager = null;
+    }
+});
+
+// Inicjalizacja ustawień interwałów
+async function initializeIntervalSettings() {
+    try {
+        const intervals = await getIntervalSettings();
+        
+        // Ustaw wartości w polach
+        document.getElementById('background-check-interval').value = intervals.backgroundCheck;
+        document.getElementById('full-refresh-interval').value = intervals.fullRefresh;
+        document.getElementById('data-freshness-interval').value = intervals.dataFreshness;
+        
+        // Dodaj obsługę przycisku zapisu
+        document.getElementById('save-intervals').addEventListener('click', async () => {
+            const newIntervals = {
+                backgroundCheck: parseInt(document.getElementById('background-check-interval').value),
+                fullRefresh: parseInt(document.getElementById('full-refresh-interval').value),
+                dataFreshness: parseInt(document.getElementById('data-freshness-interval').value)
+            };
+            
+            try {
+                await saveIntervalSettings(newIntervals);
+                // Wyślij wiadomość do background script o zmianie interwałów
+                chrome.runtime.sendMessage({ 
+                    type: 'UPDATE_INTERVALS',
+                    intervals: newIntervals
+                });
+                logToPanel('✅ Zapisano ustawienia interwałów', 'success');
+            } catch (error) {
+                logToPanel('❌ Błąd podczas zapisywania ustawień', 'error', error);
+            }
+        });
+        
+    } catch (error) {
+        logToPanel('❌ Błąd podczas inicjalizacji ustawień', 'error', error);
+    }
+}
+
+// Volume Control Functionality
+function initializeVolumeControl() {
+    const volumeButton = document.getElementById('volume-button');
+    const volumeSlider = document.getElementById('volume-slider');
+    let previousVolume = 100;
+
+    // Load saved volume settings
+    chrome.storage.local.get(['volume', 'isMuted'], ({ volume, isMuted }) => {
+        if (typeof volume === 'number') {
+            volumeSlider.value = volume;
+            previousVolume = volume;
+        }
+        if (isMuted) {
+            volumeButton.classList.add('muted');
+            volumeSlider.value = 0;
+        }
+    });
+
+    // Handle mute button click
+    volumeButton.addEventListener('click', () => {
+        const isMuted = volumeButton.classList.toggle('muted');
+        if (isMuted) {
+            previousVolume = volumeSlider.value;
+            volumeSlider.value = 0;
+        } else {
+            volumeSlider.value = previousVolume;
+        }
+        chrome.storage.local.set({ 
+            isMuted,
+            volume: isMuted ? 0 : previousVolume 
+        });
+    });
+
+    // Handle volume slider change
+    volumeSlider.addEventListener('input', (e) => {
+        const volume = parseInt(e.target.value);
+        if (volume === 0) {
+            volumeButton.classList.add('muted');
+        } else {
+            volumeButton.classList.remove('muted');
+            previousVolume = volume;
+        }
+        chrome.storage.local.set({ 
+            volume,
+            isMuted: volume === 0
+        });
+    });
+}
+
+// Zakładki
+function updateMenuItems() {
+    console.log('🔄 Aktualizuję elementy menu...');
+    const menuItems = document.querySelectorAll('.menu .link');
+    menuItems.forEach(item => {
+        const menuText = item.querySelector('.menu-text');
+        if (menuText) {
+            const key = menuText.getAttribute('data-i18n');
+            if (key) {
+                console.log(`📝 Aktualizuję tekst menu dla klucza: ${key}`);
+                menuText.textContent = i18n.translate(key);
+            }
+        }
+    });
+}
+
+// ... existing code ...
+
+// Dodaj wywołanie w funkcji updateInterface
+// function updateInterface() {
+//     console.log('🔄 Rozpoczynam aktualizację interfejsu...');
+//     updateMenuItems();
+//     initTooltips();
+//     initializeMenu();
+//     // ... reszta kodu updateInterface ...
+// }
+
+function initTooltips() {
+    console.log('🔄 Inicjalizuję tooltips...');
+    const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    tooltipTriggerList.forEach(element => {
+        const tooltipKey = element.getAttribute('data-i18n-tooltip');
+        if (tooltipKey) {
+            console.log(`📝 Ustawiam tooltip dla klucza: ${tooltipKey}`);
+            element.setAttribute('title', i18n.translate(`tooltips.${tooltipKey}`));
+            new bootstrap.Tooltip(element);
+        }
+    });
+}
+
+// Inicjalizacja menu
+function initializeMenu() {
+    console.log('🔄 Inicjalizuję menu...');
+    const menuLinks = document.querySelectorAll('.menu .link');
+    
+    menuLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            
+            // Usuń klasę active z wszystkich linków
+            menuLinks.forEach(l => l.classList.remove('active'));
+            
+            // Dodaj klasę active do klikniętego linku
+            link.classList.add('active');
+            
+            // Pokaż odpowiednią zakładkę
+            const targetId = link.getAttribute('data-target');
+            if (targetId) {
+                const tabPanes = document.querySelectorAll('.tab-pane');
+                tabPanes.forEach(pane => {
+                    pane.classList.remove('show', 'active');
+                });
+                
+                const targetPane = document.querySelector(targetId);
+                if (targetPane) {
+                    targetPane.classList.add('show', 'active');
+                }
+            }
+        });
     });
 }
 

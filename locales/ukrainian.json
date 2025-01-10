@@ -68,7 +68,11 @@
         "rankingFetchError": "❌ Помилка завантаження даних рейтингу",
         "dataFetchGenericError": "Помилка завантаження даних",
         "storeDataRefreshed": "🔄 Дані магазину оновлено: {store}",
-        "refreshError": "❌ Помилка оновлення"
+        "refreshError": "❌ Помилка оновлення",
+        "updateStarted": "🔄 Починаю оновлення...",
+        "updateDownloaded": "✅ Оновлення завантажено",
+        "updateError": "❌ Помилка оновлення: {message}",
+        "updateComplete": "✅ Оновлення завершено"
     },
     "clear": "Очистити",
     "leadDetails": "Деталі замовлення",
@@ -182,7 +186,7 @@
         "unzipFile": "📦 Розпакуйте завантажений файл",
         "copyFolder": "📂 Скопіюйте вміст папки в розташування розширення",
         "refreshExtension": "🔄 Оновіть розширення в",
-        "updateComplete": "✅ Готово! Оновіть розширення для застосування змін.",
+        "updateComplete": "✅ Готово! Оновіть розширення для застосування змін",
         "updateError": "❌ Помилка оновлення: {message}",
         "updateGenericError": "❌ Помилка оновлення",
         "refreshData": "Оновити дані"
@@ -190,5 +194,13 @@
     "ranking": {
         "position": "Позиція",
         "fullName": "Повне ім'я"
+    },
+    "tooltips": {
+        "tooltipChat": "Відкрити чат з асистентом",
+        "tooltipSettings": "Налаштування додатку",
+        "tooltipAbout": "Про додаток",
+        "tooltipStatus": "Статус сервісів",
+        "tooltipDrwn": "Управління DRWN",
+        "tooltipRanking": "Рейтинг продажів"
     }
 }

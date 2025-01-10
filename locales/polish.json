@@ -68,7 +68,11 @@
         "rankingFetchError": "❌ Błąd podczas pobierania danych rankingu",
         "dataFetchGenericError": "Błąd podczas pobierania danych",
         "storeDataRefreshed": "🔄 Odświeżono dane dla sklepu: {store}",
-        "refreshError": "❌ Błąd odświeżania danych"
+        "refreshError": "❌ Błąd odświeżania danych",
+        "updateStarted": "🔄 Rozpoczynam aktualizację...",
+        "updateDownloaded": "✅ Aktualizacja pobrana",
+        "updateError": "❌ Błąd aktualizacji: {message}",
+        "updateComplete": "✅ Aktualizacja zakończona"
     },
     "clear": "Wyczyść",
     "leadDetails": "Szczegóły zamówień",
@@ -185,7 +189,7 @@
         "unzipFile": "📦 Rozpakuj pobrany plik",
         "copyFolder": "📂 Skopiuj zawartość folderu do lokalizacji rozszerzenia",
         "refreshExtension": "🔄 Odśwież rozszerzenie w",
-        "updateComplete": "✅ Gotowe! Odśwież rozszerzenie aby zastosować zmiany.",
+        "updateComplete": "✅ Gotowe! Odśwież rozszerzenie aby zastosować zmiany",
         "updateError": "❌ Błąd aktualizacji: {message}",
         "updateGenericError": "❌ Błąd podczas aktualizacji",
         "refreshData": "Odśwież dane"
@@ -193,5 +197,13 @@
     "ranking": {
         "position": "Pozycja",
         "fullName": "Imię i nazwisko"
+    },
+    "tooltips": {
+        "tooltipChat": "Otwórz czat z asystentem",
+        "tooltipSettings": "Ustawienia aplikacji",
+        "tooltipAbout": "Informacje o aplikacji",
+        "tooltipStatus": "Status usług",
+        "tooltipDrwn": "Zarządzanie DRWN",
+        "tooltipRanking": "Ranking sprzedaży"
     }
 }

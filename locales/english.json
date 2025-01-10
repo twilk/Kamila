@@ -168,7 +168,11 @@
         "rankingFetchError": "❌ Error fetching ranking data",
         "dataFetchGenericError": "Error fetching data",
         "storeDataRefreshed": "🔄 Store data refreshed: {store}",
-        "refreshError": "❌ Refresh error"
+        "refreshError": "❌ Refresh error",
+        "updateStarted": "🔄 Starting update...",
+        "updateDownloaded": "✅ Update downloaded",
+        "updateError": "❌ Update error: {message}",
+        "updateComplete": "✅ Update completed"
     },
     "interface": {
         "selectStoreToView": "Select store to view data",
@@ -186,13 +190,47 @@
         "unzipFile": "📦 Unzip downloaded file",
         "copyFolder": "📂 Copy folder contents to extension location",
         "refreshExtension": "🔄 Refresh extension in",
-        "updateComplete": "✅ Done! Refresh extension to apply changes.",
+        "updateComplete": "✅ Done! Refresh extension to apply changes",
         "updateError": "❌ Update error: {message}",
         "updateGenericError": "❌ Update error",
         "refreshData": "Refresh data"
     },
     "ranking": {
         "position": "Position",
-        "fullName": "Full name"
+        "fullName": "Full name",
+        "sales": "Sales",
+        "margin": "Margin",
+        "trend": "Trend",
+        "change": "Change",
+        "filterByName": "Filter by name...",
+        "filterByPosition": "Filter by position",
+        "filterByTrend": "Filter by trend",
+        "allPositions": "All positions",
+        "allTrends": "All trends",
+        "trendUp": "↑ Rising",
+        "trendDown": "↓ Falling",
+        "trendStable": "→ Stable",
+        "resetFilters": "Reset filters",
+        "performanceChart": "Performance Chart",
+        "trendsChart": "Position Trends",
+        "totalSales": "Total Sales",
+        "avgMargin": "Average Margin",
+        "topPerformer": "Top Performer",
+        "mostImproved": "Most Improved"
+    },
+    "notifications": {
+        "newOrderNotification": "New Order",
+        "orderNotificationFormat": "Order #{id}\nStore: {store}\nValue: {value}",
+        "viewOrder": "View Order Details",
+        "soundEnabled": "Sound notifications enabled",
+        "soundDisabled": "Sound notifications disabled"
+    },
+    "tooltips": {
+        "tooltipChat": "Open chat with assistant",
+        "tooltipSettings": "Application settings",
+        "tooltipAbout": "About application",
+        "tooltipStatus": "Service status",
+        "tooltipDrwn": "DRWN Management",
+        "tooltipRanking": "Sales ranking"
     }
 }

@@ -1,21 +1,53 @@
 import { getDarwinaCredentials } from './config/api.js';
 import { API_CONFIG } from './config/api.js';
-import { stores } from './config/stores.js';
+import { stores } from './services/stores.js';
 import { UserCardService } from './services/userCard.js';
-import { STORAGE_KEYS, saveToStorage, getFromStorage } from './services/storage.js';
+import { STORAGE_KEYS, saveToStorage, getFromStorage, getIntervalSettings } from './services/storage.js';
+import testRunner from './services/testRunner.js';
 
 const FETCH_INTERVAL = 5; // minutes
 const CHECK_INTERVAL = 15; // minutes
+
+// Cache configuration
+const CACHE_KEY = 'darwina_data_cache';
+const CACHE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+
+// Stałe dla świeżości danych
+const DATA_FRESHNESS_TIMEOUT = 5 * 60 * 1000; // 5 minut
+const STORE_CHANGE_TIMEOUT = 30 * 60 * 1000;  // 30 minut
+
+// Funkcja do aktualizacji alarmów
+async function updateAlarms(intervals) {
+    // Usuń istniejące alarmy
+    await chrome.alarms.clear('fetchData');
+    await chrome.alarms.clear('checkOrders');
+    await chrome.alarms.clear('checkNewOrders');
+    
+    // Utwórz nowe alarmy z nowymi interwałami
+    chrome.alarms.create('fetchData', {
+        periodInMinutes: intervals.fullRefresh
+    });
+    
+    chrome.alarms.create('checkOrders', {
+        periodInMinutes: intervals.dataFreshness
+    });
+    
+    chrome.alarms.create('checkNewOrders', {
+        periodInMinutes: intervals.backgroundCheck
+    });
+    
+    console.log('[DEBUG] ⚙️ Zaktualizowano interwały alarmów:', intervals);
+}
 
 // Nasłuchuj na instalację
 chrome.runtime.onInstalled.addListener(async () => {
     console.log('[DEBUG] 🔧 Rozpoczynam instalację rozszerzenia...');
     try {
-        console.log('[DEBUG] ⚙️ Tworzę alarm do pobierania danych...');
-        await createFetchAlarm();
+        // Pobierz zapisane lub domyślne interwały
+        const intervals = await getIntervalSettings();
         
-        console.log('[DEBUG] ⚙️ Tworzę alarm do sprawdzania zamówień...');
-        await createOrderCheckAlarm();
+        // Utwórz alarmy z odpowiednimi interwałami
+        await updateAlarms(intervals);
         
         console.log('[DEBUG] 🔄 Uruchamiam pierwsze sprawdzanie zamówień...');
         await checkAndUpdateOrders();
@@ -78,7 +110,41 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     }
 });
 
-// Funkcja do pobierania i cachowania danych
+// Funkcja sprawdzająca świeżość danych dla sklepu
+async function isDataFresh(selectedStore) {
+    const { store_updates } = await chrome.storage.local.get('store_updates');
+    if (!store_updates || !store_updates[selectedStore]) {
+        return false;
+    }
+
+    const storeData = store_updates[selectedStore];
+    const now = Date.now();
+
+    // Sprawdź czy dane są świeże i czy sklep był niedawno zmieniony
+    return (now - storeData.lastUpdate < DATA_FRESHNESS_TIMEOUT) &&
+           (now - storeData.lastStoreChange < STORE_CHANGE_TIMEOUT);
+}
+
+// Funkcja aktualizująca timestamp dla sklepu
+async function updateStoreTimestamp(selectedStore, isStoreChange = false) {
+    const { store_updates } = await chrome.storage.local.get('store_updates');
+    const now = Date.now();
+    
+    const updates = store_updates || {};
+    updates[selectedStore] = updates[selectedStore] || {};
+    
+    // Aktualizuj timestamp ostatniej aktualizacji
+    updates[selectedStore].lastUpdate = now;
+    
+    // Jeśli to zmiana sklepu, zaktualizuj również timestamp zmiany
+    if (isStoreChange) {
+        updates[selectedStore].lastStoreChange = now;
+    }
+    
+    await chrome.storage.local.set({ store_updates: updates });
+}
+
+// Zmodyfikowana funkcja fetchAndCacheData
 async function fetchAndCacheData(selectedStore) {
     try {
         const log = (message, type, data) => {
@@ -93,12 +159,24 @@ async function fetchAndCacheData(selectedStore) {
 
         log('🔄 Rozpoczynam pobieranie danych', 'info');
         const darwinaConfig = await getDarwinaCredentials();
-        const data = await fetchDarwinaData(darwinaConfig, selectedStore);
+
+        // Sprawdź czy możemy użyć aktualizacji przyrostowej
+        const shouldUseIncremental = await isDataFresh(selectedStore);
+        const { last_full_update } = await chrome.storage.local.get('last_full_update');
+
+        let data;
+        if (shouldUseIncremental && last_full_update) {
+            log('📥 Używam aktualizacji przyrostowej', 'info');
+            data = await fetchIncrementalData(darwinaConfig, selectedStore, last_full_update);
+        } else {
+            log('📥 Pobieram pełne dane', 'info');
+            data = await fetchFullData(darwinaConfig, selectedStore);
+        }
         
         if (data.success) {
             await saveToStorage(STORAGE_KEYS.STORE_DATA(selectedStore), data);
+            await updateStoreTimestamp(selectedStore);
             log('✅ Dane zapisane', 'success');
-            // Aktualizuj badge po pobraniu nowych danych
             updateExtensionBadge(data.counts, selectedStore);
         }
         return data;
@@ -113,6 +191,16 @@ async function fetchAndCacheData(selectedStore) {
         throw error;
     }
 }
+
+// Nasłuchuj na zmianę sklepu
+chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.selectedStore) {
+        const newStore = changes.selectedStore.newValue;
+        if (newStore) {
+            updateStoreTimestamp(newStore, true);
+        }
+    }
+});
 
 // Nasłuchuj na wiadomości
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -156,16 +244,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const { selectedStore } = await chrome.storage.local.get('selectedStore');
                 console.log('[DEBUG] 🏪 Wybrany sklep:', selectedStore || 'ALL');
                 
-                // Sprawdź dane w cache
-                const cacheKey = getCacheKey(selectedStore);
-                const cachedData = await CacheService.get(cacheKey);
+                // Sprawdź dane w storage
+                const storedData = await getFromStorage(STORAGE_KEYS.STORE_DATA(selectedStore));
                 
-                if (cachedData?.success) {
-                    console.log('[DEBUG] ⚡ Zwracam dane z cache');
-                    return cachedData;
+                if (storedData?.success) {
+                    console.log('[DEBUG] ⚡ Zwracam dane z storage');
+                    return storedData;
                 }
 
-                // Jeśli brak danych w cache lub są nieaktualne, pobierz nowe
+                // Jeśli brak danych w storage lub są nieaktualne, pobierz nowe
                 console.log('[DEBUG] 🔄 Pobieram świeże dane z API');
                 const data = await fetchAndCacheData(selectedStore);
                 
@@ -194,6 +281,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'USER_DATA_COLLECTED') {
         handleUserData(message.payload);
         return false;
+    }
+
+    if (message.action === 'run-all-tests') {
+        // Wysyłamy wiadomość z powrotem do popup
+        // chrome.runtime.sendMessage({ 
+        //     action: 'show-alert',
+        //     message: 'Running all tests!'
+        // });
+
+        // Uruchom testy
+        testRunner.runAll().then(results => {
+            // Wyślij wyniki z powrotem do popup
+            chrome.runtime.sendMessage({
+                action: 'test-results',
+                results: results  // Przekaż całe wyniki, nie tylko część
+            });
+            // Wyślij odpowiedź na oryginalną wiadomość
+            sendResponse({ success: true });
+        }).catch(error => {
+            chrome.runtime.sendMessage({
+                action: 'test-error',
+                error: error.message
+            });
+            // Wyślij odpowiedź na oryginalną wiadomość
+            sendResponse({ success: false, error: error.message });
+        });
+        
+        return true; // Informuje Chrome, że odpowiedź będzie wysłana asynchronicznie
+    }
+
+    if (message.type === 'UPDATE_INTERVALS') {
+        updateAlarms(message.intervals).catch(error => {
+            console.error('Error updating alarms:', error);
+        });
     }
 });
 
@@ -295,6 +416,10 @@ async function handlePopupOpened(sendResponse) {
 async function handleCheckOrdersNow(sendResponse) {
     try {
         await checkAndUpdateOrders();
+        
+        // Force a full reload by clearing the last_full_update timestamp
+        await chrome.storage.local.remove('last_full_update');
+        
         const data = await fetchAndCacheData();
         await chrome.storage.local.set({ 
             lastUpdate: Date.now(),
@@ -310,20 +435,13 @@ async function handleCheckOrdersNow(sendResponse) {
 
 // Funkcja do pobierania danych z API
 async function fetchDarwinaData(darwinaConfig, selectedStore) {
-    let allOrders = [];
-    const statusGroups = ['1', '2', '3', '5'];
-    
-    // Oblicz całkowitą liczbę kroków
-    const totalSteps = statusGroups.length;
-    let currentStep = 0;
-
     try {
         // Wyślij informację o rozpoczęciu zadania
         await sendMessageToPopup('PROGRESS_UPDATE', {
             type: 'START_TASK',
             data: {
                 taskName: 'Pobieranie danych',
-                totalSteps: totalSteps
+                totalSteps: 1
             }
         });
 
@@ -331,101 +449,29 @@ async function fetchDarwinaData(darwinaConfig, selectedStore) {
         const { last_full_update } = await chrome.storage.local.get('last_full_update');
         const isFirstRun = !last_full_update;
 
-        for (const statusGroup of statusGroups) {
+        let result;
+        if (isFirstRun) {
+            await sendMessageToPopup('PROGRESS_UPDATE', {
+                type: 'UPDATE_STATUS',
+                data: { status: 'Pierwsze uruchomienie - pobieram pełne dane...' }
+            });
+            result = await fetchFullData(darwinaConfig, selectedStore);
+        } else {
+            await sendMessageToPopup('PROGRESS_UPDATE', {
+                type: 'UPDATE_STATUS',
+                data: { status: 'Pobieram zmiany od ostatniej aktualizacji...' }
+            });
             try {
-                currentStep++;
-                await sendMessageToPopup('PROGRESS_UPDATE', {
-                    type: 'UPDATE_TASK',
-                    data: {
-                        increment: 1,
-                        status: `Pobieranie statusu ${statusGroup} (${currentStep}/${totalSteps})`
-                    }
-                });
-
-                let currentPage = 1;
-                let totalPages = 1;
-                
-                // Przygotuj parametry dla danej grupy statusów
-                const baseParams = new URLSearchParams();
-                baseParams.append('status_id', statusGroup);
-                baseParams.append('limit', '50');
-
-                // Dodaj filtr sklepu (tylko delivery_id)
-                if (selectedStore && selectedStore !== 'ALL') {
-                    const store = stores.find(s => s.id === selectedStore);
-                    if (!store) {
-                        throw new Error(`Nie znaleziono sklepu o ID: ${selectedStore}`);
-                    }
-                    baseParams.append('delivery_id', store.deliveryId.toString());
-                }
-
-                // Dodaj filtr modified_from jeśli nie jest to pierwsze uruchomienie
-                if (!isFirstRun) {
-                    baseParams.append('modified_from', new Date(last_full_update).toISOString());
-                }
-
-                // Pobierz wszystkie strony dla danego statusu
-                do {
-                    baseParams.set('page', currentPage.toString());
-                    const requestUrl = `${darwinaConfig.DARWINA_API_BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}?${baseParams.toString()}`;
-                    
-                    console.log('[DEBUG] 🔍 Wysyłam zapytanie:', {
-                        url: requestUrl,
-                        page: currentPage,
-                        params: Object.fromEntries(baseParams.entries())
-                    });
-
-                    const response = await fetch(requestUrl, {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        }
-                    });
-
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        throw new Error(`API Error: ${response.status} - ${errorText}`);
-                    }
-
-                    const data = await response.json();
-                    totalPages = data.__metadata?.page_count || 1;
-
-                    if (data.data && Array.isArray(data.data)) {
-                        allOrders = [...allOrders, ...data.data];
-                        await sendMessageToPopup('PROGRESS_UPDATE', {
-                            type: 'UPDATE_STATUS',
-                            data: {
-                                status: `Status ${statusGroup}: strona ${currentPage}/${totalPages}`
-                            }
-                        });
-                    }
-
-                    currentPage++;
-                } while (currentPage <= totalPages);
-
+                result = await fetchIncrementalData(darwinaConfig, selectedStore, last_full_update);
             } catch (error) {
+                console.error('Failed incremental update, falling back to full fetch:', error);
                 await sendMessageToPopup('PROGRESS_UPDATE', {
-                    type: 'ERROR',
-                    data: {
-                        message: `Błąd pobierania danych dla statusu ${statusGroup}: ${error.message}`
-                    }
+                    type: 'UPDATE_STATUS',
+                    data: { status: 'Błąd aktualizacji przyrostowej - pobieram pełne dane...' }
                 });
-                throw error;
+                result = await fetchFullData(darwinaConfig, selectedStore);
             }
         }
-
-        // Informuj o rozpoczęciu przetwarzania
-        await sendMessageToPopup('PROGRESS_UPDATE', {
-            type: 'UPDATE_STATUS',
-            data: {
-                status: 'Przetwarzanie danych...'
-            }
-        });
-
-        // Przetwórz dane i przygotuj wynik
-        const result = await processDataWithProgress(allOrders, selectedStore, isFirstRun);
 
         // Informuj o zakończeniu
         await sendMessageToPopup('PROGRESS_UPDATE', {
@@ -448,21 +494,151 @@ async function fetchDarwinaData(darwinaConfig, selectedStore) {
     }
 }
 
-// Nowa funkcja do przetwarzania danych z postępem
+async function fetchFullData(darwinaConfig, selectedStore) {
+    let allOrders = [];
+    const statusGroups = ['1', '2', '3', '5'];
+    const totalSteps = statusGroups.length;
+
+    for (const statusGroup of statusGroups) {
+        try {
+            await sendMessageToPopup('PROGRESS_UPDATE', {
+                type: 'UPDATE_STATUS',
+                data: { status: `Pobieranie statusu ${statusGroup}...` }
+            });
+
+            const orders = await fetchOrdersByStatus(darwinaConfig, statusGroup, selectedStore);
+            allOrders = [...allOrders, ...orders];
+
+        } catch (error) {
+            console.error(`Error fetching status ${statusGroup}:`, error);
+            throw error;
+        }
+    }
+
+    const result = await processDataWithProgress(allOrders, selectedStore, true);
+    return result;
+}
+
+async function fetchIncrementalData(darwinaConfig, selectedStore, lastUpdate) {
+    let changedOrders = [];
+    const statusGroups = ['1', '2', '3', '5'];
+
+    for (const statusGroup of statusGroups) {
+        try {
+            await sendMessageToPopup('PROGRESS_UPDATE', {
+                type: 'UPDATE_STATUS',
+                data: { status: `Sprawdzanie zmian dla statusu ${statusGroup}...` }
+            });
+
+            const orders = await fetchOrdersByStatus(darwinaConfig, statusGroup, selectedStore, lastUpdate);
+            changedOrders = [...changedOrders, ...orders];
+
+        } catch (error) {
+            console.error(`Error fetching changes for status ${statusGroup}:`, error);
+            throw error;
+        }
+    }
+
+    const result = await processDataWithProgress(changedOrders, selectedStore, false);
+    return result;
+}
+
+async function fetchOrdersByStatus(darwinaConfig, statusGroup, selectedStore, lastUpdate = null) {
+    const baseParams = new URLSearchParams();
+    baseParams.append('status_id', statusGroup);
+    baseParams.append('limit', '50');
+
+    if (selectedStore && selectedStore !== 'ALL') {
+        const store = stores.find(s => s.id === selectedStore);
+        if (!store) {
+            throw new Error(`Nie znaleziono sklepu o ID: ${selectedStore}`);
+        }
+        baseParams.append('delivery_id', store.deliveryId.toString());
+    }
+
+    if (lastUpdate) {
+        baseParams.append('modified_from', new Date(lastUpdate).toISOString());
+    }
+
+    let allOrders = [];
+    let currentPage = 1;
+    let totalPages = 1;
+
+    do {
+        baseParams.set('page', currentPage.toString());
+        const requestUrl = `${darwinaConfig.DARWINA_API_BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}?${baseParams.toString()}`;
+
+        console.log('[DEBUG] 🔍 Wysyłam zapytanie:', {
+            url: requestUrl,
+            page: currentPage,
+            params: Object.fromEntries(baseParams.entries())
+        });
+
+        const response = await fetch(requestUrl, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`API Error: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json();
+        totalPages = data.__metadata?.page_count || 1;
+
+        if (data.data && Array.isArray(data.data)) {
+            allOrders = [...allOrders, ...data.data];
+        }
+
+        currentPage++;
+    } while (currentPage <= totalPages);
+
+    return allOrders;
+}
+
+// Funkcja do przetwarzania danych z postępem
 async function processDataWithProgress(allOrders, selectedStore, isFirstRun) {
-    // Jeśli to nie jest pierwsze uruchomienie, pobierz poprzednie dane z cache
-    let processedOrders = allOrders;
-    if (!isFirstRun) {
-        const cacheKey = getCacheKey(selectedStore);
-        const cachedData = await CacheService.get(cacheKey);
-        if (cachedData && cachedData.orders) {
+    let processedOrders;
+    
+    if (isFirstRun) {
+        // Dla pierwszego uruchomienia - użyj wszystkich pobranych zamówień
+        processedOrders = allOrders;
+        console.log(`[DEBUG] 📥 Pierwsze uruchomienie - zapisuję ${allOrders.length} zamówień`);
+    } else {
+        // Dla kolejnych uruchomień - pobierz istniejące dane i zaktualizuj je
+        const storedData = await getFromStorage(STORAGE_KEYS.STORE_DATA(selectedStore));
+        if (storedData && storedData.orders) {
+            // Stwórz mapę istniejących zamówień
+            const ordersMap = new Map(storedData.orders.map(order => [order.id, order]));
+            
+            // Zliczaj aktualizacje i nowe zamówienia
+            let updateCount = 0;
+            let newCount = 0;
+            
             // Aktualizuj lub dodaj nowe zamówienia
-            const ordersMap = new Map(cachedData.orders.map(order => [order.id, order]));
             allOrders.forEach(order => {
+                if (ordersMap.has(order.id)) {
+                    updateCount++;
+                } else {
+                    newCount++;
+                }
                 ordersMap.set(order.id, order);
             });
+            
             processedOrders = Array.from(ordersMap.values());
-            console.log(`[DEBUG] 🔄 Zaktualizowano ${allOrders.length} zamówień w cache zawierającym ${cachedData.orders.length} zamówień`);
+            console.log(`[DEBUG] 🔄 Aktualizacja przyrostowa:
+                - Zaktualizowano: ${updateCount} zamówień
+                - Dodano nowych: ${newCount} zamówień
+                - Łącznie w storage: ${processedOrders.length} zamówień`);
+        } else {
+            // Jeśli nie ma danych w storage, traktuj jak pierwsze uruchomienie
+            processedOrders = allOrders;
+            console.log(`[DEBUG] ⚠️ Brak danych w storage - zapisuję ${allOrders.length} zamówień`);
         }
     }
 
@@ -485,7 +661,7 @@ async function processDataWithProgress(allOrders, selectedStore, isFirstRun) {
 }
 
 // Funkcja do przetwarzania zamówień i liczenia statusów
-function processOrders(orders) {
+export function processOrders(orders) {
     const twoWeeksAgo = new Date(Date.now() - 14 * 86400000);
     const totalOrders = orders.length;
     let processedCount = 0;
@@ -517,23 +693,18 @@ function processOrders(orders) {
         switch (parsedStatus) {
             case 1: // SUBMITTED
                 acc['1'] = (acc['1'] || 0) + 1;
-                // console.log(`[DEBUG] 📝 Zamówienie ${order.id} - status: Złożone`);
                 break;
             case 2: // CONFIRMED
                 acc['2'] = (acc['2'] || 0) + 1;
-                // console.log(`[DEBUG] ✓ Zamówienie ${order.id} - status: Potwierdzone`);
                 break;
             case 3: // ACCEPTED_STORE
                 acc['3'] = (acc['3'] || 0) + 1;
-                // console.log(`[DEBUG] 🏪 Zamówienie ${order.id} - status: Przyjęte`);
                 break;
             case 5: // READY
                 if (parsedDate < twoWeeksAgo) {
                     acc['OVERDUE'] = (acc['OVERDUE'] || 0) + 1;
-                    // console.log(`[DEBUG] ⏳ Zamówienie ${order.id} oznaczone jako przeterminowane (data: ${orderDate})`);
                 } else {
                     acc['READY'] = (acc['READY'] || 0) + 1;
-                    // console.log(`[DEBUG] 📦 Zamówienie ${order.id} - status: Gotowe do odbioru`);
                 }
                 break;
             default:
@@ -767,4 +938,90 @@ function updateExtensionBadge(counts, selectedStore) {
     chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
     console.log(`[DEBUG] 🔄 Zaktualizowano badge dla sklepu ${selectedStore}: ${sum}`);
 }
+
+// Funkcja do tworzenia powiadomienia o nowym zamówieniu
+function createOrderNotification(order, status) {
+    const orderUrl = `${API_CONFIG.DARWINA.BASE_URL}/orders/${order.order_id}`;
+    const notificationId = `order-${order.order_id}`;
+    
+    chrome.notifications.create(notificationId, {
+        type: 'basic',
+        iconUrl: 'icon128.png',
+        title: i18n.translate('newOrderNotification'),
+        message: i18n.translate('orderNotificationFormat', {
+            id: order.order_id,
+            status: status,
+            store: order.delivery_name || 'Nieznany sklep',
+            value: order.total_price ? `${order.total_price} zł` : 'N/A'
+        }),
+        buttons: [
+            {
+                title: i18n.translate('viewOrder')
+            }
+        ],
+        requireInteraction: true,
+        silent: false // Enable sound
+    });
+}
+
+// Nasłuchuj na kliknięcie powiadomienia
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+    if (notificationId.startsWith('order-')) {
+        const orderId = notificationId.replace('order-', '');
+        const orderUrl = `${API_CONFIG.DARWINA.BASE_URL}/orders/${orderId}`;
+        chrome.tabs.create({ url: orderUrl });
+    }
+});
+
+// Funkcja do sprawdzania nowych zamówień w tle
+async function checkNewOrders(selectedStore) {
+    try {
+        const { last_check_time } = await chrome.storage.local.get('last_check_time');
+        const now = Date.now();
+        
+        // Pobierz tylko zamówienia zmodyfikowane od ostatniego sprawdzenia
+        const orders = await fetchOrdersByStatus(
+            await getDarwinaCredentials(),
+            '1', // Status SUBMITTED
+            selectedStore,
+            last_check_time
+        );
+
+        // Aktualizuj czas ostatniego sprawdzenia
+        await chrome.storage.local.set({ last_check_time: now });
+
+        // Pokaż powiadomienia dla nowych zamówień
+        for (const order of orders) {
+            createOrderNotification(order, '1');
+        }
+
+        // Aktualizuj badge
+        if (orders.length > 0) {
+            const { leadCounts } = await chrome.storage.local.get('leadCounts');
+            const newCounts = {
+                ...leadCounts,
+                '1': (leadCounts?.['1'] || 0) + orders.length
+            };
+            await updateLeadCounts(newCounts, leadCounts);
+            updateExtensionBadge(newCounts, selectedStore);
+        }
+
+    } catch (error) {
+        console.error('Error checking new orders:', error);
+    }
+}
+
+// Dodaj alarm do sprawdzania nowych zamówień
+chrome.alarms.create('checkNewOrders', {
+    periodInMinutes: 1 // Sprawdzaj co minutę
+});
+
+// Nasłuchuj na alarm sprawdzania nowych zamówień
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'checkNewOrders') {
+        chrome.storage.local.get('selectedStore', async ({ selectedStore }) => {
+            await checkNewOrders(selectedStore);
+        });
+    }
+});
   

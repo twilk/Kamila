@@ -1,4 +1,5 @@
 import { API_BASE_URL, API_CONFIG, getDarwinaCredentials, sendLogToPopup } from '../config/api.js';
+import { CacheService } from './cache.js';
 
 // Helper function to check if popup is open and log accordingly
 const log = (message, type, data) => {

@@ -11,15 +11,19 @@
         "notifications",
         "downloads",
         "scripting",
-        "alarms"
+        "alarms",
+        "runtime"
     ],
     "host_permissions": [
         "https://darwina.pl/*",
         "https://*.darwina.pl/*",
         "https://darwina.weblucy.com/*",
         "https://docs.google.com/*",
+        "https://spreadsheets.google.com/*",
+        "https://*.googleapis.com/*",
         "https://github.com/*",
-        "https://raw.githubusercontent.com/*"
+        "https://raw.githubusercontent.com/*",
+        "https://cdn.jsdelivr.net/*"
     ],
     "action": {
         "default_popup": "popup.html"
@@ -34,7 +38,7 @@
         "type": "module"
     },
     "content_security_policy": {
-        "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://darwina.pl https://*.darwina.pl https://darwina.weblucy.com https://docs.google.com https://github.com https://raw.githubusercontent.com;"
+        "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://darwina.pl https://*.darwina.pl https://darwina.weblucy.com https://docs.google.com https://spreadsheets.google.com https://*.googleapis.com https://github.com https://raw.githubusercontent.com https://cdn.jsdelivr.net;"
     },
     "content_scripts": [{
         "matches": [
@@ -52,11 +56,12 @@
             "users/*.json",
             "config/credentials.json",
             "config/delivery.js",
-            "config/stores.js",
+            "services/stores.js",
             "config/api.js",
             "qrcodes/*",
             "lib/*",
-            "locales/*"
+            "locales/*",
+            "src/*"
         ],
         "matches": [
             "https://darwina.pl/*",

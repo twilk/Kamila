@@ -12,7 +12,6 @@ export const i18n = {
 
     async init() {
         try {
-            // Pobierz zapisany język lub użyj domyślnego
             const savedLang = localStorage.getItem('language');
             this.currentLanguage = savedLang || 'polish';
             
@@ -30,7 +29,6 @@ export const i18n = {
             return true;
         } catch (error) {
             console.error('Error loading translations:', error);
-            // Fallback do pustego obiektu tłumaczeń
             this.translations = {};
             return false;
         }
@@ -41,19 +39,46 @@ export const i18n = {
     },
 
     updateDataI18n() {
-        document.querySelectorAll('[data-i18n]').forEach(element => {
+        console.log('🔍 Updating i18n data...');
+        
+        // Najpierw menu - zapobiega migotaniu
+        document.querySelectorAll('.link-title').forEach(element => {
+            const key = element.getAttribute('data-i18n');
+            console.log('📌 Menu element:', element);
+            console.log('🔑 Key:', key);
+            
+            if (key) {
+                const translation = this.translate(key);
+                console.log('🌐 Translation:', translation);
+                
+                if (translation) {
+                    const textElement = element.querySelector('.menu-text');
+                    console.log('📝 Text element:', textElement);
+                    
+                    if (textElement) {
+                        textElement.textContent = translation;
+                        console.log('✅ Updated text to:', translation);
+                    }
+                }
+            }
+        });
+
+        // Pozostałe elementy
+        document.querySelectorAll('[data-i18n]:not(.link-title)').forEach(element => {
             const key = element.getAttribute('data-i18n');
             const translation = this.translate(key);
             if (translation) {
                 element.textContent = translation;
             }
         });
+    },
 
-        document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
-            const key = element.getAttribute('data-i18n-placeholder');
+    updateTooltips() {
+        document.querySelectorAll('[data-i18n-tooltip]').forEach(element => {
+            const key = element.getAttribute('data-i18n-tooltip');
             const translation = this.translate(key);
             if (translation) {
-                element.placeholder = translation;
+                element.title = translation;
             }
         });
     }

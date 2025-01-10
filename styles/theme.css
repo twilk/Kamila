@@ -287,3 +287,533 @@ select:focus {
   border-color: var(--status-border);
   color: var(--text-primary);
 } 
+
+/* Ranking Styles */
+#ranking-data {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+}
+
+#ranking-data table {
+    margin-bottom: 0;
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+#ranking-data th {
+    position: sticky;
+    top: 0;
+    background: var(--bg-secondary);
+    z-index: 1;
+    cursor: pointer;
+    padding-right: 25px;
+}
+
+#ranking-data th::after {
+    content: '↕';
+    position: absolute;
+    right: 8px;
+    opacity: 0.3;
+}
+
+#ranking-data th.sort-asc::after {
+    content: '↑';
+    opacity: 1;
+}
+
+#ranking-data th.sort-desc::after {
+    content: '↓';
+    opacity: 1;
+}
+
+#ranking-data td, 
+#ranking-data th {
+    padding: 8px;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 14px;
+}
+
+/* Column widths */
+#ranking-data td:nth-child(1), 
+#ranking-data th:nth-child(1) { width: 10%; text-align: center; }
+#ranking-data td:nth-child(2), 
+#ranking-data th:nth-child(2) { width: 25%; }
+#ranking-data td:nth-child(3), 
+#ranking-data th:nth-child(3) { width: 20%; text-align: right; }
+#ranking-data td:nth-child(4), 
+#ranking-data th:nth-child(4) { width: 15%; text-align: right; }
+#ranking-data td:nth-child(5), 
+#ranking-data th:nth-child(5) { width: 15%; text-align: center; }
+#ranking-data td:nth-child(6), 
+#ranking-data th:nth-child(6) { width: 15%; text-align: center; }
+
+/* Trend indicators */
+.trend-up { color: var(--success); }
+.trend-down { color: var(--danger); }
+.trend-stable { color: var(--secondary); }
+
+/* Charts */
+.ranking-charts .card {
+    height: 250px;
+}
+
+.ranking-charts canvas {
+    width: 100% !important;
+    height: 200px !important;
+}
+
+/* Summary cards */
+.ranking-summary .card {
+    border: 1px solid var(--bs-border-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.ranking-summary .card:hover {
+    transform: translateY(-2px);
+}
+
+.ranking-summary .card-title {
+    font-size: 1rem;
+    font-weight: 500;
+    margin-bottom: 1rem;
+    color: var(--bs-primary);
+}
+
+.ranking-summary .card-body {
+    padding: 1rem;
+}
+
+.ranking-summary .d-flex {
+    font-size: 0.875rem;
+}
+
+.ranking-summary strong {
+    font-weight: 500;
+    color: var(--bs-emphasis-color);
+}
+
+/* Dark theme support */
+[data-bs-theme="dark"] .ranking-summary .card {
+    background-color: var(--bs-dark);
+    border-color: var(--bs-border-color);
+}
+
+[data-bs-theme="dark"] .ranking-summary strong {
+    color: var(--bs-light);
+}
+
+/* Filters */
+.ranking-filters input,
+.ranking-filters select {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    color: var(--text-primary);
+}
+
+[data-theme='dark'] .ranking-filters input,
+[data-theme='dark'] .ranking-filters select {
+    background: var(--bg-secondary-dark);
+    border-color: var(--border-dark);
+    color: var(--text-primary);
+} 
+
+.ranking-table {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.ranking-table table {
+    position: relative;
+    width: 100%;
+    table-layout: fixed;
+}
+
+.ranking-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--bs-body-bg);
+    z-index: 1;
+    cursor: pointer;
+    white-space: nowrap;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    text-align: center;
+}
+
+/* Column widths */
+.ranking-table th[data-sort="position"],
+.ranking-table td:nth-child(1) { width: 40px; text-align: center; }
+
+.ranking-table th[data-sort="name"],
+.ranking-table td:nth-child(2) { width: 150px; text-align: left; }
+
+.ranking-table th[data-sort="manager"],
+.ranking-table td:nth-child(3) { display: none; }
+
+.ranking-table th[data-sort="totalRanking"],
+.ranking-table td:nth-child(4) { width: 80px; text-align: right; }
+
+.ranking-table th[data-sort="leads"],
+.ranking-table td:nth-child(5) { width: 60px; text-align: right; }
+
+.ranking-table th[data-sort="sales"],
+.ranking-table td:nth-child(6) { width: 90px; text-align: right; }
+
+.ranking-table th[data-sort="units"],
+.ranking-table td:nth-child(7) { width: 60px; text-align: right; }
+
+.ranking-table th[data-sort="margin"],
+.ranking-table td:nth-child(8) { width: 60px; text-align: right; }
+
+.ranking-table th[data-sort^="sku"],
+.ranking-table td:nth-child(9),
+.ranking-table td:nth-child(10),
+.ranking-table td:nth-child(11),
+.ranking-table td:nth-child(12),
+.ranking-table td:nth-child(13) { width: 70px; text-align: center; }
+
+.ranking-table th[data-sort="training"],
+.ranking-table td:nth-child(14) { width: 50px; text-align: center; }
+
+.ranking-table th[data-sort="employeeRating"],
+.ranking-table td:nth-child(15) { width: 60px; text-align: center; }
+
+.ranking-table th[data-sort="storeRating"],
+.ranking-table td:nth-child(16) { width: 60px; text-align: center; }
+
+.ranking-table th[data-sort="groupOrders"],
+.ranking-table td:nth-child(17) { width: 70px; text-align: center; }
+
+.ranking-table th[data-sort="delay"],
+.ranking-table td:nth-child(18) { width: 70px; text-align: center; }
+
+.ranking-table th:last-child,
+.ranking-table td:last-child { width: 90px; text-align: center; }
+
+.ranking-table thead th:hover {
+    background: var(--bs-gray-200);
+}
+
+.ranking-table th[data-sort].sort-asc::after {
+    content: '↑';
+    margin-left: 4px;
+}
+
+.ranking-table th[data-sort].sort-desc::after {
+    content: '↓';
+    margin-left: 4px;
+}
+
+.ranking-table tbody td {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.sku-stats {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-start;
+    align-items: center;
+}
+
+.sku-stats span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 0.25rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.sku-new {
+    background: rgba(40, 167, 69, 0.1);
+    color: rgb(40, 167, 69);
+}
+
+.sku-fix {
+    background: rgba(255, 193, 7, 0.1);
+    color: rgb(255, 193, 7);
+}
+
+.sku-dub {
+    background: rgba(220, 53, 69, 0.1);
+    color: rgb(220, 53, 69);
+}
+
+.sku-kat {
+    background: rgba(13, 110, 253, 0.1);
+    color: rgb(13, 110, 253);
+}
+
+.sku-art {
+    background: rgba(111, 66, 193, 0.1);
+    color: rgb(111, 66, 193);
+}
+
+/* Dark theme support */
+[data-bs-theme="dark"] .ranking-table thead th {
+    background: var(--bs-dark);
+}
+
+[data-bs-theme="dark"] .ranking-table thead th:hover {
+    background: var(--bs-gray-700);
+}
+
+[data-bs-theme="dark"] .sku-stats span {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+} 
+
+.trend-stats {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    align-items: center;
+}
+
+.trend {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 0.25rem;
+    border-radius: 4px;
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.trend-up {
+    background: rgba(40, 167, 69, 0.1);
+    color: rgb(40, 167, 69);
+}
+
+.trend-down {
+    background: rgba(220, 53, 69, 0.1);
+    color: rgb(220, 53, 69);
+}
+
+.trend-stable {
+    background: rgba(108, 117, 125, 0.1);
+    color: rgb(108, 117, 125);
+}
+
+/* Dark theme support */
+[data-bs-theme="dark"] .trend {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ranking-charts .card {
+    height: 300px;
+}
+
+.ranking-charts canvas {
+    width: 100% !important;
+    height: 250px !important;
+} 
+
+/* Compact filters */
+.ranking-filters .form-control-sm,
+.ranking-filters .form-select-sm,
+.ranking-filters .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    min-height: 26px;
+    height: 26px;
+}
+
+.ranking-filters .btn-sm {
+    line-height: 1;
+}
+
+/* Compact summary cards */
+.ranking-summary .card {
+    margin-bottom: 0.5rem;
+}
+
+.ranking-summary .card-body {
+    padding: 0.5rem;
+}
+
+.ranking-summary .card-title {
+    font-size: 0.875rem;
+    margin-bottom: 0.5rem;
+}
+
+.ranking-summary .d-flex {
+    font-size: 0.75rem;
+    margin-bottom: 0.25rem;
+}
+
+.ranking-summary .d-flex:last-child {
+    margin-bottom: 0;
+}
+
+/* Compact table */
+/* .ranking-table {
+    max-height: 300px;
+} */
+
+.ranking-table thead th {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    position: sticky;
+    top: 0;
+    background: var(--bs-body-bg);
+    z-index: 1;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.ranking-table thead th:hover {
+    background: var(--bs-gray-200);
+}
+
+.ranking-table th[data-sort].sort-asc::after {
+    content: '↑';
+    margin-left: 4px;
+}
+
+.ranking-table th[data-sort].sort-desc::after {
+    content: '↓';
+    margin-left: 4px;
+}
+
+.ranking-table tbody td {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+/* Compact SKU stats */
+.sku-stats {
+    display: flex;
+    gap: 0.25rem;
+    justify-content: flex-start;
+    align-items: center;
+}
+
+.sku-stats span {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 0.25rem;
+    font-size: 0.7rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.sku-new {
+    background: rgba(40, 167, 69, 0.1);
+    color: rgb(40, 167, 69);
+}
+
+.sku-fix {
+    background: rgba(255, 193, 7, 0.1);
+    color: rgb(255, 193, 7);
+}
+
+.sku-dub {
+    background: rgba(220, 53, 69, 0.1);
+    color: rgb(220, 53, 69);
+}
+
+.sku-kat {
+    background: rgba(13, 110, 253, 0.1);
+    color: rgb(13, 110, 253);
+}
+
+.sku-art {
+    background: rgba(111, 66, 193, 0.1);
+    color: rgb(111, 66, 193);
+}
+
+/* Compact trends */
+.trend {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 0.25rem;
+    font-size: 0.875rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.trend-stats {
+    gap: 0.25rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.trend-up {
+    background: rgba(40, 167, 69, 0.1);
+    color: rgb(40, 167, 69);
+}
+
+.trend-down {
+    background: rgba(220, 53, 69, 0.1);
+    color: rgb(220, 53, 69);
+}
+
+.trend-stable {
+    background: rgba(108, 117, 125, 0.1);
+    color: rgb(108, 117, 125);
+}
+
+/* Dark theme support */
+[data-bs-theme="dark"] .ranking-table thead th {
+    background: var(--bs-dark);
+}
+
+[data-bs-theme="dark"] .ranking-table thead th:hover {
+    background: var(--bs-gray-700);
+}
+
+[data-bs-theme="dark"] .sku-stats span,
+[data-bs-theme="dark"] .trend {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Spacing adjustments */
+.ranking-filters {
+    margin-bottom: 0.5rem;
+}
+
+.ranking-summary {
+    margin-bottom: 0.5rem;
+}
+
+/* Container padding adjustment */
+#ranking.tab-pane .p-3 {
+    padding: 0.5rem !important;
+} 
+
+.menu-text {
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    transition: opacity 0.2s ease-in;
+}
+
+.link-title {
+    position: absolute;
+    width: 85px;
+    left: 45px;
+    display: flex;
+    align-items: center;
+    height: 100%;
+} 

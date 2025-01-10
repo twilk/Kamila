@@ -7,9 +7,14 @@ import { UserManager } from './components/userManager.js';
 import { InterfaceManager } from './components/interfaceManager.js';
 import { i18n } from '../services/i18n.js';
 import { progressManager, leadCountManager } from '../services/progressManager.js';
+import testRunner from '../services/testRunner.js';
+
+// Import tests
+import '../tests/integration/translation.test.js';
 
 class PopupManager {
     constructor() {
+        console.log('🚀 Initializing PopupManager');
         this.uiManager = new UIManager();
         this.dataManager = new DataManager(this.uiManager);
         this.statusManager = new StatusManager();
@@ -29,6 +34,28 @@ class PopupManager {
             
             // Initialize UI components
             await this.initializeUIComponents();
+            
+            // Initialize test runner
+            console.log('🧪 Setting up test runner...');
+            const runButton = document.getElementById('run-all-tests');
+            console.log('Run button found:', !!runButton);
+            
+            if (runButton) {
+                runButton.addEventListener('click', async () => {
+                    console.log('🧪 Run button clicked');
+                    try {
+                        console.log('🧪 Starting tests...');
+                        const results = await testRunner.runAll();
+                        console.log('🧪 Test results:', results);
+                    } catch (error) {
+                        console.error('🧪 Test error:', error);
+                        this.debugManager.logToPanel('❌ Błąd podczas wykonywania testów', 'error', error);
+                    }
+                });
+                console.log('🧪 Click handler attached to run button');
+            } else {
+                console.warn('🧪 Run button not found in DOM');
+            }
             
             // Notify background script about popup opening
             await this.notifyPopupOpened();

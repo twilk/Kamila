@@ -1,6 +1,6 @@
 import { API } from './index.js';
-import { i18n } from './i18nService.js';
-import { progressManager } from './progressService.js';
+import { i18n } from './i18n.js';
+import { ProgressManager } from './progressManager.js';
 import { STORAGE_KEYS, saveToStorage, getFromStorage } from './storage.js';
 
 export class DataManager {

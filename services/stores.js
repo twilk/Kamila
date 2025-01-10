@@ -1,4 +1,4 @@
-import { DELIVERY_METHODS, DELIVERY_IDS } from './delivery.js';
+import { DELIVERY_METHODS, DELIVERY_IDS } from '../config/delivery.js';
 
 export const stores = [
     { id: 'ALL', name: 'Wszystkie sklepy', deliveryId: null, drwn: null },

@@ -1,5 +1,5 @@
 import { DELIVERY_IDS } from './delivery.js';
-import { stores } from './stores.js';
+import { stores } from '../services/stores.js';
 
 export const API_CONFIG = {
     DARWINA: {

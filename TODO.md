@@ -1,130 +1,145 @@
-# Plan przywrócenia zmian po rollbacku
+# Analiza i implementacja menu z tłumaczeniami
 
-## 1. Przygotowanie
-- [x] Wykonać rollback do ostatniej działającej wersji
-- [x] Utworzyć nowy branch `feature/storage-refactor`
-- [x] Zweryfikować działanie aplikacji po rollbacku
+## 1. Analiza systemu i18n
 
-## 2. Etap 1: Przygotowanie Chrome Storage
-- [x] Dodać stałe dla kluczy storage
-- [x] Przetestować podstawowe operacje na chrome.storage.local
-- [x] Dodać helper functions dla storage
+### ✅ Zmodyfikowana implementacja
+```javascript
+// services/i18n.js - ZROBIONE
+updateDataI18n() {
+    // Najpierw menu - zapobiega migotaniu
+    document.querySelectorAll('.link-title').forEach(element => {
+        const key = element.getAttribute('data-i18n');
+        if (key) {
+            const translation = this.translate(key);
+            if (translation) {
+                const textElement = element.querySelector('.menu-text');
+                if (textElement) {
+                    textElement.textContent = translation;
+                }
+            }
+        }
+    });
 
-## 3. Etap 2: Migracja Cache do Storage w background.js
-- [x] Zmodyfikować fetchAndCacheData
-- [x] Zaktualizować message handler
-- [x] Uprościć processDataWithProgress
-
-## 4. Etap 3: Czyszczenie Kodu
-- [x] Usunąć pliki:
-  - [x] services/cache.js - zawierał CacheService z metodami get/set
-  - [x] services/errors.js - zawierał ApiError i HTTP_ERRORS
-  - [x] services/retry.js - zawierał RetryStrategy
-  - [x] services/validator.js - zawierał DataValidator
-
-- [x] Usunąć importy i użycia:
-  - [x] W popup.js usunięto import CacheService
-  - [x] W users.js usunięto import i użycie getFromCache/saveToCache
-  - [x] W sellyApi.js zastąpiono całą implementację placeholderem
-
-## 5. Etap 4: Aktualizacja API
-- [x] Uprościć services/sellyApi.js do:
-  ```js
-  export const sellyApi = null;
-  ```
-- [x] Zaktualizować services/users.js do bezpośredniego dostępu do plików
-- [x] Zaktualizować services/dataManager.js
-
-## 6. Testowanie
-- [x] Przetestować pobieranie danych
-  - [x] Testy dla storage.js
-  - [x] Testy dla dataManager.js
-  - [x] Testy dla users.js
-- [x] Przetestować zapisywanie do storage
-  - [x] Testy operacji CRUD na storage
-  - [x] Testy obsługi błędów storage
-- [x] Przetestować odczyt ze storage
-  - [x] Testy dla różnych typów danych
-  - [x] Testy dla nieistniejących kluczy
-- [x] Sprawdzić obsługę błędów
-  - [x] Testy dla błędów API
-  - [x] Testy dla błędów storage
-  - [x] Testy dla błędów walidacji
-- [x] Zweryfikować wydajność
-  - [x] Test dużych obiektów w storage
-  - [x] Test częstych operacji odczytu/zapisu
-- [x] Sprawdzić limity chrome.storage.local
-  - [x] Test przekroczenia limitu 5MB
-  - [x] Test obsługi błędów quota exceeded
-
-## 7. Dokumentacja
-- [ ] Zaktualizować komentarze w kodzie
-- [ ] Zaktualizować README.md o zmiany w storage
-- [ ] Dodać informacje o migracji z cache do storage
-- [ ] Dodać informację o limitach storage (5MB)
-
-## 8. Finalizacja
-- [ ] Code review
-- [ ] Testy końcowe
-- [ ] Merge do głównego brancha
-
-## 9. Panel Testów w UI
-- [ ] Utworzyć nowy komponent TestPanel
-  - [ ] Stworzyć podstawowy layout panelu
-  - [ ] Dodać style dla wskaźników (zielony/czerwony)
-  - [ ] Zaimplementować automatyczne wykrywanie testów
-  - [ ] Dodać animacje dla statusów testów
-
-- [ ] Zmodyfikować istniejące testy
-  - [ ] Przenieść testy do formatu wykonywalnego w przeglądarce
-  - [ ] Dodać metadane do testów (nazwa, opis, kategoria)
-  - [ ] Dodać mechanizm raportowania wyników
-
-- [ ] Integracja z UI
-  - [ ] Dodać panel testów do zakładki About
-  - [ ] Zaimplementować automatyczne odświeżanie wyników
-  - [ ] Dodać możliwość ręcznego uruchomienia testów
-  - [ ] Dodać szczegółowe raporty dla failujących testów
-
-- [ ] System raportowania
-  - [ ] Stworzyć format raportów testów
-  - [ ] Dodać liczniki czasów wykonania
-  - [ ] Dodać szczegółowe logi dla błędów
-  - [ ] Zaimplementować eksport wyników
-
-## Struktura TestPanel
-```js
-{
-  name: string;           // Nazwa testu
-  category: string;       // Kategoria (np. 'storage', 'performance')
-  description: string;    // Krótki opis testu
-  status: 'pass'|'fail'; // Status wykonania
-  duration: number;      // Czas wykonania w ms
-  error?: Error;        // Szczegóły błędu jeśli wystąpił
-  timestamp: number;    // Kiedy test był wykonany
+    // Pozostałe elementy
+    document.querySelectorAll('[data-i18n]:not(.link-title)').forEach(element => {
+        const key = element.getAttribute('data-i18n');
+        const translation = this.translate(key);
+        if (translation) {
+            element.textContent = translation;
+        }
+    });
 }
 ```
 
-## Format metadanych testu
-```js
-@TestMetadata({
-  name: 'Large Object Storage',
-  category: 'Performance',
-  description: 'Tests storage operations with 1MB+ objects'
-})
+## 2. Następne kroki implementacji
+
+### 2.1. Aktualizacja HTML
+```html
+<!-- TODO: Zaktualizować strukturę menu -->
+<div class="menu">
+    <a class="link active" data-target="#chat" role="tab">
+        <span class="link-icon">
+            <i class="bi bi-chat-heart"></i>
+        </span>
+        <div class="link-title">
+            <span class="menu-text" data-i18n="chat">Chat</span>
+        </div>
+    </a>
+</div>
 ```
 
-## Uwagi implementacyjne
-- Testy muszą być wykonywalne w kontekście przeglądarki
-- Panel powinien być generatywny (automatycznie wykrywać nowe testy)
-- Wyniki testów powinny być zapisywane w storage
-- Dodać możliwość eksportu wyników do JSON
-- Zachować możliwość uruchamiania testów z CLI dla CI/CD
+### 2.2. Style CSS do dodania
+```css
+/* TODO: Dodać style */
+.menu-text {
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    transition: opacity 0.2s ease-in;
+}
 
-## Uwagi
-- Implementować zmiany małymi krokami
-- Testować każdą zmianę przed przejściem dalej
-- Zachować kopie zapasowe ważnych plików
-- Utrzymywać spójność z TypeScript
-- Pamiętać o limitach chrome.storage.local (5MB)
-- Dodać obsługę błędów gdy storage jest pełny
+.link-title {
+    position: absolute;
+    width: 85px;
+    left: 45px;
+    display: flex;
+    align-items: center;
+    height: 100%;
+}
+```
+
+## 3. Lista zadań
+
+### 3.1. System i18n [✅]
+- [x] Modyfikacja metody updateDataI18n
+- [x] Dodanie obsługi menu-text
+- [x] Separacja menu od innych elementów
+- [x] Optymalizacja kolejności aktualizacji
+
+### 3.2. HTML [NASTĘPNE]
+- [ ] Aktualizacja struktury menu w popup.html:
+  ```html
+  <div class="menu">
+      <!-- Zaktualizować każdy element menu -->
+  </div>
+  ```
+- [ ] Dodanie klas menu-text
+- [ ] Przeniesienie data-i18n na właściwe elementy
+- [ ] Weryfikacja tooltipów
+
+### 3.3. CSS [PÓŹNIEJ]
+- [ ] Dodanie nowych styli dla menu-text
+- [ ] Optymalizacja animacji
+- [ ] Dostosowanie szerokości i odstępów
+- [ ] Style dla dark mode
+
+### 3.4. Testy
+- [ ] Test zmiany języka:
+  ```javascript
+  // TODO: Dodać test
+  it('should update menu text without breaking icons', () => {
+      // ...
+  });
+  ```
+- [ ] Test zachowania ikon
+- [ ] Test animacji
+- [ ] Test tooltipów
+
+## 4. Znane problemy do rozwiązania
+1. [ ] Opóźnienie ładowania ikon Bootstrap
+2. [ ] Kolejność inicjalizacji i18n vs DOM
+3. [ ] Zachowanie tooltipów przy zmianie języka
+4. [ ] Wydajność selektorów CSS
+
+## 5. Optymalizacje
+1. [ ] Cachowanie selektorów DOM
+2. [ ] Lazy loading tłumaczeń
+3. [ ] Redukcja reflow/repaint
+4. [ ] Batch updates dla DOM
+
+## 6. Następne kroki (w kolejności)
+1. [ ] Aktualizacja popup.html
+2. [ ] Dodanie nowych styli CSS
+3. [ ] Testy jednostkowe
+4. [ ] Code review
+5. [ ] Dokumentacja zmian
+
+## 7. Pytania do rozwiązania
+1. Czy potrzebujemy osobną obsługę dla tooltipów menu?
+2. Jak obsłużyć dynamiczne zmiany języka?
+3. Czy warto dodać transition dla tekstu?
+4. Jak zoptymalizować kolejność ładowania?
+
+## 8. Metryki do sprawdzenia
+- [ ] Czas pierwszego renderowania
+- [ ] Czas zmiany języka
+- [ ] Płynność animacji
+- [ ] Zużycie pamięci
+
+## 9. Dokumentacja
+- [ ] Aktualizacja README
+- [ ] JSDoc dla nowych metod
+- [ ] Przykłady użycia
+- [ ] Changelog
