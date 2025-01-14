@@ -3,9 +3,11 @@ import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
 import { i18n } from './i18n.js';
 
 export class UpdateManager extends BaseManager {
-    constructor() {
-        super();
-        this.currentVersion = chrome.runtime.getManifest().version;
+    constructor(eventManager) {
+        super([eventManager]);
+        this.eventManager = eventManager;
+        this.updateAvailable = false;
+        this.lastCheck = null;
     }
 
     async initialize() {

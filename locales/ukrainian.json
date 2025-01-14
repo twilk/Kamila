@@ -2,7 +2,7 @@
     "welcome": "<strong class='brand'>KAMILA</strong> - Інтелектуальний асистент <strong class='brand'>DARWINA.PL</strong>",
     "chat": "Чат",
     "settings": "Налаштування",
-    "about": "Про програму",
+    "about": "Про додаток",
     "status": "Статус",
     "queryLabel": "Ваш запит:",
     "queryPlaceholder": "Введіть своє запитання...",
@@ -202,5 +202,9 @@
         "tooltipStatus": "Статус сервісів",
         "tooltipDrwn": "Управління DRWN",
         "tooltipRanking": "Рейтинг продажів"
-    }
+    },
+    "testPanel": "Панель тестування",
+    "runAllTests": "Запустити всі тести",
+    "drwn": "DRWN",
+    "ranking": "Рейтинг"
 }

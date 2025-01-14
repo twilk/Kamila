@@ -1,175 +1,164 @@
-# Development Notes
+# DARWINA.PL Chrome Extension Notes
 
-## Architecture Overview
-
-### Core Services Hierarchy
-```
-BaseManager
-├── MetricsManager
-├── DataManager
-├── CacheManager (new)
-├── UIManager
-│   └── InterfaceManager
-├── ErrorHandler (planned)
-├── LoadingManager
-├── MenuManager
-├── StatusManager
-└── MessageHandler (planned)
-```
-
-### Import Structure Issues
-
-#### Duplicate Imports in popup.js
-```javascript
-// Duplicated managers from index.js:
-- UpdateManager
-- ProgressManager
-- LanguageManager
-- RankingManager
-- MenuManager
-- LoadingManager
-- StatusManager
-- InterfaceManager
-```
-
-#### Module Organization
+## Directory Structure
 ```
 services/
-├── core/               # Core framework
+├── core/               # Core services and managers
 │   ├── BaseManager.js
+│   ├── ErrorTypes.js
+│   ├── ErrorHandler.js
 │   ├── InitLogger.js
 │   ├── MetricsManager.js
-│   ├── ErrorHandler.js
-│   ├── ErrorTypes.js
-│   └── UIManager.js
-│
-├── managers/          # Feature managers (should be moved here)
+│   ├── EventManager.js
+│   ├── UIManager.js
+│   ├── DebugManager.js
+│   ├── ConnectionManager.js
 │   ├── CacheManager.js
-│   ├── DataManager.js
-│   ├── MenuManager.js
-│   └── ...
-│
-└── services/         # Business services (should be moved here)
-    ├── i18n.js
-    ├── api.js
-    ├── stores.js
+│   └── LoadingManager.js
+├── api/                # API related services
+│   ├── api.js         # Base API functionality
+│   ├── darwinApi.js   # DARWINA API implementation
+│   └── userCard.js    # User card service
+└── managers/          # Feature managers
+    ├── dataManager.js
+    ├── menuManager.js
+    ├── progressManager.js
     └── ...
 ```
 
-### Import Path Issues
-1. Direct core imports should be avoided:
-   ```javascript
-   // Bad
-   import { ErrorHandler } from './services/core/ErrorHandler.js';
-   
-   // Good
-   import { ErrorHandler } from './services/index.js';
+## Initialization Order
+1. Core Services (must be initialized first):
+   - InitLogger
+   - MetricsManager
+   - ErrorHandler
+   - UIManager
+   - DebugManager
+   - EventManager
+   - ConnectionManager
+   - CacheManager
+
+2. Base Managers:
+   - LoadingManager (requires EventManager)
+   - ProgressManager (requires EventManager)
+   - MenuManager (requires EventManager)
+   - VolumeManager (requires EventManager)
+
+3. Feature Managers:
+   - DataManager (requires UIManager, CacheManager, ConnectionManager)
+   - StatusManager (requires EventManager)
+   - UserManager (requires UIManager)
+   - InterfaceManager (requires UIManager, EventManager, DebugManager)
+   - UpdateManager (requires EventManager)
+   - LanguageManager (requires EventManager)
+   - RefreshManager (requires DataManager)
+
+## API Structure
+- Base API class in api.js exports named API class
+- DarwinApi extends base API
+- All API services should be in services/api/ directory
+
+## Data Loading Sequences
+1. Initial Load (Popup Open):
+   ```
+   DataManager
+   ├── API Configuration
+   ├── Credentials
+   ├── Cache Check
+   │   ├── Valid: Incremental Update
+   │   └── Invalid: Full Data Fetch
+   └── Store Selection
    ```
 
-2. Duplicate manager definitions:
-   - Some managers are imported both from index.js and directly
-   - Need to standardize import approach
-
-3. Missing module organization:
-   - Core modules in services/core/
-   - Feature managers scattered in services/
-   - Business services mixed with managers
-
-### Required Changes
-1. Reorganize directory structure:
+2. Order Status Loading:
    ```
-   services/
-   ├── core/      # Framework components
-   ├── managers/  # Feature managers
-   └── services/  # Business services
+   StatusManager
+   ├── SUBMITTED Orders (5min)
+   ├── CONFIRMED Orders (5min)
+   ├── ACCEPTED Orders (15min)
+   ├── READY Orders (15min)
+   └── Overdue Check (>14 days)
    ```
 
-2. Update import paths in index.js:
-   ```javascript
-   // Core
-   export * from './core/index.js';
-   
-   // Managers
-   export * from './managers/index.js';
-   
-   // Services
-   export * from './services/index.js';
+3. User Data Loading:
+   ```
+   UserManager
+   ├── Profile
+   ├── Permissions
+   ├── Preferences
+   └── Activity History
    ```
 
-3. Clean up duplicate imports in popup.js:
-   - Remove direct imports of managers
-   - Use only index.js imports
-   - Group imports by type (core/managers/services)
+4. Store Data Loading:
+   ```
+   StoreManager
+   ├── Available Stores List
+   ├── Selected Store Details
+   ├── Store Statistics
+   └── Store Configuration
+   ```
 
-### Service Dependencies
-```
-DataManager
-├── CacheManager (data caching)
-├── MetricsManager (performance tracking)
-└── ErrorHandler (error handling)
+5. Background Updates:
+   ```
+   RefreshManager
+   ├── New Orders Check (1min)
+   ├── Counter Updates (5min)
+   ├── Status Changes (5min)
+   ├── Cache Updates (5min)
+   └── Data Validation (15min)
+   ```
 
-UIManager
-├── LoadingManager (loading states)
-├── MenuManager (navigation)
-└── InterfaceManager (UI components)
+6. On-Demand Loading:
+   ```
+   EventManager
+   ├── Store Change
+   ├── Filter Change
+   ├── Manual Refresh
+   └── User Actions
+   ```
 
-MessageHandler (planned)
-├── ErrorHandler
-└── MetricsManager
-```
+7. Error Handling:
+   ```
+   ErrorHandler
+   ├── Retry Logic (max 3)
+   ├── Cache Fallback
+   ├── Graceful Degradation
+   └── Critical Error Notifications
+   ```
 
-### Core Functionality Flow
-1. **Initialization Chain**
-   - BaseManager initialization
-   - Dependencies resolution
-   - Services startup
-   - UI components mounting
+## Common Issues
+1. Initialization Chain:
+   - Always initialize core services first
+   - Check dependencies before initializing managers
+   - Use proper error handling during initialization
 
-2. **Data Flow**
-   - API Request → CacheManager check
-   - Cache hit/miss handling
-   - Data processing
-   - UI update
+2. Error Handling:
+   - Use ErrorType and ErrorSeverity from ErrorTypes.js
+   - Always set error handler for managers
+   - Log errors through DebugManager
 
-3. **Event System**
-   - Chrome Extension messaging
-   - Inter-service communication
-   - UI event handling
-   - Error propagation
+3. Connection Management:
+   - Check connection before API calls
+   - Use cached data when offline
+   - Handle reconnection gracefully
 
-### Performance Monitoring
-- Operation timing tracking
-- Memory usage monitoring
-- Cache hit/miss ratio
-- API call frequency
-- UI render performance
+4. Cache Management:
+   - Clear cache for previous store before changes
+   - Validate data before caching
+   - Use proper TTL for cached data
 
-### Current Status
+## Current Status
+1. Completed:
+   - Core services structure
+   - Basic error handling
+   - Cache management
+   - Loading indicators
 
-#### Completed
-- ✅ Basic manager framework
-- ✅ Initialization system
-- ✅ Cache system
-- ✅ UI optimization
-- ✅ Metrics collection
+2. In Progress:
+   - API service reorganization
+   - Connection management improvements
+   - Error recovery strategies
 
-#### In Progress
-- 🔄 Error handling system
-- 🔄 Message handling
-- 🔄 Integration tests
-- 🔄 Performance optimization
-- 🔄 Module organization
-
-#### Planned
-- ⏳ Memory optimization
-- ⏳ Full test coverage
-- ⏳ Documentation update
-- ⏳ Performance benchmarks
-- ⏳ Directory restructuring
-
-### Next Development Focus
-1. Directory restructuring and import cleanup
-2. Error handling system implementation
-3. Message handling system
-4. Integration tests
-5. Performance optimization 
+3. Planned:
+   - Enhanced offline support
+   - Better data validation
+   - Performance optimizations

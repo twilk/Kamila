@@ -1,23 +1,53 @@
 import { BaseManager } from './core/BaseManager.js';
 import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
 import { API_BASE_URL } from '../config/api.js';
+import { CacheManager } from './core/CacheManager.js';
+import { CachePriority } from './core/CacheManager.js';
+import { ConnectionManager } from './core/ConnectionManager.js';
+import { UIManager } from './core/UIManager.js';
+import { storageManager } from './storage.js';
+import { storeManager } from './storeManager.js';
+import { OrderService } from './api/drwn.js';
+import { getDarwinaCredentials } from '../config/api.js';
+import { stores } from './stores.js';
+import { STORAGE_KEYS } from '../config/storage.js';
 
 export class DataManager extends BaseManager {
     constructor(uiManager) {
         super();
-        this.uiManager = uiManager;
-        this.cache = new Map();
-        this.cacheTimeout = 5 * 60 * 1000; // 5 minut
+        this._uiManager = uiManager;
+        this._cacheManager = null;
+        this._connectionManager = null;
     }
 
     async initialize() {
         try {
+            // Create and initialize CacheManager if not provided
+            if (!this.dependencies.has(CacheManager)) {
+                const cacheManager = new CacheManager();
+                await cacheManager.initialize();
+                this.dependencies.add(cacheManager);
+            }
+
+            // Initialize base after dependencies are ready
             await super.initialize();
-            await this.clearExpiredCache();
+
+            // Get dependencies
+            this._cacheManager = Array.from(this.dependencies).find(dep => dep instanceof CacheManager);
+            this._uiManager = Array.from(this.dependencies).find(dep => dep instanceof UIManager);
+
+            if (!this._cacheManager) {
+                throw new Error('CacheManager dependency not found');
+            }
+            if (!this._uiManager) {
+                throw new Error('UIManager dependency not found');
+            }
+
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.ERROR, {
-                method: 'initialize'
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.ERROR, {
+                method: 'initialize',
+                context: 'Failed to initialize DataManager'
             });
             return false;
         }
@@ -29,7 +59,7 @@ export class DataManager extends BaseManager {
             
             // Check cache first if not forcing refresh
             if (!forceRefresh) {
-                const cachedData = this.getFromCache(cacheKey);
+                const cachedData = await this._cacheManager.get(cacheKey);
                 if (cachedData) {
                     return cachedData;
                 }
@@ -38,22 +68,28 @@ export class DataManager extends BaseManager {
             // Show loading state
             this.uiManager.showMessage('loading', 'Pobieranie danych...');
 
-            // Build URL with parameters
-            const url = new URL(endpoint, API_BASE_URL);
-            Object.entries(params).forEach(([key, value]) => {
-                url.searchParams.append(key, value);
-            });
-
-            // Fetch data
-            const response = await fetch(url.toString());
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+            // Get API credentials
+            const credentials = await getDarwinaCredentials();
+            if (!credentials) {
+                throw new Error('Missing API credentials');
             }
 
-            const data = await response.json();
+            // Initialize OrderService
+            const orderService = new OrderService(credentials);
+
+            // Fetch data based on current store
+            const currentStore = await storeManager.getCurrentStore();
+            const data = await orderService.fetchAllOrders(currentStore);
+
+            if (!data.success) {
+                throw new Error('Failed to fetch data from API');
+            }
             
-            // Cache the result
-            this.setInCache(cacheKey, data);
+            // Cache the result with high priority for frequently accessed data
+            await this._cacheManager.set(cacheKey, data, {
+                priority: CachePriority.HIGH,
+                ttl: 300000 // 5 minutes
+            });
 
             // Hide loading message
             this.uiManager.hideMessage('loading');
@@ -74,39 +110,9 @@ export class DataManager extends BaseManager {
         return `${endpoint}:${JSON.stringify(params)}`;
     }
 
-    getFromCache(key) {
-        const cached = this.cache.get(key);
-        if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
-            return cached.data;
-        }
-        return null;
-    }
-
-    setInCache(key, data) {
-        this.cache.set(key, {
-            data,
-            timestamp: Date.now()
-        });
-    }
-
-    async clearExpiredCache() {
-        try {
-            const now = Date.now();
-            for (const [key, value] of this.cache.entries()) {
-                if (now - value.timestamp >= this.cacheTimeout) {
-                    this.cache.delete(key);
-                }
-            }
-        } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.WARNING, {
-                method: 'clearExpiredCache'
-            });
-        }
-    }
-
     async clearCache() {
         try {
-            this.cache.clear();
+            await this._cacheManager.clear();
         } catch (error) {
             this.handleError(error, ErrorType.STORAGE, ErrorSeverity.WARNING, {
                 method: 'clearCache'
@@ -114,97 +120,123 @@ export class DataManager extends BaseManager {
         }
     }
 
-    async refreshData() {
+    async refreshData(forceRefresh = false) {
         try {
-            // Clear cache first
-            await this.clearCache();
-
-            // Get selected store
-            const { selectedStore } = await chrome.storage.local.get('selectedStore');
-            if (!selectedStore) {
+            const currentStore = await storeManager.getCurrentStore();
+            if (!currentStore) {
                 throw new Error('No store selected');
             }
 
-            // Send refresh request to background
-            const response = await this.sendMessage({
-                type: 'FETCH_DARWINA_DATA',
-                selectedStore,
-                forceRefresh: true
+            // Check if we can use cached data
+            if (!forceRefresh) {
+                const cachedData = await storageManager.load(STORAGE_KEYS.STORE_DATA(currentStore.id));
+                if (cachedData && this.isDataFresh(cachedData)) {
+                    console.log('[DEBUG] 📦 Using cached data for store:', currentStore.id);
+                    return cachedData;
+                }
+            }
+
+            // Show loading state
+            this.emit('loading:start');
+
+            // Get API credentials
+            const credentials = await getDarwinaCredentials();
+            if (!credentials) {
+                throw new Error('Missing API credentials');
+            }
+
+            // Initialize OrderService
+            const orderService = new OrderService(credentials);
+            
+            // Check if store has API configuration
+            if (!currentStore.drwn && currentStore.id !== 'ALL') {
+                throw new Error(`Store ${currentStore.id} has no API configuration`);
+            }
+
+            // Fetch data
+            let data;
+            if (currentStore.id === 'ALL') {
+                // For 'ALL' store, aggregate data from all stores
+                data = await this.fetchAggregatedData(orderService);
+            } else {
+                // For specific store
+                data = await orderService.fetchLeadCounts(currentStore.drwn);
+            }
+
+            // Validate data
+            if (!this.validateCountsData(data?.counts)) {
+                throw new Error('Invalid data received from API');
+            }
+
+            // Save to storage
+            await storageManager.save(STORAGE_KEYS.STORE_DATA(currentStore.id), {
+                ...data,
+                timestamp: Date.now()
             });
 
-            if (response?.error) {
-                throw new Error(response.error);
-            }
+            // Emit update event
+            this.emit('data:updated', data);
 
-            // Update storage with new data
-            if (response?.counts) {
-                await chrome.storage.local.set({ 
-                    leadCounts: response.counts,
-                    lastUpdate: Date.now()
-                });
-            }
-
-            // Emit data refresh event
-            this.emit('dataRefreshed', { counts: response?.counts });
-
-            return response;
+            return data;
         } catch (error) {
-            this.handleError(error, ErrorType.DATA, ErrorSeverity.ERROR, {
-                method: 'refreshData'
+            this.handleError(error, ErrorType.DATA, ErrorSeverity.HIGH, {
+                method: 'refreshData',
+                store: currentStore?.id || 'unknown'
             });
             throw error;
+        } finally {
+            this.emit('loading:end');
         }
     }
 
-    async checkStatus() {
-        try {
-            const statuses = {
-                api: false,
-                auth: false,
-                data: false,
-                cache: false
-            };
+    // Helper method to fetch aggregated data from all stores
+    async fetchAggregatedData(orderService) {
+        const availableStores = stores.filter(store => store.id !== 'ALL' && store.drwn);
+        const allData = await Promise.all(
+            availableStores.map(store => orderService.fetchLeadCounts(store.drwn))
+        );
 
-            // Check API & Auth in one call
-            const response = await this.sendMessage({
-                type: 'CHECK_API_STATUS'
-            });
+        // Aggregate counts
+        const aggregatedCounts = {
+            '1': 0,
+            '2': 0,
+            '3': 0,
+            'READY': 0,
+            'OVERDUE': 0
+        };
 
-            statuses.api = response?.apiStatus || false;
-            statuses.auth = response?.authStatus || false;
+        allData.forEach(data => {
+            if (data?.counts) {
+                Object.entries(data.counts).forEach(([status, count]) => {
+                    aggregatedCounts[status] = (aggregatedCounts[status] || 0) + (count || 0);
+                });
+            }
+        });
 
-            // Check data access
-            const { leadCounts } = await chrome.storage.local.get('leadCounts');
-            statuses.data = !!leadCounts;
-
-            // Check cache
-            statuses.cache = this.cache.size > 0;
-
-            // Emit status update
-            this.emit('statusUpdated', statuses);
-
-            return statuses;
-        } catch (error) {
-            this.handleError(error, ErrorType.SYSTEM, ErrorSeverity.WARNING, {
-                method: 'checkStatus'
-            });
-            return {
-                api: false,
-                auth: false,
-                data: false,
-                cache: false
-            };
-        }
+        return {
+            counts: aggregatedCounts,
+            success: true
+        };
     }
 
-    dispose() {
-        try {
-            this.clearCache();
-            super.dispose();
-        } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.ERROR, {
-                method: 'dispose'
-            });
+    // Validate counts data
+    validateCountsData(counts) {
+        if (!counts || typeof counts !== 'object') {
+            return false;
         }
+
+        const requiredStatuses = ['1', '2', '3', 'READY', 'OVERDUE'];
+        return requiredStatuses.every(status => 
+            typeof counts[status] === 'number' && 
+            counts[status] >= 0
+        );
+    }
+
+    // Check if data is fresh (less than 5 minutes old)
+    isDataFresh(data) {
+        if (!data?.timestamp) return false;
+        const now = Date.now();
+        const dataAge = now - data.timestamp;
+        return dataAge < 5 * 60 * 1000; // 5 minutes
     }
 } 

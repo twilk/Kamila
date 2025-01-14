@@ -1,6 +1,13 @@
-// Dodaj import na górze pliku
 import { checkApiStatus, checkAuthStatus, checkOrdersStatus, checkCacheStatus } from './api.js';
-import { processOrders } from '../background.js';
+import { DataManager } from './dataManager.js';
+
+// Inicjalizacja DataManager dla testów
+const dataManager = new DataManager();
+
+// Zastępujemy funkcję processOrders z background.js
+async function processOrders(orders) {
+    return await dataManager.processOrders(orders);
+}
 
 // Test runner service for integration tests
 class TestRunner {

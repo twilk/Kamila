@@ -1,0 +1,289 @@
+:root {
+  /* Kolory podstawowe */
+  --wine-primary: #722F37;     /* Bordowy jak wino */
+  --wine-secondary: #A4343A;   /* Ciemniejszy czerwony */
+  --wine-accent: #D4AF37;      /* Złoty akcent */
+  
+  /* Tło i tekst */
+  --bg-primary: var(--gray-100);
+  --bg-secondary: var(--gray-200);
+  --text-primary: var(--gray-900);
+  --text-secondary: var(--gray-600);
+  
+  /* Karty statusów */
+  --status-border: var(--gray-300);
+  --status-hover: var(--gray-200);
+  --status-shadow: 0 2px 4px rgba(0,0,0,0.05);
+
+  /* Kolory dla tabeli DRWN */
+  --drwn-red: #dc3545;
+  --drwn-green: #28a745;
+}
+
+[data-theme='dark'] {
+  --bg-primary: var(--gray-900);
+  --bg-secondary: var(--gray-800);
+  --text-primary: var(--gray-200);
+  --text-secondary: var(--gray-500);
+  --status-border: var(--gray-700);
+  --status-hover: var(--gray-800);
+
+  /* Kolory dla tabeli DRWN w trybie ciemnym */
+  --drwn-red: #ff4d4d;
+  --drwn-green: #4dff4d;
+}
+
+/* Style dla tabeli DRWN */
+#drwn-data td:nth-child(3) { color: var(--drwn-red); } /* Stan czerwony dla ≤ 1 */
+#drwn-data td:nth-child(4) { color: var(--drwn-green); } /* Stan DRWN zielony */
+
+/* Dark theme dla tabeli DRWN */
+[data-theme='dark'] #drwn-data {
+    background: var(--bg-secondary);
+    border-color: var(--drwn-border);
+}
+
+[data-theme='dark'] #drwn-data thead {
+    background: var(--bg-secondary);
+    box-shadow: 0 2px 4px var(--drwn-shadow);
+}
+
+[data-theme='dark'] #drwn-data tbody tr:hover {
+    background-color: var(--status-hover);
+}
+
+[data-theme='dark'] #drwn-data td, 
+[data-theme='dark'] #drwn-data th {
+    border-color: var(--drwn-border);
+}
+
+/* Karty statusów */
+.lead-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem;
+  background: var(--gray-200);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  cursor: help;
+}
+
+.dark-theme .lead-status {
+  background: var(--gray-800);
+}
+
+.lead-status:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Liczniki */
+.lead-count {
+  font-weight: 600;
+  color: var(--gray-800);
+  margin-left: 0.5rem;
+  transition: all 0.3s ease-in-out;
+}
+
+.dark-theme .lead-count {
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.lead-status:hover .lead-count {
+  transform: scale(1.1);
+}
+
+/* Select sklepu */
+select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--status-border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: all 0.3s;
+  cursor: pointer;
+  font-size: 14px;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 16px;
+  padding-right: 32px;
+}
+
+[data-theme='dark'] select {
+  background-color: var(--bg-secondary);
+  border-color: var(--status-border);
+  color: var(--text-primary);
+}
+
+select:hover {
+  border-color: var(--wine-primary);
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--wine-primary);
+  box-shadow: 0 0 0 2px rgba(114, 47, 55, 0.2);
+}
+
+/* Przyciski */
+.btn-primary, #check-orders {
+  background: var(--wine-primary);
+  border-color: var(--wine-primary);
+  color: #fff;
+  transition: all var(--transition-fast);
+}
+
+.btn-primary:hover, #check-orders:hover {
+  background: var(--wine-secondary);
+  border-color: var(--wine-secondary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+#check-orders i {
+  margin-right: 0.5rem;
+  transition: transform 0.3s ease;
+}
+
+#check-orders:hover i {
+  transform: rotate(180deg);
+}
+
+@keyframes refresh-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.refreshing {
+    animation: refresh-spin 1s linear infinite;
+}
+
+.settings-section:has(h6:contains("Zamówienia")) {
+  display: none;
+}
+
+/* Alternatywnie, jeśli selektor :has nie jest wspierany */
+.settings-section:last-of-type {
+  display: none;
+}
+
+/* Style dla tabeli rankingu */
+#ranking-data {
+  position: relative;
+  height: calc(100vh - 220px) !important;
+  overflow-y: auto;
+  border: 1px solid var(--status-border);
+  border-radius: var(--radius-lg);
+  max-width: 100%;
+  background: var(--bg-primary);
+  margin-top: 5px;
+}
+
+#ranking.tab-pane {
+  overflow: visible;
+  margin-top: -10px;
+}
+
+#ranking.tab-pane .p-3 {
+  padding: 0.25rem !important;
+}
+
+#ranking-data td, 
+#ranking-data th {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--status-border);
+  font-size: 14px;
+}
+
+#ranking-data thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-secondary);
+  box-shadow: 0 2px 4px var(--shadow-light);
+}
+
+#ranking-data table {
+  margin-bottom: 0;
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+#ranking-data th {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+}
+
+/* Szerokości kolumn */
+#ranking-data td:nth-child(1), 
+#ranking-data th:nth-child(1) { 
+  width: 15%; 
+  text-align: center;
+  font-weight: 600;
+  color: var(--wine-primary);
+} 
+
+#ranking-data td:nth-child(2), 
+#ranking-data th:nth-child(2) { 
+  width: 85%; 
+}
+
+#ranking-data tbody tr:hover {
+  background-color: var(--hover-light);
+  cursor: default;
+}
+
+/* Dark theme dla tabeli rankingu */
+[data-theme='dark'] #ranking-data {
+  background: var(--bg-secondary);
+  border-color: var(--status-border);
+}
+
+[data-theme='dark'] #ranking-data thead {
+  background: var(--bg-secondary);
+  box-shadow: 0 2px 4px var(--shadow-dark);
+}
+
+[data-theme='dark'] #ranking-data tbody tr:hover {
+  background-color: var(--hover-dark);
+}
+
+[data-theme='dark'] #ranking-data td, 
+[data-theme='dark'] #ranking-data th {
+  border-color: var(--status-border);
+} 
+
+.input {
+  width: calc(80%);
+  padding: 0.5rem;
+  border: 1px solid var(--status-border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: all 0.3s;
+  font-size: 14px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--wine-primary);
+  box-shadow: 0 0 0 2px rgba(114, 47, 55, 0.2);
+}
+
+[data-theme='dark'] .input {
+  background-color: var(--bg-secondary);
+  border-color: var(--status-border);
+  color: var(--text-primary);
+} 

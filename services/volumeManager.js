@@ -2,10 +2,11 @@ import { BaseManager } from './core/BaseManager.js';
 import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
 
 export class VolumeManager extends BaseManager {
-    constructor() {
-        super();
-        this.volume = 100;
-        this.isMuted = false;
+    constructor(eventManager) {
+        super([eventManager]);
+        this.eventManager = eventManager;
+        this.volume = 1.0;
+        this.muted = false;
         this.volumeListeners = new Set();
     }
 

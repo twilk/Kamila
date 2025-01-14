@@ -2,8 +2,9 @@ import { BaseManager } from './core/BaseManager.js';
 import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
 
 export class ProgressManager extends BaseManager {
-    constructor() {
-        super();
+    constructor(eventManager) {
+        super([eventManager]);
+        this.eventManager = eventManager;
         this.progressBar = null;
         this.progressText = null;
         this.progressContainer = null;

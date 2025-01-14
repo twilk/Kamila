@@ -1,5 +1,6 @@
 import { BaseManager } from './core/BaseManager.js';
 import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
+import { storageManager } from './storage.js';
 
 export class SettingsManager extends BaseManager {
     constructor() {
@@ -144,7 +145,7 @@ export class SettingsManager extends BaseManager {
             this.settings.set(key, value);
 
             // Save to storage
-            await chrome.storage.local.set({ [key]: value });
+            await storageManager.save(key, value);
 
             // Notify listeners
             this.notifySettingChange(key, value);
@@ -160,12 +161,28 @@ export class SettingsManager extends BaseManager {
         }
     }
 
-    getSetting(key) {
+    async getSetting(key) {
         try {
             if (!this.settings.has(key)) {
                 throw new Error(`Setting ${key} not registered`);
             }
-            return this.settings.get(key);
+
+            // Try to get from memory first
+            const memoryValue = this.settings.get(key);
+            if (memoryValue !== undefined) {
+                return memoryValue;
+            }
+
+            // If not in memory, try to get from storage
+            const storageValue = await storageManager.load(key);
+            if (storageValue !== null) {
+                // Update memory cache
+                this.settings.set(key, storageValue);
+                return storageValue;
+            }
+
+            // Return default value if nothing found
+            return this.defaultValues.get(key);
         } catch (error) {
             this.handleError(error, ErrorType.VALIDATION, ErrorSeverity.WARNING, {
                 method: 'getSetting',

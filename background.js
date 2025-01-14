@@ -2,8 +2,19 @@ import { getDarwinaCredentials } from './config/api.js';
 import { API_CONFIG } from './config/api.js';
 import { stores } from './services/stores.js';
 import { UserCardService } from './services/userCard.js';
-import { STORAGE_KEYS, saveToStorage, getFromStorage, getIntervalSettings } from './services/storage.js';
+import { OrderService } from '../services/api/drwn.js';
+import { STORAGE_KEYS } from './config/storage.js';
+import { storageManager } from './services/storage.js';
+import { 
+    DEFAULT_INTERVALS,
+    INTERVAL_KEYS,
+    getIntervalSettings,
+    saveIntervalSettings 
+} from './config/intervals.js';
 import testRunner from './services/testRunner.js';
+import { i18n } from './services/i18n.js';
+import { storeManager } from './services/storeManager.js';
+import { themeService } from './services/theme.js';
 
 const FETCH_INTERVAL = 5; // minutes
 const CHECK_INTERVAL = 15; // minutes
@@ -15,6 +26,149 @@ const CACHE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 // Stałe dla świeżości danych
 const DATA_FRESHNESS_TIMEOUT = 5 * 60 * 1000; // 5 minut
 const STORE_CHANGE_TIMEOUT = 30 * 60 * 1000;  // 30 minut
+
+// Konfiguracja limitów powiadomień
+const NOTIFICATION_LIMITS = {
+    PER_MINUTE: 10,
+    PER_HOUR: 30,
+    PER_DAY: 100,
+    COOLDOWN_MS: 3000 // 3 sekundy między powiadomieniami
+};
+
+// System zarządzania powiadomieniami
+class NotificationManager {
+    constructor() {
+        this.notificationHistory = [];
+        this.lastNotificationTime = 0;
+    }
+
+    async canShowNotification() {
+        const now = Date.now();
+        
+        // Usuń stare wpisy (starsze niż 24h)
+        this.notificationHistory = this.notificationHistory.filter(
+            time => now - time < 24 * 60 * 60 * 1000
+        );
+
+        // Sprawdź cooldown
+        if (now - this.lastNotificationTime < NOTIFICATION_LIMITS.COOLDOWN_MS) {
+            console.log('[DEBUG] 🕒 Cooldown aktywny, pomijam powiadomienie');
+            return false;
+        }
+
+        // Pobierz ustawienia użytkownika
+        const { notificationSettings } = await chrome.storage.local.get('notificationSettings');
+        const userLimits = notificationSettings?.limits || NOTIFICATION_LIMITS;
+
+        // Sprawdź limity
+        const lastMinute = this.notificationHistory.filter(
+            time => now - time < 60 * 1000
+        ).length;
+        if (lastMinute >= userLimits.PER_MINUTE) {
+            console.log('[DEBUG] ⚠️ Przekroczono limit powiadomień na minutę');
+            return false;
+        }
+
+        const lastHour = this.notificationHistory.filter(
+            time => now - time < 60 * 60 * 1000
+        ).length;
+        if (lastHour >= userLimits.PER_HOUR) {
+            console.log('[DEBUG] ⚠️ Przekroczono limit powiadomień na godzinę');
+            return false;
+        }
+
+        const lastDay = this.notificationHistory.length;
+        if (lastDay >= userLimits.PER_DAY) {
+            console.log('[DEBUG] ⚠️ Przekroczono dzienny limit powiadomień');
+            return false;
+        }
+
+        return true;
+    }
+
+    async trackNotification() {
+        const now = Date.now();
+        this.notificationHistory.push(now);
+        this.lastNotificationTime = now;
+        
+        // Zapisz historię do storage dla persystencji
+        await storageManager.save('notifications', {
+            history: this.notificationHistory,
+            lastTime: this.lastNotificationTime
+        });
+    }
+
+    async initialize() {
+        // Wczytaj historię z storage
+        const data = await storageManager.load('notifications');
+        
+        if (data) {
+            this.notificationHistory = data.history || [];
+            this.lastNotificationTime = data.lastTime || 0;
+        }
+    }
+
+    getStats() {
+        const now = Date.now();
+        return {
+            lastMinute: this.notificationHistory.filter(time => now - time < 60 * 1000).length,
+            lastHour: this.notificationHistory.filter(time => now - time < 60 * 60 * 1000).length,
+            lastDay: this.notificationHistory.length,
+            timeSinceLastNotification: now - this.lastNotificationTime
+        };
+    }
+}
+
+// Inicjalizacja managera powiadomień
+const notificationManager = new NotificationManager();
+notificationManager.initialize().catch(console.error);
+
+// Funkcja do tworzenia powiadomienia o nowym zamówieniu
+async function createOrderNotification(order, status) {
+    try {
+        // Upewnij się, że tłumaczenia są załadowane
+        await i18n.waitForTranslations();
+        
+        // Sprawdź limity przed pokazaniem powiadomienia
+        const canShow = await notificationManager.canShowNotification();
+        if (!canShow) {
+            console.log('[DEBUG] 🚫 Pominięto powiadomienie ze względu na limity');
+            return;
+        }
+
+        const orderUrl = `${API_CONFIG.DARWINA.BASE_URL}/orders/${order.order_id}`;
+        const notificationId = `order-${order.order_id}`;
+        
+        chrome.notifications.create(notificationId, {
+            type: 'basic',
+            iconUrl: 'icon128.png',
+            title: i18n.translate('newOrderNotification'),
+            message: i18n.translate('orderNotificationFormat', {
+                id: order.order_id,
+                status: status,
+                store: order.delivery_name || 'Nieznany sklep',
+                value: order.total_price ? `${order.total_price} zł` : 'N/A'
+            }),
+            buttons: [
+                {
+                    title: i18n.translate('viewOrder')
+                }
+            ],
+            requireInteraction: true,
+            silent: false
+        });
+
+        // Śledź wyświetlone powiadomienie
+        await notificationManager.trackNotification();
+        
+        console.log('[DEBUG] ✅ Utworzono powiadomienie:', {
+            orderId: order.order_id,
+            stats: notificationManager.getStats()
+        });
+    } catch (error) {
+        console.error('[ERROR] ❌ Błąd podczas tworzenia powiadomienia:', error);
+    }
+}
 
 // Funkcja do aktualizacji alarmów
 async function updateAlarms(intervals) {
@@ -43,8 +197,20 @@ async function updateAlarms(intervals) {
 chrome.runtime.onInstalled.addListener(async () => {
     console.log('[DEBUG] 🔧 Rozpoczynam instalację rozszerzenia...');
     try {
+        // Inicjalizacja i18n
+        console.log('[DEBUG] 🌐 Inicjalizacja systemu tłumaczeń...');
+        await i18n.init();
+        await i18n.waitForTranslations();
+        
+        // Inicjalizacja motywu
+        console.log('[DEBUG] 🎨 Inicjalizacja systemu motywów...');
+        const savedTheme = await storageManager.load(STORAGE_KEYS.THEME);
+        if (savedTheme) {
+            themeService.applyTheme(savedTheme);
+        }
+        
         // Pobierz zapisane lub domyślne interwały
-        const intervals = await getIntervalSettings();
+        const intervals = await getIntervalSettings(storageManager);
         
         // Utwórz alarmy z odpowiednimi interwałami
         await updateAlarms(intervals);
@@ -53,7 +219,7 @@ chrome.runtime.onInstalled.addListener(async () => {
         await checkAndUpdateOrders();
         
         // Inicjalizacja badge'a
-        const selectedStore = await getFromStorage(STORAGE_KEYS.SELECTED_STORE);
+        const selectedStore = await storageManager.load(STORAGE_KEYS.SELECTED_STORE);
         const data = await fetchAndCacheData(selectedStore);
         updateExtensionBadge(data.counts, selectedStore);
         
@@ -84,16 +250,15 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'fetchData') {
         console.log('[DEBUG] 📥 Obsługa alarmu fetchData...');
         // Sprawdź czy minęło 5 minut od ostatniego pobrania
-        const lastFetchKey = 'last_fetch_timestamp';
-        chrome.storage.local.get(lastFetchKey, async (result) => {
+        (async () => {
             try {
-                const lastFetch = result[lastFetchKey] || 0;
+                const lastFetch = await storageManager.load('last_fetch_timestamp') || 0;
                 const now = Date.now();
                 
                 if (now - lastFetch >= FETCH_INTERVAL * 60 * 1000) {
                     console.log('[DEBUG] 🔄 Rozpoczynam pobieranie danych...');
                     await fetchAndCacheData();
-                    await chrome.storage.local.set({ [lastFetchKey]: now });
+                    await storageManager.save('last_fetch_timestamp', now);
                     console.log('[SUCCESS] ✅ Dane pobrane i zapisane');
                 } else {
                     console.log('[DEBUG] ⏳ Zbyt wcześnie na odświeżanie danych');
@@ -101,7 +266,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
             } catch (error) {
                 console.error('[ERROR] ❌ Błąd podczas obsługi alarmu fetchData:', error);
             }
-        });
+        })();
     } else if (alarm.name === 'checkOrders') {
         console.log('[DEBUG] 📦 Obsługa alarmu checkOrders...');
         checkAndUpdateOrders().catch(error => {
@@ -111,13 +276,13 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // Funkcja sprawdzająca świeżość danych dla sklepu
-async function isDataFresh(selectedStore) {
-    const { store_updates } = await chrome.storage.local.get('store_updates');
-    if (!store_updates || !store_updates[selectedStore]) {
+async function isDataFresh(storeId) {
+    const storeUpdates = await storageManager.load('store_updates');
+    if (!storeUpdates || !storeUpdates[storeId]) {
         return false;
     }
 
-    const storeData = store_updates[selectedStore];
+    const storeData = storeUpdates[storeId];
     const now = Date.now();
 
     // Sprawdź czy dane są świeże i czy sklep był niedawno zmieniony
@@ -126,68 +291,78 @@ async function isDataFresh(selectedStore) {
 }
 
 // Funkcja aktualizująca timestamp dla sklepu
-async function updateStoreTimestamp(selectedStore, isStoreChange = false) {
-    const { store_updates } = await chrome.storage.local.get('store_updates');
+async function updateStoreTimestamp(storeId, isStoreChange = false) {
+    const storeUpdates = await storageManager.load('store_updates') || {};
     const now = Date.now();
     
-    const updates = store_updates || {};
-    updates[selectedStore] = updates[selectedStore] || {};
+    storeUpdates[storeId] = storeUpdates[storeId] || {};
     
     // Aktualizuj timestamp ostatniej aktualizacji
-    updates[selectedStore].lastUpdate = now;
+    storeUpdates[storeId].lastUpdate = now;
     
     // Jeśli to zmiana sklepu, zaktualizuj również timestamp zmiany
     if (isStoreChange) {
-        updates[selectedStore].lastStoreChange = now;
+        storeUpdates[storeId].lastStoreChange = now;
     }
     
-    await chrome.storage.local.set({ store_updates: updates });
+    await storageManager.save('store_updates', storeUpdates);
 }
 
 // Zmodyfikowana funkcja fetchAndCacheData
-async function fetchAndCacheData(selectedStore) {
+async function fetchAndCacheData(store = null) {
     try {
-        const log = (message, type, data) => {
-            chrome.runtime.getContexts({ contextTypes: ['POPUP'] }, (contexts) => {
-                if (contexts.length > 0) {
-                    sendLogToPopup(message, type, data);
-                } else {
-                    console.log(`[${type.toUpperCase()}] ${message}`, data || '');
-                }
-            });
-        };
-
-        log('🔄 Rozpoczynam pobieranie danych', 'info');
-        const darwinaConfig = await getDarwinaCredentials();
-
-        // Sprawdź czy możemy użyć aktualizacji przyrostowej
-        const shouldUseIncremental = await isDataFresh(selectedStore);
-        const { last_full_update } = await chrome.storage.local.get('last_full_update');
-
-        let data;
-        if (shouldUseIncremental && last_full_update) {
-            log('📥 Używam aktualizacji przyrostowej', 'info');
-            data = await fetchIncrementalData(darwinaConfig, selectedStore, last_full_update);
-        } else {
-            log('📥 Pobieram pełne dane', 'info');
-            data = await fetchFullData(darwinaConfig, selectedStore);
-        }
-        
-        if (data.success) {
-            await saveToStorage(STORAGE_KEYS.STORE_DATA(selectedStore), data);
-            await updateStoreTimestamp(selectedStore);
-            log('✅ Dane zapisane', 'success');
-            updateExtensionBadge(data.counts, selectedStore);
-        }
-        return data;
-    } catch (error) {
-        chrome.runtime.getContexts({ contextTypes: ['POPUP'] }, (contexts) => {
-            if (contexts.length > 0) {
-                sendLogToPopup('❌ Błąd pobierania danych', 'error', error.message);
+        // Get current store if not provided
+        let storeId;
+        if (!store) {
+            const currentStore = await storeManager.getCurrentStore();
+            storeId = currentStore?.id;
             } else {
-                console.error('❌ Błąd pobierania danych:', error.message);
+            storeId = typeof store === 'object' ? store.id : store;
+        }
+
+        // Get store configuration if not ALL
+        let storeConfig = null;
+        if (storeId && storeId !== 'ALL') {
+            storeConfig = await storeManager.validateStore(storeId);
+            if (!storeConfig) {
+                throw new Error(`Invalid store: ${storeId}`);
             }
-        });
+        }
+
+        // Get API credentials
+        const credentials = await getDarwinaCredentials();
+        if (!credentials) {
+            throw new Error('Missing API credentials');
+        }
+
+        // Initialize OrderService
+        const orderService = new OrderService(credentials);
+
+        // Fetch all orders (with or without store filter)
+        console.log(`[DEBUG] 🔄 Fetching orders${storeId ? ` for store: ${storeId}` : ''}`);
+        const data = await orderService.fetchAllOrders(storeConfig);
+
+            if (data.success) {
+            // Save full data to storage
+            await storageManager.save(STORAGE_KEYS.STORE_DATA(storeId), {
+                orders: data.orders,
+                counts: data.counts,
+                timestamp: Date.now()
+            });
+
+            // Update badge with counts
+            updateExtensionBadge(data.counts, storeId);
+            
+            console.log('[SUCCESS] ✅ Data fetched and cached successfully:', {
+                store: storeId || 'ALL',
+                ordersCount: data.orders?.length || 0,
+                counts: data.counts
+            });
+        }
+
+        return data;
+        } catch (error) {
+        console.error('[ERROR] ❌ Error fetching data:', error);
         throw error;
     }
 }
@@ -204,35 +379,92 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 
 // Nasłuchuj na wiadomości
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('📨 Otrzymano wiadomość:', message);
+    console.log('[DEBUG] 📨 Otrzymano wiadomość:', message);
+    
+    // Ensure we keep the message channel open for async responses
+    let keepChannelOpen = false;
+    
+    if (message.type === 'PING') {
+        console.log('[DEBUG] 🏓 Otrzymano PING, odpowiadam PONG');
+        sendResponse({ type: 'PONG' });
+        return false; // No need to keep channel open for PING/PONG
+    }
+
+    if (message.type === 'CONNECTION_CHECK') {
+        console.log('[DEBUG] 🔌 Sprawdzanie połączenia');
+        sendResponse({ connected: true });
+        return false;
+    }
     
     // Wrapper dla asynchronicznych handlerów
     const handleAsyncMessage = async (handler) => {
         try {
-            const response = await handler();
-            sendResponse(response);
-        } catch (error) {
-            console.error('Error in message handler:', error);
-            sendResponse({ success: false, error: error.message });
-        }
-    };
-    
-    if (message.type === 'FETCH_DARWINA_DATA') {
-        handleAsyncMessage(async () => {
-            const storedData = await getFromStorage(STORAGE_KEYS.STORE_DATA(message.selectedStore));
+            console.log('[DEBUG] 🔄 Rozpoczynam obsługę wiadomości asynchronicznej');
+            keepChannelOpen = true;
             
-            if (storedData) {
-                console.log('📦 Zwracam dane z storage');
-                updateExtensionBadge(storedData.counts, message.selectedStore);
-                return storedData;
+            // Upewnij się, że tłumaczenia są załadowane
+            await i18n.waitForTranslations();
+            
+            const response = await handler();
+            console.log('[DEBUG] ✅ Wiadomość obsłużona pomyślnie:', response);
+            
+            if (chrome.runtime.lastError) {
+                console.error('[ERROR] ❌ Błąd podczas wysyłania odpowiedzi:', chrome.runtime.lastError);
+                return;
             }
             
-            console.log('🔄 Storage pusty, pobieram nowe dane');
-            const data = await fetchAndCacheData(message.selectedStore);
-            updateExtensionBadge(data.counts, message.selectedStore);
-            return data;
+            sendResponse(response);
+        } catch (error) {
+            console.error('[ERROR] ❌ Błąd w obsłudze wiadomości:', error);
+            sendResponse({ 
+                success: false, 
+                error: error.message,
+                timestamp: Date.now(),
+                type: 'ERROR'
+            });
+        }
+    };
+
+    if (message.type === 'FETCH_DARWINA_DATA') {
+        handleAsyncMessage(async () => {
+            try {
+                console.log('[DEBUG] 📥 Rozpoczynam pobieranie danych DARWINA');
+                
+                // Validate store first
+                if (!message.selectedStore) {
+                    throw new Error('No store selected');
+                }
+
+                // Try to get data from storage first
+                const storedData = await getFromStorage(STORAGE_KEYS.STORE_DATA(message.selectedStore));
+                
+                if (storedData && !message.forceRefresh) {
+                    console.log('[DEBUG] 📦 Zwracam dane z storage');
+                    updateExtensionBadge(storedData.counts, message.selectedStore);
+                    return storedData;
+                }
+                
+                console.log('[DEBUG] 🔄 Storage pusty lub wymuszone odświeżanie, pobieram nowe dane');
+                const data = await fetchAndCacheData(message.selectedStore);
+                
+                // Validate data before sending
+                if (!data || !data.counts || !Object.values(data.counts).every(count => typeof count === 'number')) {
+                    throw new Error('Invalid data received from API');
+                }
+                
+                updateExtensionBadge(data.counts, message.selectedStore);
+                return data;
+            } catch (error) {
+                console.error('[ERROR] ❌ Błąd podczas pobierania danych:', error);
+                // Try to get last known good data
+                const lastData = await getFromStorage(STORAGE_KEYS.STORE_DATA(message.selectedStore));
+                if (lastData) {
+                    return { ...lastData, warning: 'Using cached data due to error' };
+                }
+                throw error;
+            }
         });
-        return true;
+        return true; // Keep the message channel open
     }
 
     if (message.type === 'POPUP_OPENED') {
@@ -364,28 +596,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         })();
         return true; // Keep the message channel open
     }
+
+    if (message.type === 'CONNECTION_CHECK') {
+        sendResponse({ connected: true });
+        return true; // Keep the message channel open for the async response
+    }
+
+    if (message.type === 'PING') {
+        sendResponse({ type: 'PONG' });
+        return true;
+    }
+
+    return keepChannelOpen; // Return true only if we need to keep the channel open
 });
 
 // Handler dla FETCH_DARWINA_DATA
-async function handleFetchDarwinaData(message, sendResponse) {
-    try {
-        const cacheKey = getCacheKey(message.selectedStore);
-        // Najpierw sprawdź cache
-        const cachedData = await CacheService.get(cacheKey);
-        if (cachedData) {
-            sendLogToPopup('📦 Zwracam dane z cache', 'info');
-            sendResponse(cachedData);
-            return;
-        }
-
-        // Jeśli brak cache, pobierz nowe dane
-        sendLogToPopup('🔄 Cache pusty, pobieram nowe dane', 'info');
-        const data = await fetchAndCacheData(message.selectedStore);
-        sendResponse(data);
-    } catch (error) {
-        console.error('Błąd podczas FETCH_DARWINA_DATA:', error);
-        sendResponse({ success: false, error: error.message });
-    }
+async function handleFetchDarwinaData(message) {
+    const { selectedStore } = message;
+    return await fetchAndCacheData(selectedStore);
 }
 
 // Funkcja wysyłania logów - tylko do konsoli
@@ -402,21 +630,31 @@ function sendLogToPopup(message, type = 'info', data = null) {
 // Funkcja bezpiecznego wysyłania wiadomości
 async function sendMessageToPopup(type, payload) {
     try {
+        // Check if popup exists before sending
+        const popupExists = await new Promise(resolve => {
+            chrome.runtime.getContexts({ contextTypes: ['POPUP'] }, contexts => {
+                resolve(contexts.length > 0);
+            });
+        });
+
+        if (!popupExists) {
+            console.log('[INFO] Popup is closed, skipping message:', { type, payload });
+            return null;
+        }
+
         return await new Promise((resolve) => {
-            const callback = (response) => {
+            chrome.runtime.sendMessage({ type, payload }, response => {
                 const lastError = chrome.runtime.lastError;
                 if (lastError) {
-                    console.log('Message sending failed (popup might be closed):', lastError);
+                    console.log('[WARNING] Message sending failed:', lastError);
                     resolve(null);
                 } else {
                     resolve(response);
                 }
-            };
-            
-            chrome.runtime.sendMessage({ type, payload }, callback);
+            });
         });
     } catch (error) {
-        console.log('Error sending message:', error);
+        console.log('[ERROR] Error sending message:', error);
         return null;
     }
 }
@@ -434,51 +672,16 @@ async function handleUserData(userData) {
 }
 
 // Bezpieczna wersja handlePopupOpened
-async function handlePopupOpened(sendResponse) {
-    try {
-        await checkAndUpdateOrders();
-        
-        const storage = await chrome.storage.local.get(['leadCounts', 'lastUpdate']);
-        const now = Date.now();
-        const cacheAge = now - (storage.lastUpdate || 0);
-        
-        if (storage.leadCounts && cacheAge < FETCH_INTERVAL * 60 * 1000) {
-            sendResponse({success: true, data: storage.leadCounts});
-            return;
-        }
-        
-        const data = await fetchAndCacheData();
-        await chrome.storage.local.set({ 
-            lastUpdate: now,
-            leadCounts: data.counts 
-        });
-        
-        sendResponse({success: true, data: data.counts});
-    } catch (error) {
-        console.error('Błąd podczas obsługi POPUP_OPENED:', error);
-        sendResponse({success: false, error: error.message});
-    }
+async function handlePopupOpened() {
+    const selectedStore = await storageManager.load(STORAGE_KEYS.SELECTED_STORE);
+    const data = await fetchAndCacheData(selectedStore);
+    return { data, selectedStore };
 }
 
 // Bezpieczna wersja handleCheckOrdersNow
-async function handleCheckOrdersNow(sendResponse) {
-    try {
+async function handleCheckOrdersNow() {
         await checkAndUpdateOrders();
-        
-        // Force a full reload by clearing the last_full_update timestamp
-        await chrome.storage.local.remove('last_full_update');
-        
-        const data = await fetchAndCacheData();
-        await chrome.storage.local.set({ 
-            lastUpdate: Date.now(),
-            leadCounts: data.counts 
-        });
-        
-        sendResponse({success: true, data: data.counts});
-    } catch (error) {
-        console.error('Błąd podczas CHECK_ORDERS_NOW:', error);
-        sendResponse({success: false, error: error.message});
-    }
+    return { success: true };
 }
 
 // Funkcja do pobierania danych z API
@@ -494,7 +697,7 @@ async function fetchDarwinaData(darwinaConfig, selectedStore) {
         });
 
         // Sprawdź timestamp ostatniego pełnego update'u
-        const { last_full_update } = await chrome.storage.local.get('last_full_update');
+        const last_full_update = await storageManager.load('last_full_update');
         const isFirstRun = !last_full_update;
 
         let result;
@@ -521,6 +724,9 @@ async function fetchDarwinaData(darwinaConfig, selectedStore) {
             }
         }
 
+        // Zapisz timestamp pełnego update'u
+        await storageManager.save('last_full_update', Date.now());
+
         // Informuj o zakończeniu
         await sendMessageToPopup('PROGRESS_UPDATE', {
             type: 'SUCCESS',
@@ -542,56 +748,51 @@ async function fetchDarwinaData(darwinaConfig, selectedStore) {
     }
 }
 
-async function fetchFullData(darwinaConfig, selectedStore) {
-    let allOrders = [];
-    const statusGroups = ['1', '2', '3', '5'];
-    const totalSteps = statusGroups.length;
-
-    for (const statusGroup of statusGroups) {
-        try {
-            await sendMessageToPopup('PROGRESS_UPDATE', {
-                type: 'UPDATE_STATUS',
-                data: { status: `Pobieranie statusu ${statusGroup}...` }
-            });
-
-            const orders = await fetchOrdersByStatus(darwinaConfig, statusGroup, selectedStore);
-            allOrders = [...allOrders, ...orders];
-
-        } catch (error) {
-            console.error(`Error fetching status ${statusGroup}:`, error);
-            throw error;
-        }
+// Funkcja pobierająca dane przyrostowo
+async function fetchIncrementalData(storeId, lastFullUpdate, signal) {
+    const store = await storeManager.validateStore(storeId);
+    if (!store.drwn) {
+        throw new Error(`Store ${storeId} has no API configuration`);
     }
 
-    const result = await processDataWithProgress(allOrders, selectedStore, true);
-    return result;
-}
+    const darwinaConfig = await getDarwinaCredentials();
+    const orderService = new OrderService();
+    await orderService.initialize(darwinaConfig);
 
-async function fetchIncrementalData(darwinaConfig, selectedStore, lastUpdate) {
-    let changedOrders = [];
-    const statusGroups = ['1', '2', '3', '5'];
-
-    for (const statusGroup of statusGroups) {
-        try {
-            await sendMessageToPopup('PROGRESS_UPDATE', {
-                type: 'UPDATE_STATUS',
-                data: { status: `Sprawdzanie zmian dla statusu ${statusGroup}...` }
-            });
-
-            const orders = await fetchOrdersByStatus(darwinaConfig, statusGroup, selectedStore, lastUpdate);
-            changedOrders = [...changedOrders, ...orders];
-
-        } catch (error) {
-            console.error(`Error fetching changes for status ${statusGroup}:`, error);
-            throw error;
-        }
+    const data = await orderService.fetchIncrementalLeadCounts(store.drwn, lastFullUpdate, signal);
+    
+    if (data.success) {
+        await storageManager.save(STORAGE_KEYS.STORE_DATA(storeId), data);
+        await updateStoreTimestamp(storeId);
+        updateExtensionBadge(data.counts, storeId);
     }
 
-    const result = await processDataWithProgress(changedOrders, selectedStore, false);
-    return result;
+    return data;
 }
 
-async function fetchOrdersByStatus(darwinaConfig, statusGroup, selectedStore, lastUpdate = null) {
+// Funkcja pobierająca pełne dane
+async function fetchFullData(storeId, signal) {
+    const store = await storeManager.validateStore(storeId);
+    if (!store.drwn) {
+        throw new Error(`Store ${storeId} has no API configuration`);
+    }
+
+    const darwinaConfig = await getDarwinaCredentials();
+    const orderService = new OrderService();
+    await orderService.initialize(darwinaConfig);
+
+    const data = await orderService.fetchLeadCounts(store.drwn, signal);
+    
+    if (data.success) {
+        await storageManager.save(STORAGE_KEYS.STORE_DATA(storeId), data);
+        await updateStoreTimestamp(storeId);
+        updateExtensionBadge(data.counts, storeId);
+    }
+
+    return data;
+}
+
+async function fetchOrdersByStatus(darwinaConfig, statusGroup, selectedStore, lastUpdate = null, signal) {
     const baseParams = new URLSearchParams();
     baseParams.append('status_id', statusGroup);
     baseParams.append('limit', '50');
@@ -628,87 +829,178 @@ async function fetchOrdersByStatus(darwinaConfig, statusGroup, selectedStore, la
                 'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
-            }
+            },
+            signal
         });
 
         if (!response.ok) {
             const errorText = await response.text();
+            console.error('[ERROR] 🔥 Błąd API:', {
+                status: response.status,
+                url: requestUrl,
+                error: errorText
+            });
             throw new Error(`API Error: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
-        totalPages = data.__metadata?.page_count || 1;
-
-        if (data.data && Array.isArray(data.data)) {
-            allOrders = [...allOrders, ...data.data];
+        
+        // Sprawdź strukturę odpowiedzi
+        if (!data || !data.data || !Array.isArray(data.data)) {
+            console.error('[ERROR] 🔥 Nieprawidłowa struktura odpowiedzi:', data);
+            throw new Error('Invalid API response structure');
         }
 
+        totalPages = data.__metadata?.page_count || 1;
+        allOrders = [...allOrders, ...data.data];
+
+        console.log(`[INFO] 📦 Pobrano stronę ${currentPage}/${totalPages} (${data.data.length} zamówień)`);
         currentPage++;
     } while (currentPage <= totalPages);
 
+    console.log(`[SUCCESS] ✅ Pobrano łącznie ${allOrders.length} zamówień`);
     return allOrders;
 }
 
 // Funkcja do przetwarzania danych z postępem
 async function processDataWithProgress(allOrders, selectedStore, isFirstRun) {
-    let processedOrders;
-    
-    // Clear old data first
-    if (isFirstRun) {
-        // For first run, clear all stored data
-        await chrome.storage.local.remove(['leadCounts', 'last_full_update']);
-        processedOrders = allOrders;
-        console.log(`[DEBUG] 📥 Pierwsze uruchomienie - zapisuję ${allOrders.length} zamówień`);
-    } else {
-        // For incremental updates, get existing data
-        const storedData = await getFromStorage(STORAGE_KEYS.STORE_DATA(selectedStore));
-        if (storedData && storedData.orders) {
-            // Create map of existing orders
-            const ordersMap = new Map(storedData.orders.map(order => [order.id, order]));
-            
-            let updateCount = 0;
-            let newCount = 0;
-            
-            // Update or add new orders
-            allOrders.forEach(order => {
-                if (ordersMap.has(order.id)) {
-                    updateCount++;
-                } else {
-                    newCount++;
-                }
-                ordersMap.set(order.id, order);
-            });
-            
-            processedOrders = Array.from(ordersMap.values());
-            console.log(`[DEBUG] 🔄 Aktualizacja przyrostowa:
-                - Zaktualizowano: ${updateCount} zamówień
-                - Dodano nowych: ${newCount} zamówień
-                - Łącznie w storage: ${processedOrders.length} zamówień`);
-        } else {
-            // If no data in storage, treat as first run
-            await chrome.storage.local.remove(['leadCounts', 'last_full_update']);
-            processedOrders = allOrders;
-            console.log(`[DEBUG] ⚠️ Brak danych w storage - zapisuję ${allOrders.length} zamówień`);
+    try {
+        // Validate input data
+        if (!Array.isArray(allOrders)) {
+            console.error('[ERROR] 🔥 Nieprawidłowy format danych:', allOrders);
+            throw new Error('Invalid orders data format: expected array');
         }
+
+        // Validate each order
+        const invalidOrders = [];
+        const validOrders = allOrders.filter(order => {
+            // Basic structure check
+            if (!order || typeof order !== 'object') {
+                invalidOrders.push({ order, reason: 'Invalid order structure' });
+                return false;
+            }
+
+            // Check required fields
+            if (!order.id) {
+                invalidOrders.push({ order, reason: 'Missing order ID' });
+                return false;
+            }
+
+            // Validate status_id
+            const status = order.status_id?.toString();
+            if (!status || !['1', '2', '3', '5'].includes(status)) {
+                invalidOrders.push({ order, reason: `Invalid status_id: ${status}` });
+                return false;
+            }
+
+            // For status 5, check date fields
+            if (status === '5') {
+                const orderDate = order.ready_date || order.status_change_date || order.modified_at || order.created_at;
+                if (!orderDate) {
+                    invalidOrders.push({ order, reason: 'Missing date for status 5' });
+                    return false;
+                }
+                try {
+                    new Date(orderDate.replace(' ', 'T'));
+                } catch (e) {
+                    invalidOrders.push({ order, reason: `Invalid date format: ${orderDate}` });
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        if (invalidOrders.length > 0) {
+            console.log('[WARNING] ⚠️ Znaleziono nieprawidłowe zamówienia:', {
+                total: allOrders.length,
+                valid: validOrders.length,
+                invalid: invalidOrders.length,
+                examples: invalidOrders.slice(0, 3)
+            });
+        }
+
+        // Clear old data first
+        if (isFirstRun) {
+            await chrome.storage.local.remove(['leadCounts', 'last_full_update']);
+            console.log(`[DEBUG] 📥 Pierwsze uruchomienie - zapisuję ${validOrders.length} zamówień`);
+        } else {
+            // For incremental updates, get existing data
+            const storedData = await getFromStorage(STORAGE_KEYS.STORE_DATA(selectedStore));
+
+            // Validate stored data
+            if (storedData?.orders && !Array.isArray(storedData.orders)) {
+                console.error('[ERROR] 🔥 Nieprawidłowe dane w storage:', storedData);
+                throw new Error('Invalid stored data format');
+            }
+
+            if (storedData && storedData.orders) {
+                // Create map of existing orders
+                const ordersMap = new Map(storedData.orders.map(order => [order.id, order]));
+                
+                let updateCount = 0;
+                let newCount = 0;
+                let unchangedCount = 0;
+                
+                // Update or add new orders
+                validOrders.forEach(order => {
+                    const existingOrder = ordersMap.get(order.id);
+                    if (existingOrder) {
+                        // Check if order actually changed
+                        if (JSON.stringify(existingOrder) !== JSON.stringify(order)) {
+                            updateCount++;
+                            ordersMap.set(order.id, order);
+                        } else {
+                            unchangedCount++;
+                        }
+                    } else {
+                        newCount++;
+                        ordersMap.set(order.id, order);
+                    }
+                });
+                
+                validOrders = Array.from(ordersMap.values());
+                console.log(`[DEBUG] 🔄 Aktualizacja przyrostowa:
+                    - Zaktualizowano: ${updateCount} zamówień
+                    - Dodano nowych: ${newCount} zamówień
+                    - Bez zmian: ${unchangedCount} zamówień
+                    - Łącznie: ${validOrders.length} zamówień`);
+            }
+        }
+
+        // Process orders and count statuses
+        const statusCounts = processOrders(validOrders);
+
+        // Save processed data
+        const result = {
+            success: true,
+            counts: statusCounts,
+            totalOrders: validOrders.length,
+            store: selectedStore || 'ALL',
+            orders: validOrders,
+            timestamp: Date.now()
+        };
+
+        // Save to storage
+        await saveToStorage(STORAGE_KEYS.STORE_DATA(selectedStore), result);
+        
+        return result;
+    } catch (error) {
+        console.error('[ERROR] 🔥 Błąd podczas przetwarzania danych:', error);
+        throw error;
     }
+}
 
-    // Process all collected orders
-    const statusCounts = processOrders(processedOrders);
-
-    // Save current update timestamp and data
-    await chrome.storage.local.set({ 
-        'last_full_update': Date.now(),
-        'leadCounts': statusCounts
-    });
-
-    // Return result
-    return {
-        success: true,
-        counts: statusCounts,
-        totalOrders: processedOrders.length,
-        store: selectedStore || 'ALL',
-        orders: processedOrders
-    };
+// Helper function to validate status counts
+function validateStatusCounts(counts) {
+    const requiredStatuses = ['1', '2', '3', 'READY', 'OVERDUE'];
+    return counts && 
+           typeof counts === 'object' &&
+           requiredStatuses.every(status => 
+               counts.hasOwnProperty(status) && 
+               typeof counts[status] === 'number' &&
+               counts[status] >= 0
+           );
 }
 
 // Funkcja do przetwarzania zamówień i liczenia statusów
@@ -719,70 +1011,74 @@ export function processOrders(orders) {
     
     console.log(`[DEBUG] 📊 Rozpoczynam analizę ${totalOrders} zamówień`);
 
-    const statusCounts = orders.reduce((acc, order) => {
+    // Inicjalizacja liczników dla wszystkich możliwych statusów
+    const statusCounts = {
+        '1': 0,  // SUBMITTED
+        '2': 0,  // CONFIRMED
+        '3': 0,  // ACCEPTED
+        'READY': 0,
+        'OVERDUE': 0
+    };
+
+    orders.forEach(order => {
         processedCount++;
         if (processedCount % 10 === 0) {
             console.log(`[DEBUG] 🔄 Przetworzono ${processedCount}/${totalOrders} zamówień`);
         }
 
-        const status = order.status_id;
+        // Sprawdź czy order i status_id istnieją
+        if (!order || !order.status_id) {
+            console.log(`[WARNING] ⚠️ Nieprawidłowe dane zamówienia:`, order);
+            return;
+        }
+
+        const status = order.status_id.toString();
         
         // Dla statusu READY (5) używamy ready_date lub status_change_date
         const orderDate = status === '5' ? 
-            (order.ready_date || order.status_change_date) : 
-            order.date;
+            (order.ready_date || order.status_change_date || order.modified_at || order.created_at) : 
+            (order.modified_at || order.created_at);
             
         const parsedDate = orderDate ? new Date(orderDate.replace(' ', 'T')) : null;
 
         if (status === '5' && !parsedDate) {
             console.log(`[WARNING] ⚠️ Brak daty dla zamówienia gotowego do odbioru ${order.id}`);
-            return acc;
+            return;
         }
 
-        // Zliczaj zamówienia tylko na podstawie status_id
+        // Zliczaj zamówienia na podstawie status_id
         const parsedStatus = parseInt(status);
         switch (parsedStatus) {
             case 1: // SUBMITTED
-                acc['1'] = (acc['1'] || 0) + 1;
+                statusCounts['1']++;
                 break;
             case 2: // CONFIRMED
-                acc['2'] = (acc['2'] || 0) + 1;
+                statusCounts['2']++;
                 break;
             case 3: // ACCEPTED_STORE
-                acc['3'] = (acc['3'] || 0) + 1;
+                statusCounts['3']++;
                 break;
             case 5: // READY
-                if (parsedDate < twoWeeksAgo) {
-                    acc['OVERDUE'] = (acc['OVERDUE'] || 0) + 1;
+                if (parsedDate && parsedDate < twoWeeksAgo) {
+                    statusCounts['OVERDUE']++;
                 } else {
-                    acc['READY'] = (acc['READY'] || 0) + 1;
+                    statusCounts['READY']++;
                 }
                 break;
             default:
                 console.log(`[WARNING] ⚠️ Nieznany status ${parsedStatus} dla zamówienia ${order.id}`);
         }
-        return acc;
-    }, {});
-
-    // Przygotuj obiekt wynikowy z wszystkimi licznikami
-    const results = {
-        '1': statusCounts['1'] || 0,
-        '2': statusCounts['2'] || 0,
-        '3': statusCounts['3'] || 0,
-        'READY': statusCounts['READY'] || 0,
-        'OVERDUE': statusCounts['OVERDUE'] || 0
-    };
+    });
 
     console.log('[DEBUG] 🔍 Debug statusów:', {
         rawCounts: statusCounts,
-        processedCounts: results,
         totalOrders: totalOrders
     });
 
-    console.log(`[DEBUG] 📊 Podsumowanie statusów:`, results);
+    console.log(`[DEBUG] 📊 Podsumowanie statusów:`, statusCounts);
     console.log(`[DEBUG] ✅ Zakończono analizę wszystkich ${totalOrders} zamówień`);
 
-    return results;
+    return statusCounts;
 }
 
 function getCacheKey(selectedStore) {
@@ -790,164 +1086,45 @@ function getCacheKey(selectedStore) {
 }
 
 // Funkcja sprawdzająca i aktualizująca zamówienia
-async function checkAndUpdateOrders() {
+async function checkAndUpdateOrders(store = null) {
     try {
-        const log = (message, type, data) => {
-            chrome.runtime.getContexts({ contextTypes: ['POPUP'] }, (contexts) => {
-                if (contexts.length > 0) {
-                    sendLogToPopup(message, type, data);
-                } else {
-                    console.log(`[${type.toUpperCase()}] ${message}`, data || '');
-                }
-            });
-        };
+        // Get store configuration
+        if (!store) {
+            store = await storeManager.getSelectedStore();
+        }
 
-        log('🔄 Rozpoczynam sprawdzanie zamówień', 'info');
-        const darwinaConfig = await getDarwinaCredentials();
-        
-        if (!darwinaConfig) {
-            log('❌ Brak konfiguracji API', 'error');
+        if (!store) {
+            console.log('[INFO] ℹ️ No store selected, initializing default');
+            // Initialize with default store if none selected
+            await storeManager.initialize();
             return;
         }
 
-        const apiUrl = `${darwinaConfig.DARWINA_API_BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}`;
+        console.log('[INFO] 📦 Checking orders for store:', store.id);
+        
+        // Initialize OrderService with credentials
+        const credentials = await getDarwinaCredentials();
+        const orderService = new OrderService(credentials);
+        
+        // Fetch and process orders
+        const result = await orderService.fetchAllOrders(store);
+        if (!result.success) {
+            throw new Error('Failed to fetch orders');
+        }
 
-        // Pobierz wszystkie zamówienia ze statusem 1 (SUBMITTED)
-        const params = new URLSearchParams({
-            status_id: '1',
-            delivery_id: '3',
-            limit: '50'
+        // Update badge with new counts
+        await updateBadge(result.counts);
+
+        // Save the data
+        await storageManager.save(`data_${store.id}`, {
+            orders: result.orders,
+            counts: result.counts,
+            timestamp: Date.now()
         });
 
-        log('🔍 Pobieram zamówienia ze statusem SUBMITTED...', 'info');
-        const response = await fetch(`${apiUrl}?${params}`, {
-            headers: {
-                'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`API Error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const allOrders = data.data || [];
-        const totalPages = data.__metadata?.page_count || 1;
-
-        log(`📦 Znaleziono ${allOrders.length} zamówień na stronie 1/${totalPages}`, 'info');
-
-        // Pobierz pozostałe strony
-        for (let page = 2; page <= totalPages; page++) {
-            params.set('page', page.toString());
-            const pageResponse = await fetch(`${apiUrl}?${params}`, {
-                headers: {
-                    'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (!pageResponse.ok) {
-                log(`⚠️ Błąd pobierania strony ${page}`, 'warning');
-                continue;
-            }
-
-            const pageData = await pageResponse.json();
-            if (pageData.data) {
-                allOrders.push(...pageData.data);
-                log(`📦 Pobrano stronę ${page}/${totalPages} (${pageData.data.length} zamówień)`, 'info');
-            }
-        }
-
-        log(`🔍 Sprawdzam ${allOrders.length} zamówień...`, 'info');
-
-        // Sprawdź każde zamówienie
-        for (const order of allOrders) {
-            try {
-                log(`🔍 Sprawdzam zamówienie ${order.order_id}`, 'info', {
-                    delivery_id: order.delivery_id,
-                    status_id: order.status_id,
-                    client_comment: order.client_comment
-                });
-                
-                const deliveryId = parseInt(order.delivery_id);
-                const statusId = parseInt(order.status_id);
-
-                if (deliveryId !== 3) {
-                    log(`ℹ️ Pomijam zamówienie ${order.order_id} - delivery_id (${order.delivery_id}) różne od 3`, 'info');
-                    continue;
-                }
-
-                if (statusId !== 1) {
-                    log(`⚠️ Zamówienie ${order.order_id} ma status=${order.status_id}, nie sprawdzam punktu odbioru`, 'info');
-                    continue;
-                }
-
-                const clientComment = order.client_comment || '';
-                log('📝 Analizuję komentarz klienta', 'info', { clientComment });
-
-                const match = clientComment.match(/PUNKT\s+ODBIORU:\s*(.*?)(?:$|\n)/i);
-                if (!match) {
-                    log(`⚠️ Brak informacji o punkcie odbioru w zamówieniu ${order.order_id}`, 'warning');
-                    continue;
-                }
-
-                const selectedStore = match[1].trim();
-                log('✨ Wyciągnięto punkt odbioru', 'info', { selectedStore });
-
-                const storeInfo = stores.find(s => {
-                    if (!s.address) return false;
-                    const normalizedStoreAddress = s.address.toLowerCase().replace(/\s+/g, ' ').trim();
-                    const normalizedSelectedStore = selectedStore.toLowerCase().replace(/\s+/g, ' ').trim();
-                    return normalizedStoreAddress === normalizedSelectedStore;
-                });
-
-                if (!storeInfo) {
-                    log(`⚠️ Nie znaleziono sklepu dla adresu: ${selectedStore}`, 'warning');
-                    continue;
-                }
-
-                log(`🎯 Znaleziono sklep: ${storeInfo.name}`, 'info', storeInfo);
-                
-                const updateData = {
-                    delivery_id: storeInfo.deliveryId.toString()
-                };
-
-                log('📤 Wysyłam żądanie aktualizacji', 'info', { 
-                    url: `${apiUrl}/${order.order_id}`,
-                    updateData
-                });
-
-                const updateResponse = await fetch(`${apiUrl}/${order.order_id}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(updateData)
-                });
-
-                if (updateResponse.ok) {
-                    const updateData = await updateResponse.json();
-                    log(`✅ Zaktualizowano zamówienie ${order.order_id}`, 'success', updateData);
-                } else {
-                    const errorText = await updateResponse.text();
-                    throw new Error(`Błąd aktualizacji: ${updateResponse.status} - ${errorText}`);
-                }
-            } catch (orderError) {
-                log(`❌ Błąd przetwarzania zamówienia ${order.order_id}`, 'error', orderError.message);
-            }
-        }
-
-        log('✅ Zakończono sprawdzanie zamówień', 'success');
+        console.log('[SUCCESS] ✅ Orders updated successfully');
     } catch (error) {
-        chrome.runtime.getContexts({ contextTypes: ['POPUP'] }, (contexts) => {
-            if (contexts.length > 0) {
-                sendLogToPopup('❌ Błąd sprawdzania zamówień', 'error', error.message);
-            } else {
-                console.error('❌ Błąd sprawdzania zamówień:', error.message);
-            }
-        });
+        console.error('[ERROR] ❌ Failed to check and update orders:', error);
     }
 }
 
@@ -955,6 +1132,13 @@ async function checkAndUpdateOrders() {
 chrome.runtime.onStartup.addListener(async () => {
     console.log('[DEBUG] 🚀 Rozpoczynam uruchamianie rozszerzenia...');
     try {
+        // Inicjalizacja motywu
+        console.log('[DEBUG] 🎨 Inicjalizacja systemu motywów...');
+        const savedTheme = await storageManager.load(STORAGE_KEYS.THEME);
+        if (savedTheme) {
+            themeService.applyTheme(savedTheme);
+        }
+        
         console.log('[DEBUG] ⚙️ Tworzę alarm do sprawdzania zamówień...');
         await createOrderCheckAlarm();
         
@@ -968,93 +1152,61 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 // Funkcja aktualizująca badge na ikonie
-function updateExtensionBadge(counts, selectedStore) {
-    // Jeśli nie ma danych o licznikach, ukryj badge
-    if (!counts) {
-        chrome.action.setBadgeText({ text: '' });
-        return;
-    }
-    
-    // Oblicz sumę zamówień ze statusem 1 i 2
-    const sum = (parseInt(counts['1']) || 0) + (parseInt(counts['2']) || 0);
-    
-    // Jeśli suma wynosi 0 lub nie wybrano konkretnego sklepu (ALL), ukryj badge
-    if (sum === 0 || !selectedStore || selectedStore === 'ALL') {
-        chrome.action.setBadgeText({ text: '' });
-        return;
-    }
-    
-    // Ustaw badge z sumą zamówień
-    chrome.action.setBadgeText({ text: sum.toString() });
-    chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
-    console.log(`[DEBUG] 🔄 Zaktualizowano badge dla sklepu ${selectedStore}: ${sum}`);
-}
+function updateExtensionBadge(counts, storeId) {
+    if (!counts) return;
 
-// Funkcja do tworzenia powiadomienia o nowym zamówieniu
-function createOrderNotification(order, status) {
-    const orderUrl = `${API_CONFIG.DARWINA.BASE_URL}/orders/${order.order_id}`;
-    const notificationId = `order-${order.order_id}`;
-    
-    chrome.notifications.create(notificationId, {
-        type: 'basic',
-        iconUrl: 'icon128.png',
-        title: i18n.translate('newOrderNotification'),
-        message: i18n.translate('orderNotificationFormat', {
-            id: order.order_id,
-            status: status,
-            store: order.delivery_name || 'Nieznany sklep',
-            value: order.total_price ? `${order.total_price} zł` : 'N/A'
-        }),
-        buttons: [
-            {
-                title: i18n.translate('viewOrder')
-            }
-        ],
-        requireInteraction: true,
-        silent: false // Enable sound
-    });
-}
+    // Calculate total count
+    const totalCount = Object.values(counts).reduce((sum, count) => sum + (count || 0), 0);
 
-// Nasłuchuj na kliknięcie powiadomienia
-chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-    if (notificationId.startsWith('order-')) {
-        const orderId = notificationId.replace('order-', '');
-        const orderUrl = `${API_CONFIG.DARWINA.BASE_URL}/orders/${orderId}`;
-        chrome.tabs.create({ url: orderUrl });
+    // Update badge text
+    if (totalCount > 0 && storeId) {
+        chrome.action.setBadgeText({ text: totalCount.toString() });
+        
+        // Set badge color (red if overdue orders exist)
+        const hasOverdue = counts['OVERDUE'] > 0;
+        chrome.action.setBadgeBackgroundColor({
+            color: hasOverdue ? '#dc3545' : '#28a745'
+        });
+    } else {
+        // Hide badge if no orders or no store selected
+        chrome.action.setBadgeText({ text: '' });
     }
-});
+}
 
 // Funkcja do sprawdzania nowych zamówień w tle
 async function checkNewOrders(selectedStore) {
     try {
-        const { last_check_time } = await chrome.storage.local.get('last_check_time');
+        const lastCheckTime = await storageManager.load('last_check_time');
         const now = Date.now();
+        
+        // Upewnij się, że mamy prawidłowe ID sklepu
+        const storeId = selectedStore?.id || selectedStore;
         
         // Pobierz tylko zamówienia zmodyfikowane od ostatniego sprawdzenia
         const orders = await fetchOrdersByStatus(
             await getDarwinaCredentials(),
             '1', // Status SUBMITTED
-            selectedStore,
-            last_check_time
+            storeId,
+            lastCheckTime
         );
 
         // Aktualizuj czas ostatniego sprawdzenia
-        await chrome.storage.local.set({ last_check_time: now });
+        await storageManager.save('last_check_time', now);
 
         // Pokaż powiadomienia dla nowych zamówień
         for (const order of orders) {
-            createOrderNotification(order, '1');
+            await createOrderNotification(order, '1');
         }
 
         // Aktualizuj badge
         if (orders.length > 0) {
-            const { leadCounts } = await chrome.storage.local.get('leadCounts');
+            const leadCounts = await storageManager.load('leadCounts');
             const newCounts = {
                 ...leadCounts,
                 '1': (leadCounts?.['1'] || 0) + orders.length
             };
-            await updateLeadCounts(newCounts, leadCounts);
-            updateExtensionBadge(newCounts, selectedStore);
+            await updateLeadCounts(newCounts);
+            updateExtensionBadge(newCounts, storeId);
         }
 
     } catch (error) {
@@ -1062,17 +1214,133 @@ async function checkNewOrders(selectedStore) {
     }
 }
 
-// Dodaj alarm do sprawdzania nowych zamówień
-chrome.alarms.create('checkNewOrders', {
-    periodInMinutes: 1 // Sprawdzaj co minutę
+// Funkcja do aktualizacji liczników
+async function updateLeadCounts(newCounts) {
+    try {
+        if (!newCounts || typeof newCounts !== 'object') {
+            console.error('[ERROR] ❌ Invalid counts data:', newCounts);
+            return;
+        }
+
+        // Get current store context
+        const selectedStore = await storageManager.load(STORAGE_KEYS.SELECTED_STORE);
+        if (!selectedStore) {
+            console.error('[ERROR] ❌ No store selected');
+            return;
+        }
+
+        // Get previous counts for comparison
+        const oldCounts = await storageManager.load('leadCounts');
+
+        // Save new counts with store context
+        await storageManager.save('leadCounts', newCounts);
+        await storageManager.save('lastUpdate', Date.now());
+
+        // Check if there are significant changes in counts
+        let hasSignificantChanges = false;
+        if (oldCounts) {
+            Object.entries(newCounts).forEach(([status, count]) => {
+                const oldCount = oldCounts[status] || 0;
+                if (count !== oldCount) {
+                    hasSignificantChanges = true;
+                }
+            });
+        } else {
+            hasSignificantChanges = true;
+        }
+
+        // Emit counts updated event if there are changes
+        if (hasSignificantChanges) {
+            chrome.runtime.sendMessage({
+                type: 'COUNTS_UPDATED',
+                payload: {
+                    counts: newCounts,
+                    store: selectedStore,
+                    timestamp: Date.now()
+                }
+            }).catch(error => {
+                console.warn('[WARNING] ⚠️ Error sending COUNTS_UPDATED message:', error);
+            });
+        }
+
+    } catch (error) {
+        console.error('[ERROR] ❌ Error in updateLeadCounts:', error);
+    }
+}
+
+// Update port connection handling
+chrome.runtime.onConnect.addListener((port) => {
+    console.log('[INFO] 🔌 New port connection:', port.name);
+    
+    const messageHandler = async (message) => {
+        console.log('[DEBUG] 📨 Received port message:', message);
+        
+        let response = null;
+        
+        try {
+            if (message.type === 'PING') {
+                response = { type: 'PONG' };
+            } else if (message.type === 'CONNECTION_CHECK') {
+                response = { connected: true };
+            } else if (message.type === 'FETCH_DARWINA_DATA') {
+                response = await handleFetchDarwinaData(message);
+            } else if (message.type === 'POPUP_OPENED') {
+                response = await handlePopupOpened();
+            } else if (message.type === 'CHECK_ORDERS_NOW') {
+                response = await handleCheckOrdersNow();
+            }
+            
+            if (response) {
+                // Check if port is still connected before sending
+                if (port.error) {
+                    console.warn('[WARNING] ⚠️ Port disconnected, cannot send response');
+                    return;
+                }
+                port.postMessage(response);
+            }
+        } catch (error) {
+            console.error('[ERROR] ❌ Error handling message:', error);
+            // Send error response if port is still connected
+            if (!port.error) {
+                port.postMessage({ 
+                    error: error.message,
+                    timestamp: Date.now(),
+                    type: 'ERROR'
+                });
+            }
+        }
+    };
+
+    port.onMessage.addListener(messageHandler);
+
+    port.onDisconnect.addListener(() => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+            console.warn('[WARNING] ⚠️ Port disconnected with error:', error);
+        }
+        port.onMessage.removeListener(messageHandler);
+        console.log('[INFO] 🔌 Port disconnected:', port.name);
+    });
 });
 
-// Nasłuchuj na alarm sprawdzania nowych zamówień
-chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'checkNewOrders') {
-        chrome.storage.local.get('selectedStore', async ({ selectedStore }) => {
-            await checkNewOrders(selectedStore);
+// Initialize extension
+async function initializeExtension() {
+    try {
+        // Get interval settings
+        const intervals = await getIntervalSettings(storageManager);
+        
+        // Set up alarms
+        await chrome.alarms.create('fetchData', {
+            periodInMinutes: intervals.fullRefresh
         });
+        
+        await chrome.alarms.create('checkOrders', {
+            periodInMinutes: intervals.backgroundCheck
+        });
+
+        console.log('[SUCCESS] ✅ Extension initialized successfully');
+    } catch (error) {
+        console.error('[ERROR] ❌ Błąd podczas instalacji:', error);
     }
-});
+}
   

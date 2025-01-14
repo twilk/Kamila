@@ -122,8 +122,8 @@ export const getDarwinaCredentials = async () => {
         console.log('🔑 Załadowano poświadczenia API', 'success');
         
         return {
-            DARWINA_API_BASE_URL: API_BASE_URL,
-            DARWINA_API_KEY: tokenData.access_token
+            baseUrl: API_BASE_URL,
+            token: tokenData.access_token
         };
     } catch (error) {
         console.error('Błąd podczas pobierania danych uwierzytelniających:', error);

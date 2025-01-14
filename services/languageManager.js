@@ -1,12 +1,15 @@
 import { i18n } from './i18n.js';
-import { saveToStorage, STORAGE_KEYS } from './storage.js';
+import { STORAGE_KEYS } from '../config/storage.js';
+import { storageManager } from './storage.js';
 import { BaseManager } from './core/BaseManager.js';
 import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
 
 export class LanguageManager extends BaseManager {
-    constructor() {
-        super();
-        this.currentLanguage = 'polish';
+    constructor(eventManager) {
+        super([eventManager]);
+        this.eventManager = eventManager;
+        this.currentLanguage = 'pl';
+        this.supportedLanguages = ['pl', 'en'];
     }
 
     async initialize() {
@@ -24,8 +27,8 @@ export class LanguageManager extends BaseManager {
 
     async loadLanguage() {
         try {
-            const savedLang = await chrome.storage.local.get(STORAGE_KEYS.LANGUAGE);
-            const lang = savedLang[STORAGE_KEYS.LANGUAGE] || 'polish';
+            const savedLang = await storageManager.load(STORAGE_KEYS.LANGUAGE);
+            const lang = savedLang || 'polish';
             
             // Initialize i18n if not already initialized
             if (!i18n.translations || Object.keys(i18n.translations).length === 0) {
@@ -49,7 +52,7 @@ export class LanguageManager extends BaseManager {
             
             await i18n.setLanguage(lang);
             this.currentLanguage = i18n.currentLanguage;
-            await saveToStorage(STORAGE_KEYS.LANGUAGE, this.currentLanguage);
+            await storageManager.save(STORAGE_KEYS.LANGUAGE, this.currentLanguage);
             
             return true;
         } catch (error) {

@@ -1,11 +1,13 @@
+import { storageManager } from './storage.js';
+
 export class CacheService {
     static async isAvailable() {
         try {
             const testKey = '_cache_test_' + Date.now();
-            await chrome.storage.local.set({ [testKey]: true });
-            const result = await chrome.storage.local.get(testKey);
-            await chrome.storage.local.remove(testKey);
-            return !!result[testKey];
+            await storageManager.save(testKey, true);
+            const result = await storageManager.load(testKey);
+            await storageManager.remove(testKey);
+            return result !== null;
         } catch {
             return false;
         }
@@ -13,14 +15,13 @@ export class CacheService {
 
     static async get(key) {
         try {
-            const result = await chrome.storage.local.get(key);
-            const data = result[key];
+            const data = await storageManager.load(key);
             
             // Check if data exists and isn't expired
             if (data && data.expires) {
                 if (Date.now() > data.expires) {
                     // Data expired, remove it
-                    await chrome.storage.local.remove(key);
+                    await storageManager.remove(key);
                     return null;
                 }
                 return data.value;
@@ -34,23 +35,19 @@ export class CacheService {
     static async set(key, value, ttl = 300000) { // domyślnie 5 minut
         try {
             // Clear any existing data for this key
-            await chrome.storage.local.remove(key);
+            await storageManager.remove(key);
             
             // Store new data with expiration
-            await chrome.storage.local.set({
-                [key]: {
-                    value,
-                    expires: Date.now() + ttl,
-                    updated: Date.now()
-                }
+            await storageManager.save(key, {
+                value,
+                expires: Date.now() + ttl,
+                updated: Date.now()
             });
             
             // Also update the leadCounts in storage for backward compatibility
             if (key.includes('counts')) {
-                await chrome.storage.local.set({
-                    leadCounts: value,
-                    lastUpdate: Date.now()
-                });
+                await storageManager.save('leadCounts', value);
+                await storageManager.save('lastUpdate', Date.now());
             }
             
             return true;
@@ -63,11 +60,13 @@ export class CacheService {
     static async clear(pattern = null) {
         try {
             if (pattern) {
-                const all = await chrome.storage.local.get(null);
+                const all = await storageManager.load(null);
                 const keys = Object.keys(all).filter(key => key.includes(pattern));
-                await chrome.storage.local.remove(keys);
+                for (const key of keys) {
+                    await storageManager.remove(key);
+                }
             } else {
-                await chrome.storage.local.clear();
+                await storageManager.remove(null);
             }
             return true;
         } catch {

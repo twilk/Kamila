@@ -1,173 +1,213 @@
-import { UIManager } from './core/UIManager.js';
-import { i18n } from './i18n.js';
+import { BaseManager } from './core/BaseManager.js';
+import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
 
-/**
- * @extends {UIManager}
- * Manager responsible for menu functionality
- */
-export class MenuManager extends UIManager {
-    /**
-     * @type {NodeListOf<Element>}
-     * @private
-     */
-    _menuLinks = null;
-
-    /**
-     * @type {Array<any>}
-     * @private
-     */
-    _tooltipList = [];
-
-    /**
-     * @param {typeof i18n} i18nService - i18n service instance
-     */
-    constructor(i18nService) {
-        super([i18nService], []); // Core dependencies: i18n, no UI dependencies
+export class MenuManager extends BaseManager {
+    constructor(eventManager) {
+        super();
+        this.eventManager = eventManager;
+        this.activeTab = null;
+        this.tabs = new Map();
     }
 
-    /**
-     * Implementation specific initialization
-     * @protected
-     * @returns {Promise<void>}
-     */
-    async _doInitialize() {
-        console.log('🔄 Inicjalizuję menu...');
-        this._menuLinks = document.querySelectorAll('.menu .link');
-        await this._initializeMenuEvents();
-        await this._updateMenuItems();
-        await this._initializeTooltips();
+    async onInitialize() {
+        await this.setupEventListeners();
+        await this.initializeTabs();
+        return true;
     }
 
-    /**
-     * Implementation specific disposal
-     * @protected
-     * @returns {Promise<void>}
-     */
-    async _doDispose() {
-        // Usuń tooltips
-        if (this._tooltipList.length > 0) {
-            this._tooltipList.forEach(tooltip => {
-                try {
-                    tooltip?.dispose();
-                } catch (e) {
-                    // Ignoruj błędy przy usuwaniu tooltipów
-                }
-            });
-            this._tooltipList = [];
-        }
-    }
-
-    /**
-     * Inicjalizuje obsługę zdarzeń menu
-     * @private
-     */
-    async _initializeMenuEvents() {
-        this._menuLinks.forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                
-                // Usuń klasę active z wszystkich linków
-                this._menuLinks.forEach(l => l.classList.remove('active'));
-                
-                // Dodaj klasę active do klikniętego linku
-                link.classList.add('active');
-                
-                // Pokaż odpowiednią zakładkę
-                const targetId = link.getAttribute('data-target');
-                if (targetId) {
-                    const tabPanes = document.querySelectorAll('.tab-pane');
-                    tabPanes.forEach(pane => {
-                        pane.classList.remove('show', 'active');
-                    });
-                    
-                    const targetPane = document.querySelector(targetId);
-                    if (targetPane) {
-                        targetPane.classList.add('show', 'active');
-                    }
-                }
-            });
-        });
-    }
-
-    /**
-     * Aktualizuje teksty w menu na podstawie aktualnego języka
-     * @private
-     */
-    async _updateMenuItems() {
-        console.log('🔄 Aktualizuję elementy menu...');
-        const menuItems = document.querySelectorAll('.menu .link');
-        menuItems.forEach(item => {
-            const menuText = item.querySelector('.menu-text');
-            if (menuText) {
-                const key = menuText.getAttribute('data-i18n');
-                if (key) {
-                    console.log(`📝 Aktualizuję tekst menu dla klucza: ${key}`);
-                    menuText.textContent = i18n.translate(key);
-                }
-            }
-        });
-    }
-
-    /**
-     * Inicjalizuje tooltips dla elementów menu
-     * @private
-     */
-    async _initializeTooltips() {
-        console.log('🔄 Inicjalizuję tooltips...');
-        
+    setupEventListeners() {
         try {
-            // Sprawdź czy bootstrap jest dostępny
-            if (typeof bootstrap === 'undefined') {
-                console.warn('⚠️ Bootstrap nie jest załadowany - tooltips nie będą działać');
-                return;
-            }
+            // Tab switching
+            this.eventManager.delegate('click', '[data-tab]', (event, target) => {
+                event.preventDefault();
+                this.switchTab(target.dataset.tab);
+            });
 
-            // Usuń stare tooltips
-            if (this._tooltipList.length > 0) {
-                this._tooltipList.forEach(tooltip => {
-                    try {
-                        tooltip?.dispose();
-                    } catch (e) {
-                        // Ignoruj błędy przy usuwaniu tooltipów
-                    }
-                });
-                this._tooltipList = [];
-            }
-
-            const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-            tooltipTriggerList.forEach(element => {
-                try {
-                    const tooltipKey = element.getAttribute('data-i18n-tooltip');
-                    if (tooltipKey) {
-                        console.log(`📝 Ustawiam tooltip dla klucza: ${tooltipKey}`);
-                        element.setAttribute('title', i18n.translate(`tooltips.${tooltipKey}`));
-                        const tooltip = new bootstrap.Tooltip(element, {
-                            animation: true,
-                            delay: { show: 100, hide: 100 },
-                            placement: 'auto',
-                            trigger: 'hover focus'
-                        });
-                        this._tooltipList.push(tooltip);
-                    }
-                } catch (error) {
-                    console.error('❌ Błąd inicjalizacji tooltipa:', error);
+            // Menu toggling
+            this.eventManager.delegate('click', '.menu-toggle', (event, target) => {
+                const menu = document.querySelector('.menu');
+                if (menu) {
+                    menu.classList.toggle('expanded');
+                    target.classList.toggle('active');
                 }
             });
+
+            // Submenu toggling
+            this.eventManager.delegate('click', '.submenu-toggle', (event, target) => {
+                const submenu = target.nextElementSibling;
+                if (submenu) {
+                    const isExpanded = submenu.classList.toggle('expanded');
+                    target.classList.toggle('active', isExpanded);
+                    target.setAttribute('aria-expanded', isExpanded);
+                }
+            });
+
+            // Close menu on outside click
+            this.eventManager.delegate('click', 'body', (event, target) => {
+                const menu = document.querySelector('.menu');
+                const menuToggle = document.querySelector('.menu-toggle');
+                
+                if (menu && menu.classList.contains('expanded') && 
+                    !menu.contains(event.target) && 
+                    !menuToggle.contains(event.target)) {
+                    menu.classList.remove('expanded');
+                    menuToggle.classList.remove('active');
+                }
+            });
+
+            // Handle keyboard navigation
+            this.eventManager.delegate('keydown', '[data-tab]', (event, target) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    this.switchTab(target.dataset.tab);
+                }
+            });
+
         } catch (error) {
-            console.error('❌ Błąd inicjalizacji tooltipów:', error);
+            this.handleError(error, ErrorType.EVENT, ErrorSeverity.ERROR, {
+                method: 'setupEventListeners'
+            });
         }
     }
 
-    /**
-     * Wymusza aktualizację elementów menu
-     * @public
-     * @returns {Promise<void>}
-     */
-    async refreshMenu() {
-        if (!this.isInitialized()) {
-            throw new Error('MenuManager is not initialized');
+    async initializeTabs() {
+        try {
+            // Initialize tab states
+            document.querySelectorAll('[data-tab]').forEach(tab => {
+                const tabId = tab.dataset.tab;
+                const content = document.querySelector(`[data-tab-content="${tabId}"]`);
+                
+                if (content) {
+                    this.tabs.set(tabId, {
+                        tab,
+                        content,
+                        initialized: false
+                    });
+                }
+            });
+
+            // Set initial active tab
+            const activeTab = document.querySelector('[data-tab].active');
+            if (activeTab) {
+                await this.switchTab(activeTab.dataset.tab);
+            } else {
+                const firstTab = this.tabs.keys().next().value;
+                if (firstTab) {
+                    await this.switchTab(firstTab);
+                }
+            }
+
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.ERROR, {
+                method: 'initializeTabs'
+            });
+            return false;
         }
-        await this._updateMenuItems();
-        await this._initializeTooltips();
+    }
+
+    async switchTab(tabId) {
+        try {
+            const tabData = this.tabs.get(tabId);
+            if (!tabData) return false;
+
+            // Deactivate current tab
+            if (this.activeTab) {
+                const currentTab = this.tabs.get(this.activeTab);
+                if (currentTab) {
+                    currentTab.tab.classList.remove('active');
+                    currentTab.content.classList.remove('active');
+                }
+            }
+
+            // Activate new tab
+            tabData.tab.classList.add('active');
+            tabData.content.classList.add('active');
+            this.activeTab = tabId;
+
+            // Initialize tab content if needed
+            if (!tabData.initialized) {
+                await this.initializeTabContent(tabId);
+                tabData.initialized = true;
+            }
+
+            // Update URL hash
+            history.replaceState(null, null, `#${tabId}`);
+
+            // Emit tab change event
+            this.emit('tabChange', { 
+                tabId, 
+                previousTab: this.activeTab 
+            });
+
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
+                method: 'switchTab',
+                tabId
+            });
+            return false;
+        }
+    }
+
+    async initializeTabContent(tabId) {
+        try {
+            const tabData = this.tabs.get(tabId);
+            if (!tabData) return false;
+
+            // Initialize tab-specific content
+            switch (tabId) {
+                case 'dashboard':
+                    await this.initializeDashboard(tabData.content);
+                    break;
+                case 'ranking':
+                    await this.initializeRanking(tabData.content);
+                    break;
+                case 'settings':
+                    await this.initializeSettings(tabData.content);
+                    break;
+                // Add more tab initializations as needed
+            }
+
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.ERROR, {
+                method: 'initializeTabContent',
+                tabId
+            });
+            return false;
+        }
+    }
+
+    async initializeDashboard(content) {
+        // Initialize dashboard-specific content
+        this.emit('dashboardInit', { content });
+    }
+
+    async initializeRanking(content) {
+        // Initialize ranking-specific content
+        this.emit('rankingInit', { content });
+    }
+
+    async initializeSettings(content) {
+        // Initialize settings-specific content
+        this.emit('settingsInit', { content });
+    }
+
+    getActiveTab() {
+        return this.activeTab;
+    }
+
+    isTabInitialized(tabId) {
+        const tabData = this.tabs.get(tabId);
+        return tabData ? tabData.initialized : false;
+    }
+
+    async dispose() {
+        // Clear tab data
+        this.tabs.clear();
+        this.activeTab = null;
+
+        await super.dispose();
     }
 } 

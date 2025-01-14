@@ -3,14 +3,11 @@ import { BaseManager } from './core/BaseManager.js';
 import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
 
 export class RankingManager extends BaseManager {
-    constructor() {
+    constructor(eventManager) {
         super();
-        this.data = [];
-        this.historicalData = {};
-        this.filteredData = [];
-        this.charts = {};
+        this.eventManager = eventManager;
         this.sortConfig = {
-            column: 'position',
+            field: 'rank',
             direction: 'asc'
         };
         this.filters = {
@@ -18,98 +15,66 @@ export class RankingManager extends BaseManager {
             position: '',
             trend: ''
         };
-        this.currentMonth = '2024-12';
-        this.availableMonths = ['2024-12', '2024-11', '2024-10', '2024-09', '2024-08'];
+        this.data = [];
     }
 
-    async initialize() {
-        try {
-            await super.initialize();
-            this.setupEventListeners();
-            await this.fetchAllData();
-            
-            // Poczekaj na załadowanie zakładki ranking
-            const rankingTab = document.querySelector('button[data-target="#ranking"]');
-            if (rankingTab) {
-                rankingTab.addEventListener('shown.bs.tab', () => {
-                    this.initializeCharts();
-                    this.updateCharts();
-                });
-            }
-
-            // Jeśli zakładka ranking jest aktywna, zainicjuj wykresy od razu
-            const activeTab = document.querySelector('.nav-link.active');
-            if (activeTab && activeTab.getAttribute('data-target') === '#ranking') {
-                setTimeout(() => {
-                    this.initializeCharts();
-                    this.updateCharts();
-                }, 100);
-            }
-
-            return true;
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
-                method: 'initialize'
-            });
-            return false;
-        }
+    async onInitialize() {
+        await this.setupEventListeners();
+        await this.fetchAllData();
+        return true;
     }
 
     setupEventListeners() {
         try {
-        // Sorting
-        document.querySelectorAll('#ranking-data th[data-sort]').forEach(th => {
-            th.addEventListener('click', () => this.handleSort(th.dataset.sort));
-        });
+            // Sorting
+            this.eventManager.delegate('click', '#ranking-data th[data-sort]', (event, target) => {
+                this.handleSort(target.dataset.sort);
+            });
 
-        // Filtering
-            document.getElementById('name-filter')?.addEventListener('input', (e) => {
-            this.filters.name = e.target.value.toLowerCase();
-            this.applyFilters();
-        });
+            // Name filtering
+            this.eventManager.delegate('input', '#name-filter', (event, target) => {
+                this.filters.name = target.value.toLowerCase();
+                this.applyFilters();
+            }, { debounce: 300 });
 
-            document.getElementById('position-filter')?.addEventListener('change', (e) => {
-            this.filters.position = e.target.value;
-            this.applyFilters();
-        });
+            // Position filtering
+            this.eventManager.delegate('change', '#position-filter', (event, target) => {
+                this.filters.position = target.value;
+                this.applyFilters();
+            });
 
-            document.getElementById('trend-filter')?.addEventListener('change', (e) => {
-            this.filters.trend = e.target.value;
-            this.applyFilters();
-        });
+            // Trend filtering
+            this.eventManager.delegate('change', '#trend-filter', (event, target) => {
+                this.filters.trend = target.value;
+                this.applyFilters();
+            });
 
-            document.getElementById('reset-filters')?.addEventListener('click', () => {
-            this.resetFilters();
-        });
+            // Reset filters
+            this.eventManager.delegate('click', '#reset-filters', () => {
+                this.resetFilters();
+            });
 
             // Refresh button
-            document.getElementById('refresh-ranking')?.addEventListener('click', async () => {
+            this.eventManager.delegate('click', '#refresh-ranking', async (event, target) => {
                 try {
-                    const button = document.getElementById('refresh-ranking');
-                    if (button) {
-                        button.disabled = true;
-                        button.classList.add('loading');
-                    }
+                    target.disabled = true;
+                    target.classList.add('loading');
                     
                     await this.fetchAllData();
                     
-                    if (button) {
-                        button.disabled = false;
-                        button.classList.remove('loading');
-                    }
+                    target.disabled = false;
+                    target.classList.remove('loading');
                 } catch (error) {
                     this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
                         method: 'refreshRanking'
                     });
-                    const button = document.getElementById('refresh-ranking');
-                    if (button) {
-                        button.disabled = false;
-                        button.classList.remove('loading');
-                    }
+                    target.disabled = false;
+                    target.classList.remove('loading');
                 }
             });
+
         } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+            this.handleError(error, ErrorType.EVENT, ErrorSeverity.ERROR, {
                 method: 'setupEventListeners'
             });
         }

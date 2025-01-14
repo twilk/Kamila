@@ -40,17 +40,18 @@
         </header>
 
         <div class="row">
-            <div class="col-2">
-                <div class="store-selector mb-3">
-                    <select id="store-select" class="form-select form-select-sm mb-2" data-i18n-placeholder="selectStore">
-                        <!-- Lista sklepów będzie generowana dynamicznie z stores.js -->
-                    </select>
-                    <button id="refresh-store-data" class="btn btn-sm btn-outline-secondary" data-i18n="interface.refreshData">
-                        <i class="bi bi-arrow-clockwise"></i>
-                    </button>
-                </div>
-
+            <div class="col-0">
+                <!-- Side Panel -->
                 <div id="side-panel">
+                    <div class="store-selector">
+                        <select id="store-select" class="form-select form-select-sm" data-i18n-placeholder="selectStore">
+                            <!-- Lista sklepów będzie generowana dynamicznie z stores.js -->
+                        </select>
+                        <button id="refresh-store-data" class="btn btn-sm btn-outline-secondary" data-i18n="interface.refreshData">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+
                     <div class="lead-status" data-status="1" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.submitted">
                         📤 <span class="lead-count" id="count-1">-</span>
                     </div>
@@ -79,7 +80,7 @@
                 </div>
             </div>
 
-            <div class="col-10">
+            <div class="col-12">
                 <div class="menu">
                     <a class="link active" data-target="#chat" role="tab" data-bs-toggle="tooltip" data-i18n-tooltip="tooltipChat">
                         <span class="link-icon">
@@ -655,7 +656,160 @@
         </div>
     </div>
 
-    <!-- <div id="orders-container" class="orders-container"></div> -->
+    <!-- Message containers -->
+    <div class="message-container">
+        <div class="error-message alert alert-danger d-none" role="alert"></div>
+        <div class="loading-message alert alert-info d-none" role="alert">
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            <span class="loading-text">Ładowanie...</span>
+        </div>
+        <div class="success-message alert alert-success d-none" role="alert"></div>
+        <div class="warning-message alert alert-warning d-none" role="alert"></div>
+    </div>
+
+    <!-- Orders Section -->
+    <div class="orders-section">
+        <div class="section-header">
+            <h2>Zamówienia</h2>
+            <button id="refresh-button" class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+        </div>
+        
+        <div class="counters-grid">
+            <!-- New Orders -->
+            <div class="counter-item">
+                <div class="counter-label" data-status="1">Nowe</div>
+                <div id="submitted-count" class="counter-value">0</div>
+                <div class="status-indicator newOrders"></div>
+            </div>
+            
+            <!-- Confirmed Orders -->
+            <div class="counter-item">
+                <div class="counter-label" data-status="2">Potwierdzone</div>
+                <div id="confirmed-count" class="counter-value">0</div>
+                <div class="status-indicator confirmedOrders"></div>
+            </div>
+            
+            <!-- Accepted Orders -->
+            <div class="counter-item">
+                <div class="counter-label" data-status="3">Zaakceptowane</div>
+                <div id="accepted-count" class="counter-value">0</div>
+                <div class="status-indicator acceptedOrders"></div>
+            </div>
+            
+            <!-- Ready Orders -->
+            <div class="counter-item">
+                <div class="counter-label" data-status="READY">Gotowe do odbioru</div>
+                <div id="ready-count" class="counter-value">0</div>
+                <div class="status-indicator readyOrders"></div>
+            </div>
+            
+            <!-- Overdue Orders -->
+            <div class="counter-item">
+                <div class="counter-label" data-status="OVERDUE">Przeterminowane</div>
+                <div id="overdue-count" class="counter-value">0</div>
+                <div class="status-indicator overdueOrders"></div>
+            </div>
+            
+            <!-- Total -->
+            <div class="counter-item total">
+                <div class="counter-label">Łącznie</div>
+                <div id="total-count" class="counter-value">0</div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+    .orders-section {
+        padding: 1rem;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .counters-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+
+    .counter-item {
+        background: var(--bg-primary);
+        padding: 1rem;
+        border-radius: 6px;
+        text-align: center;
+        position: relative;
+    }
+
+    .counter-item.total {
+        grid-column: span 2;
+        background: var(--bg-accent);
+    }
+
+    .counter-label {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        margin-bottom: 0.5rem;
+    }
+
+    .counter-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: var(--text-primary);
+    }
+
+    .counter-value.has-orders {
+        color: var(--color-success);
+    }
+
+    .counter-value.overdue {
+        color: var(--color-danger);
+    }
+
+    .status-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        background: var(--color-muted);
+    }
+
+    .status-indicator.active {
+        background: var(--color-success);
+    }
+
+    .status-indicator.overdueOrders.active {
+        background: var(--color-danger);
+    }
+
+    #refresh-button {
+        padding: 0.25rem 0.5rem;
+    }
+
+    #refresh-button.loading {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
+    #refresh-button.loading i {
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    </style>
 
     <script src="lib/bootstrap.bundle.min.js" defer></script>
 </body>

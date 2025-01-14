@@ -1,32 +1,111 @@
 import { UIManager } from './core/UIManager.js';
 import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
 import { i18n } from './i18n.js';
-import { themeService } from './theme.js';
+import { storeManager } from './storeManager.js';
+import { DebugManager } from './core/DebugManager.js';
+import { ThemeManager } from './themeManager.js';
 
 export class InterfaceManager extends UIManager {
-    constructor() {
+    constructor(uiManager, eventManager, debugManager) {
         super();
+        this.uiManager = uiManager;
+        this.eventManager = eventManager;
+        this.debugManager = debugManager;
         this.activeTab = null;
         this.menuItems = new Map();
         this.themeListeners = new Set();
         this.languageListeners = new Set();
+        this.tooltips = new Set();
+        this.refreshInterval = 300000; // 5 minutes default
     }
 
     async initialize() {
         try {
             await super.initialize();
 
-            // Initialize interface components
-            await this.initializeMenu();
-            await this.initializeTheme();
-            await this.initializeLanguage();
-            await this.initializeTooltips();
-            await this.initializeIntervalSettings();
+            // Initialize interface components in parallel
+            await Promise.all([
+                this.initializeMenu(),
+                this.initializeTheme(),
+                this.initializeLanguage(),
+                this.initializeTooltips(),
+                this.initializeStoreSelect(),
+                this.initializeLeadStatusLinks(),
+                this.initializeIntervalSettings()
+            ]);
+
+            // Set up event listeners
+            this.setupEventListeners();
             
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
                 method: 'initialize'
+            });
+            return false;
+        }
+    }
+
+    setupEventListeners() {
+        try {
+            // Listen for theme changes
+            this.eventManager.delegate('change', '#theme-switch', async () => {
+                const isDark = document.body.classList.toggle('dark-theme');
+                await chrome.storage.local.set({ darkTheme: isDark });
+                this.themeListeners.forEach(listener => listener(isDark));
+            });
+
+            // Listen for language changes
+            this.eventManager.delegate('change', '#language-select', async (event, target) => {
+                const language = target.value;
+                await i18n.setLanguage(language);
+                this.languageListeners.forEach(listener => listener(language));
+            });
+
+            // Listen for refresh interval changes
+            this.eventManager.delegate('change', '#refresh-interval', async (event, target) => {
+                const interval = parseInt(target.value, 10);
+                if (!isNaN(interval)) {
+                    this.refreshInterval = interval;
+                    await chrome.storage.local.set({ refreshInterval: interval });
+                    this.emit('refreshIntervalChanged', { interval });
+                }
+            });
+
+            // Listen for store changes
+            this.eventManager.delegate('change', '#store-select', async (event, target) => {
+                const store = target.value;
+                await this.handleStoreChange(store);
+            });
+
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
+                method: 'setupEventListeners'
+            });
+        }
+    }
+
+    async handleStoreChange(store) {
+        try {
+            // Save selected store
+            await chrome.storage.local.set({ selectedStore: store });
+            
+            // Emit store change event
+            const event = new CustomEvent('storeChange', { 
+                detail: { store } 
+            });
+            document.dispatchEvent(event);
+            
+            // Update UI
+            await this.updateStoreUI();
+            
+            this.debugManager?.logToPanel(i18n.translate('logs.storeChanged', { store }), 'info');
+            
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
+                method: 'handleStoreChange',
+                store
             });
             return false;
         }
@@ -186,45 +265,45 @@ export class InterfaceManager extends UIManager {
 
     async initializeTheme() {
         try {
-            const themeSwitch = document.getElementById('theme-switch');
-            if (!themeSwitch) return;
+            this.themeManager = new ThemeManager();
+            await this.themeManager.initialize();
+            
+            // Set up theme toggle
+            const themeToggle = document.getElementById('theme-toggle');
+            if (themeToggle) {
+                themeToggle.addEventListener('click', () => {
+                    this.themeManager.toggleTheme();
+                });
+            }
 
-            // Set initial state
-            const currentTheme = themeService.getCurrentTheme();
-            themeSwitch.checked = currentTheme === 'dark';
-            document.body.setAttribute('data-theme', currentTheme);
-
-            // Add change handler
-            themeSwitch.addEventListener('change', (e) => {
-                const newTheme = e.target.checked ? 'dark' : 'light';
-                this.updateTheme(newTheme);
+            // Add theme listener
+            this.themeManager.addThemeListener((theme) => {
+                this.updateThemeUI(theme);
             });
+
+            return true;
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
                 method: 'initializeTheme'
             });
+            return false;
         }
     }
 
-    updateTheme(theme) {
+    updateThemeUI(theme) {
         try {
-            themeService.applyTheme(theme);
-            document.body.setAttribute('data-theme', theme);
+            const currentTheme = this.themeManager.getCurrentTheme();
+            const themeToggle = document.getElementById('theme-toggle');
             
-            // Notify listeners
-            this.themeListeners.forEach(listener => {
-                try {
-                    listener(theme);
-                } catch (listenerError) {
-                    this.handleError(listenerError, ErrorType.UI, ErrorSeverity.WARNING, {
-                        method: 'updateTheme',
-                        listener: 'themeChange'
-                    });
-                }
-            });
+            if (themeToggle) {
+                themeToggle.setAttribute('aria-label', 
+                    currentTheme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'
+                );
+                themeToggle.classList.toggle('theme-dark', currentTheme === 'dark');
+            }
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
-                method: 'updateTheme',
+                method: 'updateThemeUI',
                 theme
             });
         }
@@ -318,15 +397,45 @@ export class InterfaceManager extends UIManager {
                 }
             });
 
+            // Update store select options
+            const storeSelect = document.getElementById('store-select');
+            if (storeSelect) {
+                const allStoresOption = storeSelect.querySelector('option[data-i18n="allStores"]');
+                if (allStoresOption) {
+                    allStoresOption.textContent = i18n.translate('allStores');
+                }
+            }
+
             // Update tooltips
-            this.updateTooltips();
+            document.querySelectorAll('[data-i18n-tooltip]').forEach(el => {
+                const tooltipKey = el.getAttribute('data-i18n-tooltip');
+                if (tooltipKey) {
+                    el.setAttribute('title', i18n.translate(`tooltips.${tooltipKey}`));
+                    const tooltip = bootstrap.Tooltip.getInstance(el);
+                    if (tooltip) {
+                        tooltip.dispose();
+                    }
+                    new bootstrap.Tooltip(el);
+                }
+            });
 
             // Update menu items
-            this.updateMenuItems();
+            document.querySelectorAll('.menu-text[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (key) {
+                    el.textContent = i18n.translate(key);
+                }
+            });
+
+            // Update store UI
+            this.updateStoreUI();
+
+            return true;
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
                 method: 'updateInterface'
             });
+            return false;
         }
     }
 
@@ -568,6 +677,97 @@ export class InterfaceManager extends UIManager {
                 method: 'handleLeadStatusClick',
                 status
             });
+        }
+    }
+
+    async initializeStoreSelect() {
+        try {
+            const storeSelect = document.getElementById('store-select');
+            if (!storeSelect) {
+                throw new Error('Store select element not found');
+            }
+
+            // Wait for translations to be loaded
+            await i18n.waitForTranslations();
+
+            // Clear existing options
+            storeSelect.innerHTML = '';
+
+            // Add "All stores" option
+            const allOption = document.createElement('option');
+            allOption.value = 'ALL';
+            allOption.textContent = i18n.translate('allStores');
+            allOption.setAttribute('data-i18n', 'allStores');
+            storeSelect.appendChild(allOption);
+
+            // Add store options
+            const stores = storeManager.getAllStores();
+            stores
+                .filter(store => store.id !== 'ALL')
+                .forEach(store => {
+                    const option = document.createElement('option');
+                    option.value = store.id;
+                    option.textContent = `${store.name} - ${store.address}`;
+                    option.setAttribute('data-store-id', store.deliveryId?.toString() || '');
+                    storeSelect.appendChild(option);
+                });
+
+            // Load current store
+            const currentStore = await storeManager.getCurrentStore();
+            if (currentStore) {
+                storeSelect.value = currentStore.id;
+            }
+
+            // Add change handler
+            storeSelect.addEventListener('change', async (e) => {
+                try {
+                    const newStoreId = e.target.value;
+                    await storeManager.changeStore(newStoreId);
+                    this.debugManager.logToPanel(i18n.translate('logs.storeChanged', { store: newStoreId }), 'info');
+                } catch (error) {
+                    this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
+                        method: 'handleStoreChange'
+                    });
+                }
+            });
+
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
+                method: 'initializeStoreSelect'
+            });
+            return false;
+        }
+    }
+
+    // Update store-related UI elements
+    async updateStoreUI() {
+        try {
+            const currentStore = await storeManager.getCurrentStore();
+            if (!currentStore) return false;
+
+            // Update store name in UI
+            document.querySelectorAll('[data-store-name]').forEach(el => {
+                el.textContent = currentStore.name;
+            });
+
+            // Update store address in UI
+            document.querySelectorAll('[data-store-address]').forEach(el => {
+                el.textContent = currentStore.address;
+            });
+
+            // Update store-specific elements visibility
+            document.querySelectorAll('[data-store-visibility]').forEach(el => {
+                const visibilityStore = el.getAttribute('data-store-visibility');
+                el.style.display = visibilityStore === currentStore.id ? '' : 'none';
+            });
+
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                method: 'updateStoreUI'
+            });
+            return false;
         }
     }
 } 

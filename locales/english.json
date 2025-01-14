@@ -4,6 +4,8 @@
     "settings": "Settings",
     "about": "About",
     "status": "Status",
+    "drwn": "DRWN",
+    "ranking": "Ranking",
     "queryLabel": "Your query:",
     "queryPlaceholder": "Type your question...",
     "send": "Send",
@@ -232,5 +234,7 @@
         "tooltipStatus": "Service status",
         "tooltipDrwn": "DRWN Management",
         "tooltipRanking": "Sales ranking"
-    }
+    },
+    "testPanel": "Test Panel",
+    "runAllTests": "Run All Tests"
 }

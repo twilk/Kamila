@@ -205,5 +205,9 @@
         "tooltipStatus": "Status usług",
         "tooltipDrwn": "Zarządzanie DRWN",
         "tooltipRanking": "Ranking sprzedaży"
-    }
+    },
+    "testPanel": "Panel testowy",
+    "runAllTests": "Uruchom wszystkie testy",
+    "drwn": "DRWN",
+    "ranking": "Ranking"
 }

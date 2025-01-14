@@ -6,17 +6,26 @@ import { IInitializable } from './IInitializable.js';
  * @implements {IInitializable}
  */
 export class BaseManager extends IInitializable {
+    static INIT_TIMEOUT = 5000; // 5 second timeout
     static initLogger = null;
     static metricsManager = null;
 
     constructor(dependencies = []) {
         super();
         this._initialized = false;
+        this._initializing = false;
         this._dependencies = dependencies;
+        this._lazyInit = false;
+        this._initPromise = null;
         this.eventListeners = new Map();
         this._errorHandler = null;
         this.dependencies = new Set();
         this.dependents = new Set();
+    }
+
+    setLazyInit(lazy = true) {
+        this._lazyInit = lazy;
+        return this;
     }
 
     /**
@@ -71,17 +80,58 @@ export class BaseManager extends IInitializable {
     }
 
     /**
-     * Initialize the manager
+     * Initialize the manager with timeout and error handling
      * @returns {Promise<boolean>}
      */
     async initialize() {
+        // Return existing initialization if in progress
+        if (this._initPromise) {
+            return this._initPromise;
+        }
+
+        // Skip if already initialized
         if (this._initialized) {
             return true;
         }
 
+        // Skip if lazy init and not explicitly called
+        if (this._lazyInit && !this._initializing) {
+            return true;
+        }
+
+        this._initializing = true;
         BaseManager.initLogger.startInit(this.name);
         const startTime = performance.now();
 
+        // Create initialization promise with timeout
+        this._initPromise = Promise.race([
+            this._doInitialize().then(() => true),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error(`Initialization timeout for ${this.name}`)), 
+                BaseManager.INIT_TIMEOUT)
+            )
+        ]).catch(error => {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.ERROR, {
+                method: 'initialize',
+                manager: this.name
+            });
+            return false;
+        }).finally(() => {
+            const duration = performance.now() - startTime;
+            BaseManager.metricsManager.trackTiming(`${this.name}_init_time`, duration);
+            this._initializing = false;
+            this._initPromise = null;
+        });
+
+        return this._initPromise;
+    }
+
+    /**
+     * Protected initialization implementation
+     * @protected
+     * @returns {Promise<void>}
+     */
+    async _doInitialize() {
         try {
             // Initialize dependencies first
             for (const dependency of this._dependencies) {
@@ -96,31 +146,23 @@ export class BaseManager extends IInitializable {
             // Perform initialization
             await BaseManager.metricsManager.trackOperation(
                 `${this.name}_init`,
-                () => this._doInitialize()
+                () => this.onInitialize()
             );
             
             this._initialized = true;
-            const duration = performance.now() - startTime;
-            BaseManager.metricsManager.trackTiming(`${this.name}_init_time`, duration);
             BaseManager.initLogger.endInit(this.name, true);
-            return true;
         } catch (error) {
-            const duration = performance.now() - startTime;
-            BaseManager.metricsManager.trackTiming(`${this.name}_init_time`, duration);
             BaseManager.initLogger.endInit(this.name, false, error.message);
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.ERROR, {
-                method: 'initialize'
-            });
-            return false;
+            throw error;
         }
     }
 
     /**
-     * Implementation specific initialization
+     * Hook for actual initialization code
      * @protected
      * @returns {Promise<void>}
      */
-    async _doInitialize() {
+    async onInitialize() {
         // To be implemented by derived classes
     }
 
@@ -220,9 +262,9 @@ export class BaseManager extends IInitializable {
     }
 
     /**
-     * Send message to background script
-     * @param {Object} message
-     * @param {Object} options
+     * Send message to background script with retry mechanism
+     * @param {Object} message - Message to send
+     * @param {Object} options - Options for sending
      * @returns {Promise<*>}
      */
     async sendMessage(message, options = {}) {
@@ -232,38 +274,49 @@ export class BaseManager extends IInitializable {
             timeout = 5000
         } = options;
 
-        return new Promise(async (resolve, reject) => {
-            let attempts = 0;
-            const timeoutId = setTimeout(() => {
-                reject(new Error('Message sending timeout'));
-            }, timeout);
+        let attempts = 0;
+        let lastError = null;
 
-            const trySend = async () => {
-                try {
-                    const response = await chrome.runtime.sendMessage(message);
-                    clearTimeout(timeoutId);
-                    resolve(response);
-                } catch (error) {
-                    attempts++;
-                    if (attempts >= maxRetries) {
-                        clearTimeout(timeoutId);
-                        reject(error);
-                        return;
-                    }
-                    
-                    // Check if connection error
-                    if (error.message.includes('Receiving end does not exist')) {
-                        await new Promise(resolve => setTimeout(resolve, retryDelay));
-                        await trySend();
-                    } else {
-                        clearTimeout(timeoutId);
-                        reject(error);
-                    }
+        while (attempts < maxRetries) {
+            try {
+                const response = await Promise.race([
+                    new Promise((resolve, reject) => {
+                        chrome.runtime.sendMessage(message, response => {
+                            if (chrome.runtime.lastError) {
+                                reject(chrome.runtime.lastError);
+                            } else {
+                                resolve(response);
+                            }
+                        });
+                    }),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Message timeout')), timeout)
+                    )
+                ]);
+                
+                return response;
+            } catch (error) {
+                lastError = error;
+                attempts++;
+                
+                // Log the attempt
+                console.log(`[RETRY] Attempt ${attempts}/${maxRetries} failed:`, error.message);
+                
+                // If it's not a connection error, don't retry
+                if (!error.message.includes('Receiving end does not exist')) {
+                    break;
                 }
-            };
+                
+                // Wait before retrying
+                if (attempts < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, retryDelay * attempts));
+                }
+            }
+        }
 
-            await trySend();
-        });
+        // All retries failed
+        console.error('[ERROR] All message sending attempts failed:', lastError);
+        throw lastError;
     }
 
     /**
@@ -301,5 +354,20 @@ export class BaseManager extends IInitializable {
      */
     static getInitLogs() {
         return BaseManager.initLogger.getLogs();
+    }
+
+    /**
+     * Get a specific dependency by its class
+     * @param {Function} dependencyClass - The class of the dependency to get
+     * @returns {BaseManager} The dependency instance
+     * @throws {Error} If dependency not found
+     */
+    getDependency(dependencyClass) {
+        for (const dependency of this.dependencies) {
+            if (dependency instanceof dependencyClass) {
+                return dependency;
+            }
+        }
+        throw new Error(`Dependency ${dependencyClass.name} not found in ${this.name}`);
     }
 } 

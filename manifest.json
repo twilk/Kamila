@@ -38,7 +38,7 @@
         "type": "module"
     },
     "content_security_policy": {
-        "extension_pages": "script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'; object-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://darwina.pl https://*.darwina.pl https://darwina.weblucy.com https://docs.google.com https://spreadsheets.google.com https://*.googleapis.com https://github.com https://raw.githubusercontent.com https://cdn.jsdelivr.net;"
+        "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://darwina.pl https://*.darwina.pl https://darwina.weblucy.com https://docs.google.com https://spreadsheets.google.com https://*.googleapis.com https://github.com https://raw.githubusercontent.com https://cdn.jsdelivr.net;"
     },
     "content_scripts": [{
         "matches": [

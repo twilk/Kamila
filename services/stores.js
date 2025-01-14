@@ -37,12 +37,6 @@ export const isPickupDelivery = (deliveryMethod) => {
     return deliveryMethod === DELIVERY_METHODS.PICKUP;
 };
 
-// Funkcja formatująca punkt odbioru
-export const formatPickupPoint = (storeId) => {
-    const store = stores.find(s => s.id === storeId);
-    return store ? `Punkt odbioru: ${store.address}` : '';
-};
-
 // Funkcja przetwarzająca zamówienie
 export const processOrder = (order) => {
     const store = stores.find(s => s.id === order.store_id);
@@ -50,7 +44,7 @@ export const processOrder = (order) => {
 
     if (isPickupDelivery(order.delivery_method)) {
         // Dla odbioru osobistego używamy client_comment
-        order.client_comment = formatPickupPoint(order.store_id);
+        order.client_comment = `Punkt odbioru: ${store.address}`;
         order.delivery_id = DELIVERY_IDS.PICKUP;
     } else {
         // Dla innych metod używamy deliveryId ze sklepu
@@ -87,4 +81,106 @@ export const validateOrderDelivery = (order) => {
     } else {
         return order.delivery_id === store.deliveryId;
     }
-}; 
+};
+
+// Funkcja sprawdzająca poprawność sklepu
+export const validateStore = (storeId) => {
+    const store = stores.find(s => s.id === storeId);
+    if (!store) {
+        throw new Error(`Invalid store ID: ${storeId}`);
+    }
+    return store;
+};
+
+// Funkcja pobierająca dane sklepu z obsługą błędów
+export const getStoreData = async (storeId, errorHandler) => {
+    try {
+        const store = validateStore(storeId);
+        return {
+            id: store.id,
+            name: store.name,
+            address: store.address,
+            deliveryId: store.deliveryId,
+            drwn: store.drwn
+        };
+    } catch (error) {
+        if (errorHandler) {
+            errorHandler.handleError(error, ErrorType.DATA, ErrorSeverity.ERROR, {
+                method: 'getStoreData',
+                storeId
+            });
+        }
+        return null;
+    }
+};
+
+// Funkcja sprawdzająca dostępność sklepu dla API
+export const isStoreAvailableForApi = async (storeId) => {
+    try {
+        // Sprawdź czy storeId jest poprawny
+        if (!storeId || typeof storeId !== 'string') {
+            console.error('[ERROR] ❌ Nieprawidłowy storeId:', { storeId, type: typeof storeId });
+            return false;
+        }
+
+        // Pobierz store z walidacją
+        const store = validateStore(storeId);
+        if (!store) {
+            console.error('[ERROR] ❌ Sklep nie istnieje:', { storeId });
+            return false;
+        }
+
+        // Sprawdź konfigurację API
+        if (!store.drwn) {
+            console.error('[ERROR] ❌ Sklep nie ma skonfigurowanego API:', { 
+                storeId,
+                store: {
+                    id: store.id,
+                    name: store.name,
+                    hasApi: !!store.drwn
+                }
+            });
+            return false;
+        }
+
+        // Sprawdź czy API jest aktywne
+        const isActive = await checkApiStatus(store.drwn);
+        if (!isActive) {
+            console.error('[ERROR] ❌ API sklepu jest nieaktywne:', { storeId });
+            return false;
+        }
+
+        return true;
+    } catch (error) {
+        console.error('[ERROR] ❌ Błąd podczas sprawdzania dostępności API:', {
+            storeId,
+            error: error.message,
+            stack: error.stack
+        });
+        return false;
+    }
+};
+
+// Funkcja sprawdzająca status API
+async function checkApiStatus(drwnConfig) {
+    try {
+        // Sprawdź podstawową konfigurację
+        if (!drwnConfig || !drwnConfig.url || !drwnConfig.key) {
+            return false;
+        }
+
+        // Sprawdź czy API odpowiada
+        const response = await fetch(`${drwnConfig.url}/status`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${drwnConfig.key}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        return response.ok;
+    } catch (error) {
+        console.error('[ERROR] ❌ Błąd podczas sprawdzania statusu API:', error);
+        return false;
+    }
+} 

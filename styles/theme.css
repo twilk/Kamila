@@ -81,7 +81,7 @@
 /* Liczniki */
 .lead-count {
   font-weight: 600;
-  color: var(--gray-800);
+  /* color: var(--gray-800); */
   margin-left: 0.5rem;
   transition: all 0.3s ease-in-out;
 }

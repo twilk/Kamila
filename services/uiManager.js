@@ -2,8 +2,9 @@ import { i18n } from './i18n.js';
 import { stores } from './stores.js';
 import { BaseManager } from './core/BaseManager.js';
 import { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
+import { UIManager as CoreUIManager } from './core/UIManager.js';
 
-export class UIManager extends BaseManager {
+export class UIManager extends CoreUIManager {
     constructor() {
         super();
         this.counters = new Map();
@@ -13,6 +14,10 @@ export class UIManager extends BaseManager {
         this.debugPanelVisible = false;
         this.updateDebounceTimeout = null;
         this.resizeObserver = null;
+        this.updateQueue = new Set();
+        this.isUpdating = false;
+        this.lastUpdateTimestamp = 0;
+        this.MIN_UPDATE_INTERVAL = 100; // ms
 
         // Bind methods
         this.adjustWindowHeight = this.adjustWindowHeight.bind(this);
@@ -112,16 +117,39 @@ export class UIManager extends BaseManager {
     async initializeCounters() {
         return await BaseManager.metricsManager.trackOperation('UIManager_initCounters', async () => {
         try {
-                // Use more efficient selector
+            // Use more efficient selector and validate elements
             const counterElements = document.querySelectorAll('[data-counter]');
+            if (!counterElements.length) {
+                throw new Error('No counter elements found');
+            }
                 
-                // Pre-allocate Map size
-                this.counters = new Map(
-                    Array.from(counterElements).map(element => [
-                        element.getAttribute('data-counter'),
-                        element
-                    ]).filter(([id]) => id)
-                );
+            // Pre-allocate Map size and validate counter IDs
+            const validCounters = Array.from(counterElements)
+                .map(element => {
+                    const id = element.getAttribute('data-counter');
+                    if (!id) {
+                        console.warn('Counter element without data-counter attribute:', element);
+                        return null;
+                    }
+                    return [id, element];
+                })
+                .filter(item => item !== null);
+
+            this.counters = new Map(validCounters);
+
+            if (!this.counters.size) {
+                throw new Error('No valid counter elements found');
+            }
+
+            // Initialize counter states
+            this.counters.forEach((element, id) => {
+                const countElement = element.querySelector('.count');
+                if (countElement) {
+                    countElement.textContent = '...';
+                    countElement.classList.add('loading');
+                    element.classList.remove('has-items', 'no-items', 'error');
+                }
+            });
 
             // Load initial counter values
             await this.loadAndUpdateCounters(this.selectedStore);
@@ -141,6 +169,12 @@ export class UIManager extends BaseManager {
             clearTimeout(this.updateDebounceTimeout);
         }
         
+        // Validate counts before updating
+        if (!counts || typeof counts !== 'object') {
+            console.error('Invalid counts data:', counts);
+            return;
+        }
+
         this.updateDebounceTimeout = setTimeout(() => {
             requestAnimationFrame(() => {
                 this.updateCounters(counts);
@@ -150,97 +184,210 @@ export class UIManager extends BaseManager {
 
     async loadAndUpdateCounters(store) {
         return await BaseManager.metricsManager.trackOperation('UIManager_loadCounters', async () => {
-        try {
-            if (!store) return;
+            try {
+                console.log('[DEBUG] 🔄 Starting loadAndUpdateCounters with store:', store);
+                
+                if (!store) {
+                    console.warn('[WARNING] ⚠️ No store selected in loadAndUpdateCounters');
+                    throw new Error('No store selected');
+                }
 
                 // Show loading state using requestAnimationFrame
                 requestAnimationFrame(() => {
-            this.counters.forEach(counter => {
-                const countElement = counter.querySelector('.count');
-                if (countElement) {
-                    countElement.textContent = '...';
-                    countElement.classList.add('loading');
-                }
+                    console.log('[DEBUG] 🔄 Setting loading state for counters');
+                    this.counters.forEach(counter => {
+                        const countElement = counter.querySelector('.count');
+                        if (countElement) {
+                            countElement.textContent = '...';
+                            countElement.classList.add('loading');
+                            counter.classList.remove('has-items', 'no-items', 'error');
+                        }
                     });
-            });
+                });
 
-            // Load saved counts from storage
-            const { leadCounts } = await chrome.storage.local.get('leadCounts');
-            if (leadCounts) {
+                // Load saved counts from storage with store context
+                console.log('[DEBUG] 📂 Fetching stored counts for store:', store);
+                const { leadCounts, selectedStore } = await chrome.storage.local.get(['leadCounts', 'selectedStore']);
+                console.log('[DEBUG] 📊 Stored data:', { leadCounts, selectedStore });
+                
+                // Only update if the stored data matches current store
+                if (leadCounts && selectedStore === store) {
+                    console.log('[DEBUG] ✅ Using stored counts for matching store');
                     this.debouncedUpdateCounters(leadCounts);
-            }
+                }
 
-            // Fetch new data
-            const response = await this.sendMessage({
-                type: 'FETCH_DARWINA_DATA',
-                selectedStore: store
-            }, {
-                maxRetries: 3,
-                retryDelay: 1000,
-                timeout: 10000
-            });
+                // Fetch new data
+                console.log('[DEBUG] 🔄 Fetching new data from API');
+                const response = await this.sendMessage({
+                    type: 'FETCH_DARWINA_DATA',
+                    selectedStore: store,
+                    forceRefresh: true // Force refresh to ensure we get fresh data
+                }, {
+                    maxRetries: 3,
+                    retryDelay: 1000,
+                    timeout: 10000
+                });
+                console.log('[DEBUG] 📊 API Response:', response);
 
-            if (response?.error) {
-                throw new Error(response.error);
-            }
+                if (response?.error) {
+                    console.error('[ERROR] ❌ API Error:', response.error);
+                    throw new Error(response.error);
+                }
 
-            if (response?.counts) {
-                await chrome.storage.local.set({ leadCounts: response.counts });
+                if (response?.counts) {
+                    console.log('[DEBUG] 🔍 Validating counts data:', response.counts);
+                    // Validate counts before saving and updating
+                    if (!this.validateCountsData(response.counts)) {
+                        console.error('[ERROR] ❌ Invalid counter data:', response.counts);
+                        throw new Error('Invalid counter data received');
+                    }
+
+                    console.log('[DEBUG] 💾 Saving new counts to storage');
+                    // Save with store context
+                    await chrome.storage.local.set({ 
+                        leadCounts: response.counts,
+                        selectedStore: store,
+                        lastUpdate: Date.now()
+                    });
+                    
+                    console.log('[DEBUG] 🔄 Updating UI with new counts');
                     this.debouncedUpdateCounters(response.counts);
-            }
+                } else {
+                    console.error('[ERROR] ❌ No counts data in response:', response);
+                    throw new Error('No counts data received');
+                }
 
-            return true;
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
-                method: 'loadAndUpdateCounters',
-                store
-            });
-            return false;
-        }
+                return true;
+            } catch (error) {
+                console.error('[ERROR] ❌ Error in loadAndUpdateCounters:', error, {
+                    store,
+                    stack: error.stack
+                });
+                
+                this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                    method: 'loadAndUpdateCounters',
+                    store
+                });
+
+                // Show error state in UI
+                requestAnimationFrame(() => {
+                    console.log('[DEBUG] ⚠️ Setting error state in UI');
+                    this.counters.forEach(counter => {
+                        const countElement = counter.querySelector('.count');
+                        if (countElement) {
+                            countElement.textContent = '-';
+                            countElement.classList.remove('loading');
+                            counter.classList.add('error');
+                        }
+                    });
+                });
+
+                return false;
+            }
         });
     }
 
     updateCounters(counts) {
         return BaseManager.metricsManager.trackOperation('UIManager_updateCounters', () => {
-        try {
-            if (!counts) return;
+            try {
+                console.log('[DEBUG] 🔄 Starting updateCounters with data:', counts);
+                
+                if (!counts || typeof counts !== 'object') {
+                    console.error('[ERROR] ❌ Invalid counts data:', counts);
+                    throw new Error('Invalid counts data');
+                }
 
                 // Create a document fragment for batch updates
                 const updates = [];
 
                 // Prepare all updates
-            Object.entries(counts).forEach(([counterId, value]) => {
-                const element = this.counters.get(counterId);
-                if (element) {
-                        updates.push(() => {
-                    // Update count value
-                    const countElement = element.querySelector('.count');
-                    if (countElement) {
-                        countElement.textContent = value;
-                        countElement.classList.remove('loading');
+                Object.entries(counts).forEach(([counterId, value]) => {
+                    const element = this.counters.get(counterId);
+                    if (!element) {
+                        console.warn(`[WARNING] ⚠️ Counter element not found for ID: ${counterId}`);
+                        return;
                     }
 
-                    // Update counter status
-                    element.classList.toggle('has-items', value > 0);
-                    element.classList.toggle('no-items', value === 0);
-                        });
-                }
-            });
+                    if (typeof value !== 'number' || isNaN(value)) {
+                        console.error(`[ERROR] ❌ Invalid value for counter ${counterId}:`, value);
+                        return;
+                    }
 
+                    console.log(`[DEBUG] 📊 Preparing update for counter ${counterId}:`, value);
+                    updates.push(() => {
+                        // Update count value
+                        const countElement = element.querySelector('.count');
+                        if (countElement) {
+                            console.log(`[DEBUG] ✏️ Setting value for ${counterId}:`, value);
+                            countElement.textContent = value;
+                            countElement.classList.remove('loading');
+                            
+                            // Add animation for value changes
+                            if (countElement.dataset.previousValue !== undefined && 
+                                countElement.dataset.previousValue !== value.toString()) {
+                                console.log(`[DEBUG] 🔄 Value changed for ${counterId}:`, {
+                                    from: countElement.dataset.previousValue,
+                                    to: value
+                                });
+                                element.classList.add('count-changed');
+                                setTimeout(() => element.classList.remove('count-changed'), 1000);
+                            }
+                            countElement.dataset.previousValue = value.toString();
+                        }
+
+                        // Update counter status
+                        element.classList.remove('has-items', 'no-items', 'error');
+                        element.classList.add(value > 0 ? 'has-items' : 'no-items');
+                    });
+                });
+
+                console.log('[DEBUG] 🔄 Applying updates in next animation frame');
                 // Apply updates in the next animation frame
                 requestAnimationFrame(() => {
                     updates.forEach(update => update());
+                    console.log('[DEBUG] ✅ Counter updates completed');
                 });
 
-            return true;
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
-                method: 'updateCounters',
-                counts
-            });
-            return false;
-        }
+                return true;
+            } catch (error) {
+                console.error('[ERROR] ❌ Error in updateCounters:', error, {
+                    counts,
+                    stack: error.stack
+                });
+                
+                this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                    method: 'updateCounters',
+                    counts
+                });
+
+                // Show error state
+                requestAnimationFrame(() => {
+                    console.log('[DEBUG] ⚠️ Setting error state for all counters');
+                    this.counters.forEach(counter => {
+                        const countElement = counter.querySelector('.count');
+                        if (countElement) {
+                            countElement.textContent = '-';
+                            countElement.classList.remove('loading');
+                            counter.classList.add('error');
+                        }
+                    });
+                });
+
+                return false;
+            }
         });
+    }
+
+    validateCountsData(counts) {
+        if (!counts || typeof counts !== 'object') return false;
+        
+        const requiredStatuses = ['1', '2', '3', 'READY', 'OVERDUE'];
+        return requiredStatuses.every(status => 
+            counts.hasOwnProperty(status) && 
+            typeof counts[status] === 'number' &&
+            !isNaN(counts[status]) &&
+            counts[status] >= 0
+        );
     }
 
     async initializeStoreSelect() {
@@ -290,26 +437,163 @@ export class UIManager extends BaseManager {
     }
 
     async handleStoreChange(newStore) {
+        return await BaseManager.metricsManager.trackOperation('UIManager_handleStoreChange', async () => {
+            try {
+                // Walidacja nowego sklepu
+                if (!this.validateStoreId(newStore)) {
+                    throw new Error(`Invalid store ID: ${newStore}`);
+                }
+
+                // Jeśli sklep się nie zmienił, nie rób nic
+                if (newStore === this.selectedStore) {
+                    return true;
+                }
+
+                // Pokaż stan ładowania
+                this.showLoadingState();
+
+                // Zapisz poprzedni sklep do porównania
+                const previousStore = this.selectedStore;
+                this.selectedStore = newStore;
+
+                try {
+                    // Zapisz wybór w storage
+                    await chrome.storage.local.set({ 
+                        selectedStore: newStore,
+                        previousStore: previousStore 
+                    });
+
+                    // Wyczyść cache dla poprzedniego sklepu
+                    if (previousStore) {
+                        await this.clearStoreCache(previousStore);
+                    }
+
+                    // Załaduj dane dla nowego sklepu z retry mechanism
+                    const success = await this.retryOperation(
+                        () => this.loadAndUpdateCounters(newStore),
+                        3, // max retries
+                        1000 // delay between retries
+                    );
+
+                    if (!success) {
+                        throw new Error('Failed to load data for new store');
+                    }
+
+                    // Emituj event zmiany sklepu
+                    const event = new CustomEvent('storeChange', { 
+                        detail: { 
+                            store: newStore,
+                            previousStore,
+                            timestamp: Date.now()
+                        } 
+                    });
+                    document.dispatchEvent(event);
+
+                    // Aktualizuj UI
+                    await this.updateStoreUI({
+                        id: newStore,
+                        name: stores.find(s => s.id === newStore)?.name || ''
+                    });
+
+                    return true;
+                } catch (error) {
+                    // W przypadku błędu, przywróć poprzedni sklep
+                    this.selectedStore = previousStore;
+                    await chrome.storage.local.set({ selectedStore: previousStore });
+                    throw error;
+                }
+            } catch (error) {
+                this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
+                    method: 'handleStoreChange',
+                    newStore
+                });
+                this.showMessage('error', i18n.translate('storeChangeError'));
+                return false;
+            } finally {
+                this.hideLoadingState();
+            }
+        });
+    }
+
+    validateStoreId(storeId) {
+        if (storeId === 'ALL') return true;
+        return stores.some(store => store.id === storeId);
+    }
+
+    async clearStoreCache(storeId) {
         try {
-            if (newStore === this.selectedStore) return;
+            const cacheKey = `store_${storeId}`;
+            await this._cacheManager?.remove(cacheKey);
+            console.log(`[DEBUG] 🧹 Wyczyszczono cache dla sklepu ${storeId}`);
+        } catch (error) {
+            console.warn(`[WARNING] ⚠️ Błąd czyszczenia cache dla sklepu ${storeId}:`, error);
+        }
+    }
 
-            this.selectedStore = newStore;
-            await chrome.storage.local.set({ selectedStore: newStore });
-            await this.loadAndUpdateCounters(newStore);
+    async retryOperation(operation, maxRetries, delay) {
+        let lastError;
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                return await operation();
+            } catch (error) {
+                lastError = error;
+                console.warn(`[WARNING] ⚠️ Próba ${i + 1}/${maxRetries} nie powiodła się:`, error);
+                if (i < maxRetries - 1) {
+                    await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+                }
+            }
+        }
+        throw lastError;
+    }
 
-            // Emit store change event
-            const event = new CustomEvent('storeChange', { 
-                detail: { store: newStore } 
-            });
-            document.dispatchEvent(event);
+    showLoadingState() {
+        // Pokaż stan ładowania w UI
+        const storeSelect = document.getElementById('store-select');
+        if (storeSelect) {
+            storeSelect.disabled = true;
+            storeSelect.classList.add('loading');
+        }
+        this.showMessage('loading', i18n.translate('storeChangeLoading'));
+    }
 
-            return true;
+    hideLoadingState() {
+        // Ukryj stan ładowania w UI
+        const storeSelect = document.getElementById('store-select');
+        if (storeSelect) {
+            storeSelect.disabled = false;
+            storeSelect.classList.remove('loading');
+        }
+        this.hideMessage('loading');
+    }
+
+    async updateStoreUI(data) {
+        try {
+            // Aktualizuj select
+            const storeSelect = document.getElementById('store-select');
+            if (storeSelect) {
+                storeSelect.value = data.id;
+            }
+
+            // Aktualizuj nazwę sklepu w UI
+            const storeNameElement = document.getElementById('store-name');
+            if (storeNameElement) {
+                storeNameElement.textContent = data.name || i18n.translate('allStores');
+            }
+
+            // Aktualizuj badge
+            const storeBadge = document.getElementById('store-badge');
+            if (storeBadge) {
+                storeBadge.textContent = data.id === 'ALL' ? 'ALL' : data.name;
+                storeBadge.classList.toggle('all-stores', data.id === 'ALL');
+            }
+
+            // Emituj event aktualizacji UI
+            this.emit('storeUIUpdated', data);
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
-                method: 'handleStoreChange',
-                newStore
+                method: 'updateStoreUI',
+                data
             });
-            return false;
         }
     }
 
@@ -796,5 +1080,200 @@ export class UIManager extends BaseManager {
             this.messageTimeouts.clear();
 
         await super.dispose();
+    }
+
+    async queueUpdate(type, data) {
+        this.updateQueue.add({ type, data, timestamp: Date.now() });
+        this.processUpdateQueue();
+    }
+
+    async processUpdateQueue() {
+        if (this.isUpdating) return;
+
+        try {
+            this.isUpdating = true;
+            const now = Date.now();
+
+            // Skip if last update was too recent
+            if (now - this.lastUpdateTimestamp < this.MIN_UPDATE_INTERVAL) {
+                setTimeout(() => this.processUpdateQueue(), this.MIN_UPDATE_INTERVAL);
+                return;
+            }
+
+            while (this.updateQueue.size > 0) {
+                const updates = Array.from(this.updateQueue);
+                this.updateQueue.clear();
+
+                // Group updates by type
+                const groupedUpdates = updates.reduce((acc, update) => {
+                    if (!acc[update.type]) acc[update.type] = [];
+                    acc[update.type].push(update.data);
+                    return acc;
+                }, {});
+
+                // Process updates in requestAnimationFrame
+                await new Promise(resolve => {
+                    requestAnimationFrame(async () => {
+                        try {
+                            for (const [type, dataArray] of Object.entries(groupedUpdates)) {
+                                const latestData = dataArray[dataArray.length - 1];
+                                await this.updateComponent(type, latestData);
+                            }
+                        } catch (error) {
+                            this.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                                method: 'processUpdateQueue'
+                            });
+                        }
+                        resolve();
+                    });
+                });
+
+                this.lastUpdateTimestamp = Date.now();
+            }
+        } finally {
+            this.isUpdating = false;
+        }
+    }
+
+    async updateComponent(type, data) {
+        if (!this.validateUpdateData(type, data)) {
+            throw new Error(`Invalid update data for type: ${type}`);
+        }
+
+        switch (type) {
+            case 'counters':
+                await this.updateCounters(data);
+                break;
+            case 'store':
+                await this.updateStoreUI(data);
+                break;
+            case 'interface':
+                await this.updateInterface(data);
+                break;
+            default:
+                console.warn(`Unknown update type: ${type}`);
+        }
+    }
+
+    validateUpdateData(type, data) {
+        switch (type) {
+            case 'counters':
+                return data && typeof data === 'object' && 
+                       Object.values(data).every(count => typeof count === 'number');
+            case 'store':
+                return data && typeof data === 'object' && 
+                       typeof data.id === 'string' && 
+                       typeof data.name === 'string';
+            case 'interface':
+                return true; // Interface updates don't require specific data
+            default:
+                return false;
+        }
+    }
+
+    async sendMessage(message, options = {}) {
+        const {
+            maxRetries = 3,
+            retryDelay = 1000,
+            timeout = 10000
+        } = options;
+
+        let attempt = 0;
+        let lastError = null;
+
+        while (attempt < maxRetries) {
+            try {
+                console.log(`[DEBUG] 📤 Sending message attempt (${attempt + 1}/${maxRetries}):`, message);
+
+                // Check connection first
+                const isConnected = await this.checkConnection();
+                if (!isConnected) {
+                    console.warn('[WARNING] ⚠️ Connection check failed, retrying...');
+                    throw new Error('Connection check failed');
+                }
+
+                // Create a promise that will reject on timeout
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error(`Message timeout after ${timeout}ms`)), timeout);
+                });
+
+                // Create the message promise with port communication
+                const messagePromise = new Promise((resolve) => {
+                    const port = chrome.runtime.connect({ name: 'popup' });
+                    
+                    port.onMessage.addListener(function messageListener(response) {
+                        port.onMessage.removeListener(messageListener);
+                        port.disconnect();
+                        resolve(response);
+                    });
+
+                    port.postMessage(message);
+
+                    // Handle disconnection
+                    port.onDisconnect.addListener(() => {
+                        const error = chrome.runtime.lastError;
+                        if (error) {
+                            resolve({ error: error.message });
+                        }
+                    });
+                });
+
+                // Race between timeout and message
+                const response = await Promise.race([messagePromise, timeoutPromise]);
+
+                if (response?.error) {
+                    throw new Error(response.error);
+                }
+
+                console.log('[DEBUG] ✅ Message sent successfully:', response);
+                return response;
+
+            } catch (error) {
+                lastError = error;
+                attempt++;
+
+                if (attempt < maxRetries) {
+                    const delay = retryDelay * Math.pow(2, attempt - 1);
+                    console.warn(`[WARNING] ⚠️ Send error (attempt ${attempt}/${maxRetries}):`, error);
+                    console.log(`[DEBUG] ⏳ Waiting ${delay}ms before retry...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+        console.error('[ERROR] ❌ All message sending attempts failed:', lastError);
+        throw lastError;
+    }
+
+    async checkConnection() {
+        try {
+            const port = chrome.runtime.connect({ name: 'connection_check' });
+            return new Promise((resolve) => {
+                port.onMessage.addListener(function messageListener(response) {
+                    port.onMessage.removeListener(messageListener);
+                    port.disconnect();
+                    resolve(response?.connected === true);
+                });
+
+                port.postMessage({ type: 'CONNECTION_CHECK' });
+
+                // Handle disconnection
+                port.onDisconnect.addListener(() => {
+                    const error = chrome.runtime.lastError;
+                    if (error) {
+                        resolve(false);
+                    }
+                });
+
+                // Timeout after 2 seconds
+                setTimeout(() => {
+                    port.disconnect();
+                    resolve(false);
+                }, 2000);
+            });
+        } catch (error) {
+            console.warn('[WARNING] ⚠️ Connection check error:', error);
+            return false;
+        }
     }
 } 
