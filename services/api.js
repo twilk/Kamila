@@ -1,3 +1,9 @@
+/**
+ * @deprecated This file is being migrated to TypeScript implementation in services/api/index.ts
+ * Please refer to the migration guide in docs/api-migration.md
+ * This file will be removed in version 4.0.0
+ */
+
 import { API_BASE_URL, API_CONFIG, getDarwinaCredentials, sendLogToPopup } from '../config/api.js';
 import { CacheService } from './cache.js';
 

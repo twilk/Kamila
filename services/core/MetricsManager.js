@@ -1,12 +1,30 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { LogLevel } from './LogLevel.js';
+
+/**
+ * Get the singleton instance of MetricsManager
+ * @returns {MetricsManager}
+ */
+export const getMetricsManager = () => MetricsManager.getInstance();
 
 export class MetricsManager extends BaseManager {
     static MEMORY_CHECK_INTERVAL = 30000; // 30 seconds
     static METRICS_RETENTION = 3600000; // 1 hour
+    static _instance = null;
+
+    static getInstance() {
+        if (!MetricsManager._instance) {
+            MetricsManager._instance = new MetricsManager();
+        }
+        return MetricsManager._instance;
+    }
 
     constructor() {
-        super();
+        if (MetricsManager._instance) {
+            throw new Error('MetricsManager is a singleton. Use MetricsManager.getInstance() instead.');
+        }
+        super('MetricsManager');
         this.metrics = {
             initialization: {
                 totalTime: 0,
@@ -36,19 +54,35 @@ export class MetricsManager extends BaseManager {
             memory: null,
             frames: null
         };
+        MetricsManager._instance = this;
     }
 
     async onInitialize() {
-        // Start performance monitoring
-        this.setupPerformanceObserver();
-        
-        // Start memory monitoring
-        this.startMemoryMonitoring();
-        
-        // Start frame monitoring
-        this.setupFrameMonitoring();
-        
-        return true;
+        try {
+            this.log(LogLevel.INFO, 'Setting up performance monitoring');
+            // Start performance monitoring
+            this.setupPerformanceObserver();
+            
+            this.log(LogLevel.INFO, 'Starting memory monitoring');
+            // Start memory monitoring
+            this.startMemoryMonitoring();
+            
+            this.log(LogLevel.INFO, 'Setting up frame monitoring');
+            // Start frame monitoring
+            this.setupFrameMonitoring();
+
+            this.log(LogLevel.SUCCESS, 'All monitoring systems initialized', {
+                observers: Object.keys(this.observers),
+                metrics: Object.keys(this.metrics)
+            });
+            
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.ERROR, {
+                method: 'onInitialize'
+            });
+            return false;
+        }
     }
 
     setupPerformanceObserver() {
@@ -62,15 +96,24 @@ export class MetricsManager extends BaseManager {
                             duration: entry.duration,
                             name: entry.name
                         });
+                        this.log(LogLevel.WARN, 'Long task detected', {
+                            duration: entry.duration,
+                            name: entry.name
+                        });
                     }
                 }
             });
 
             try {
                 this.observers.performance.observe({ entryTypes: ['longtask'] });
+                this.log(LogLevel.INFO, 'Performance observer initialized');
             } catch (e) {
-                this.handleError(e, 'METRICS', 'WARNING');
+                this.handleError(e, ErrorType.METRICS, ErrorSeverity.WARNING, {
+                    method: 'setupPerformanceObserver'
+                });
             }
+        } else {
+            this.log(LogLevel.WARN, 'PerformanceObserver not available');
         }
     }
 
@@ -231,42 +274,51 @@ export class MetricsManager extends BaseManager {
     }
 
     async dispose() {
-        // Stop all observers
-        Object.values(this.observers).forEach(observer => {
-            if (observer) {
-                try {
-                    observer.disconnect();
-                } catch (e) {
-                    // Ignore
+        try {
+            // Stop all observers
+            Object.values(this.observers).forEach(observer => {
+                if (observer) {
+                    try {
+                        observer.disconnect();
+                    } catch (e) {
+                        // Ignore
+                    }
                 }
-            }
-        });
-        
-        // Clear metrics
-        this.metrics = {
-            initialization: {
-                totalTime: 0,
-                componentTimes: new Map(),
-                errors: []
-            },
-            memory: {
-                lastCheck: 0,
-                usage: [],
-                alerts: []
-            },
-            performance: {
-                operations: new Map(),
-                timings: new Map(),
-                longTasks: [],
-                frameDrops: []
-            },
-            errors: {
-                count: 0,
-                lastError: null,
-                errorTypes: new Map()
-            }
-        };
-        
-        await super.dispose();
+            });
+            
+            // Clear metrics
+            this.metrics = {
+                initialization: {
+                    totalTime: 0,
+                    componentTimes: new Map(),
+                    errors: []
+                },
+                memory: {
+                    lastCheck: 0,
+                    usage: [],
+                    alerts: []
+                },
+                performance: {
+                    operations: new Map(),
+                    timings: new Map(),
+                    longTasks: [],
+                    frameDrops: []
+                },
+                errors: {
+                    count: 0,
+                    lastError: null,
+                    errorTypes: new Map()
+                }
+            };
+
+            // Clear singleton instance
+            MetricsManager._instance = null;
+            
+            await super.dispose();
+        } catch (error) {
+            this.handleError(error, ErrorType.UNKNOWN, ErrorSeverity.ERROR, {
+                method: 'dispose'
+            });
+        }
     }
 } 

@@ -9,9 +9,30 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="styles/theme.css">
     <link rel="stylesheet" href="styles/test.css">
+    <link rel="stylesheet" href="styles/loading.css">
+    <script src="lib/bootstrap.bundle.min.js"></script>
     <script type="module" src="popup.js"></script>
 </head>
 <body>
+    <!-- Loading Screen -->
+    <div class="loading-container d-none">
+        <div class="loader">
+            <div class="truckWrapper">
+                <div class="truckBody"></div>
+                <div class="truckTires">
+                    <svg viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="8" fill="#282828"/>
+                    </svg>
+                    <svg viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="8" fill="#282828"/>
+                    </svg>
+                </div>
+                <div class="road"></div>
+            </div>
+            <div class="initialization-text" data-i18n="initialization">Inicjalizacja</div>
+        </div>
+    </div>
+
     <div class="container-fluid h-100">
         <div id="language-switcher" class="d-flex justify-content-start p-2">
             <span class="flag active" data-lang="polish" title="Polski" data-i18n-tooltip="languagePolish">🇵🇱</span>
@@ -82,7 +103,7 @@
 
             <div class="col-12">
                 <div class="menu">
-                    <a class="link active" data-target="#chat" role="tab" data-bs-toggle="tooltip" data-i18n-tooltip="tooltipChat">
+                    <a class="link active" data-target="#chat" role="tab" data-bs-toggle="tab" data-bs-tooltip="tooltip" data-i18n-tooltip="tooltipChat">
                         <span class="link-icon">
                             <i class="bi bi-chat-heart"></i>
                         </span>
@@ -90,7 +111,7 @@
                             <span class="menu-text" data-i18n="chat">Chat</span>
                         </div>
                     </a>
-                    <a class="link" data-target="#settings" role="tab" data-bs-toggle="tooltip" data-i18n-tooltip="tooltipSettings">
+                    <a class="link" data-target="#settings" role="tab" data-bs-toggle="tab" data-bs-tooltip="tooltip" data-i18n-tooltip="tooltipSettings">
                         <span class="link-icon">
                             <i class="bi bi-gear"></i>
                         </span>
@@ -98,7 +119,7 @@
                             <span class="menu-text" data-i18n="settings">Ustawienia</span>
                         </div>
                     </a>
-                    <a class="link" data-target="#about" role="tab" data-bs-toggle="tooltip" data-i18n-tooltip="tooltipAbout">
+                    <a class="link" data-target="#about" role="tab" data-bs-toggle="tab" data-bs-tooltip="tooltip" data-i18n-tooltip="tooltipAbout">
                         <span class="link-icon">
                             <i class="bi bi-info-square"></i>
                         </span>
@@ -106,7 +127,7 @@
                             <span class="menu-text" data-i18n="about">O aplikacji</span>
                         </div>
                     </a>
-                    <a class="link" data-target="#status" role="tab" data-bs-toggle="tooltip" data-i18n-tooltip="tooltipStatus">
+                    <a class="link" data-target="#status" role="tab" data-bs-toggle="tab" data-bs-tooltip="tooltip" data-i18n-tooltip="tooltipStatus">
                         <span class="link-icon">
                             <i class="bi bi-activity"></i>
                         </span>
@@ -114,7 +135,7 @@
                             <span class="menu-text" data-i18n="status">Status</span>
                         </div>
                     </a>
-                    <a class="link" data-target="#drwn" role="tab" data-bs-toggle="tooltip" data-i18n-tooltip="tooltipDrwn">
+                    <a class="link" data-target="#drwn" role="tab" data-bs-toggle="tab" data-bs-tooltip="tooltip" data-i18n-tooltip="tooltipDrwn">
                         <span class="link-icon">
                             <i class="bi bi-box-seam"></i>
                         </span>
@@ -122,7 +143,7 @@
                             <span class="menu-text">DRWN</span>
                         </div>
                     </a>
-                    <a class="link" data-target="#ranking" role="tab" data-bs-toggle="tooltip" data-i18n-tooltip="tooltipRanking">
+                    <a class="link" data-target="#ranking" role="tab" data-bs-toggle="tab" data-bs-tooltip="tooltip" data-i18n-tooltip="tooltipRanking">
                         <span class="link-icon">
                             <i class="bi bi-award"></i>
                         </span>
@@ -399,6 +420,24 @@
                                 </div>
                                 <div id="test-progress hidden" class="mb-2">
                                     <!-- Tu będą dynamicznie dodawane paski postępu dla każdego testu -->
+                                </div>
+                                <div id="test-list" class="list-group mb-2">
+                                    <!-- I18n Tests -->
+                                    <div class="list-group-item">
+                                        <h6 class="mb-1">I18n Service Tests</h6>
+                                        <div class="test-item" data-test="getCurrentLanguage">
+                                            <span class="test-name">Get Current Language</span>
+                                            <span class="test-status"></span>
+                                        </div>
+                                        <div class="test-item" data-test="languageSync">
+                                            <span class="test-name">Language Synchronization</span>
+                                            <span class="test-status"></span>
+                                        </div>
+                                        <div class="test-item" data-test="translationLoading">
+                                            <span class="test-name">Translation Loading</span>
+                                            <span class="test-status"></span>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div id="test-details" class="mt-2">
                                     <!-- Tu będą wyświetlane szczegóły testów -->
@@ -810,7 +849,5 @@
         to { transform: rotate(360deg); }
     }
     </style>
-
-    <script src="lib/bootstrap.bundle.min.js" defer></script>
 </body>
 </html>

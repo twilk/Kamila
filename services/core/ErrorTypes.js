@@ -8,6 +8,10 @@ export const ErrorType = {
     INITIALIZATION: 'initialization',
     STORAGE: 'storage',
     VALIDATION: 'validation',
+    UI: 'ui',
+    API: 'api',
+    DISPOSAL: 'disposal',
+    GENERAL: 'general',
     UNKNOWN: 'unknown'
 };
 
@@ -15,21 +19,28 @@ export const ErrorType = {
  * Poziomy błędów
  */
 export const ErrorSeverity = {
-    INFO: 'info',
-    WARNING: 'warning',
-    ERROR: 'error',
-    CRITICAL: 'critical'
+    LOW: 'low',           // Informational, non-critical
+    MEDIUM: 'medium',     // Warning, may need attention
+    HIGH: 'high',         // Error, requires attention
+    CRITICAL: 'critical'  // System failure, immediate action needed
 };
 
+/**
+ * Strategie odzyskiwania po błędach
+ */
 export const ErrorRecoveryStrategy = {
-    RETRY: 'retry',
-    FALLBACK: 'fallback',
-    RESET: 'reset',
-    IGNORE: 'ignore'
+    RETRY: 'retry',           // Retry the operation
+    FALLBACK: 'fallback',     // Use fallback value/behavior
+    RESET: 'reset',           // Reset to initial state
+    IGNORE: 'ignore',         // Continue without recovery
+    NOTIFY: 'notify'          // Notify user and continue
 };
 
+/**
+ * Klasa reprezentująca błąd aplikacji
+ */
 export class AppError extends Error {
-    constructor(message, type = ErrorType.UNKNOWN, severity = ErrorSeverity.ERROR, context = {}) {
+    constructor(message, type = ErrorType.UNKNOWN, severity = ErrorSeverity.HIGH, context = {}) {
         super(message);
         this.name = 'AppError';
         this.type = type;
@@ -37,8 +48,12 @@ export class AppError extends Error {
         this.context = context;
         this.timestamp = Date.now();
         this.recoveryAttempts = 0;
+        this.recoveryStrategy = null;
     }
 
+    /**
+     * Konwertuje błąd do formatu JSON
+     */
     toJSON() {
         return {
             name: this.name,
@@ -48,7 +63,8 @@ export class AppError extends Error {
             context: this.context,
             timestamp: this.timestamp,
             stack: this.stack,
-            recoveryAttempts: this.recoveryAttempts
+            recoveryAttempts: this.recoveryAttempts,
+            recoveryStrategy: this.recoveryStrategy
         };
     }
-} 
+}

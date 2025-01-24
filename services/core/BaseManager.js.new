@@ -1,0 +1,180 @@
+import { LogManager } from './LogManager.js';
+import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { LogLevel } from './LogLevel.js';
+
+/**
+ * Base class for all managers
+ */
+export class BaseManager {
+    constructor() {
+        this._initialized = false;
+        this._disposed = false;
+        this._dependencies = new Set();
+        this._startTime = 0;
+        this._logger = LogManager.getInstance().getLogger();
+        this._errorHandler = null;
+    }
+
+    /**
+     * Set a custom error handler for errors
+     * @param {Function} handler - The error handler function
+     */
+    setErrorHandler(handler) {
+        if (typeof handler !== 'function') {
+            throw new Error('Error handler must be a function');
+        }
+        this._errorHandler = handler;
+    }
+
+    /**
+     * Log a message with timestamp and context
+     * @protected
+     * @param {string} level - Log level
+     * @param {string} message - Message to log
+     * @param {Object} [context] - Additional context
+     */
+    log(level, message, context = {}) {
+        const enhancedContext = {
+            ...context,
+            manager: this.constructor.name,
+            initialized: this._initialized,
+            dependenciesCount: this._dependencies.size
+        };
+        this._logger.log(level, message, enhancedContext);
+    }
+
+    /**
+     * Handle an error
+     * @param {Error} error - Error object
+     * @param {string} type - Error type
+     * @param {string} severity - Error severity
+     * @param {Object} [context] - Additional context
+     */
+    handleError(error, type = ErrorType.UNKNOWN, severity = ErrorSeverity.ERROR, context = {}) {
+        if (this._errorHandler) {
+            this._errorHandler(error, type, severity, context);
+        } else {
+            this._logger.error(`[${this.constructor.name}] ${error.message}`, error, {
+                type,
+                severity,
+                ...context
+            });
+        }
+    }
+
+    /**
+     * Initialize the manager and its dependencies
+     * @returns {Promise<boolean>} Success status
+     */
+    async initialize() {
+        if (this._initialized) {
+            this.log(LogLevel.DEBUG, 'Already initialized');
+            return true;
+        }
+
+        this._startTime = performance.now();
+        this.log(LogLevel.INFO, 'Starting initialization');
+
+        try {
+            // Initialize dependencies first
+            for (const dep of this._dependencies) {
+                if (!dep._initialized) {
+                    const success = await dep.initialize();
+                    if (!success) {
+                        throw new Error(`Failed to initialize dependency: ${dep.constructor.name}`);
+                    }
+                }
+            }
+
+            // Initialize this manager
+            const success = await this.onInitialize();
+            this._initialized = success;
+
+            const duration = performance.now() - this._startTime;
+            if (success) {
+                this.log(LogLevel.SUCCESS, 'Initialization completed', {
+                    duration: `${duration.toFixed(2)}ms`,
+                    dependencies: Array.from(this._dependencies).map(dep => dep.constructor.name)
+                });
+            } else {
+                throw new Error('Initialization failed');
+            }
+
+            return success;
+        } catch (error) {
+            const duration = performance.now() - this._startTime;
+            this.log(LogLevel.ERROR, 'Initialization failed', {
+                error: error.message,
+                stack: error.stack,
+                duration: `${duration.toFixed(2)}ms`,
+                dependencies: Array.from(this._dependencies).map(dep => dep.constructor.name)
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Override this method to implement initialization logic
+     * @protected
+     * @returns {Promise<boolean>} Success status
+     */
+    async onInitialize() {
+        return true;
+    }
+
+    /**
+     * Add a dependency
+     * @param {BaseManager} manager - Manager to add as dependency
+     * @throws {Error} If manager is not a BaseManager instance
+     */
+    addDependency(manager) {
+        if (!(manager instanceof BaseManager)) {
+            throw new Error('Dependency must be a BaseManager instance');
+        }
+        this._dependencies.add(manager);
+    }
+
+    /**
+     * Dispose the manager and its resources
+     * @returns {Promise<void>}
+     */
+    async dispose() {
+        if (this._disposed) {
+            this.log(LogLevel.DEBUG, 'Already disposed');
+            return;
+        }
+
+        this.log(LogLevel.INFO, 'Starting disposal');
+        try {
+            // Dispose in reverse order of initialization
+            const deps = Array.from(this._dependencies).reverse();
+            for (const dep of deps) {
+                if (!dep._disposed) {
+                    await dep.dispose();
+                }
+            }
+
+            await this.onDispose();
+            this._disposed = true;
+            this._initialized = false;
+            this._dependencies.clear();
+
+            this.log(LogLevel.SUCCESS, 'Disposal completed');
+        } catch (error) {
+            this.log(LogLevel.ERROR, 'Disposal failed', {
+                error: error.message,
+                stack: error.stack
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Override this method to implement disposal logic
+     * @protected
+     * @returns {Promise<boolean>} Success status
+     */
+    async onDispose() {
+        return true;
+    }
+} 

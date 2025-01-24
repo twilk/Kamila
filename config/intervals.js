@@ -1,4 +1,12 @@
-// Default intervals in minutes
+// Default intervals in milliseconds
+export const INTERVALS = {
+    REFRESH: 300000,         // 5 minutes
+    BACKGROUND_CHECK: 60000, // 1 minute
+    FULL_REFRESH: 300000,    // 5 minutes
+    DATA_FRESHNESS: 300000   // 5 minutes
+};
+
+// Default intervals in minutes (for UI)
 export const DEFAULT_INTERVALS = {
     BACKGROUND_CHECK: 1,  // 1 minute
     FULL_REFRESH: 5,     // 5 minutes

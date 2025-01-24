@@ -3,27 +3,17 @@ import { stores } from '../services/stores.js';
 
 export const API_CONFIG = {
     DARWINA: {
-        BASE_URL: 'https://darwina.pl/api',
+        BASE_URL: 'https://darwina.pl',
         ENDPOINTS: {
-            ORDERS: '/orders',
-            STATUS: '/status',
-            TOKEN: '/auth/access_token'
+            ORDERS: '/api/orders',
+            AUTH: '/api/auth/access_token'
         },
         STATUS_CODES: {
-            SUBMITTED: 1,        // Złożone
-            CONFIRMED: 2,        // Potwierdzone przez Klienta
-            ACCEPTED_STORE: 3,   // Przyjęte do realizacji w sklepie
-            ACCEPTED_SHIPPING: 4, // Przyjęte do realizacji do wysyłki
-            READY: 5,           // Gotowe do odbioru w sklepie
-            PICKED_UP: 9,       // Towar odebrany w sklepie
-            AWAITING_PAYMENT: 13, // Oczekiwanie na płatność - Gotowe do wysyłki
-            AWAITING_COURIER: 8,  // Opłacone-Oczekuje na odbiór kuriera
-            HANDED_TO_COURIER: 6, // Paczka wydana Pełnomocnikowi
-            DELIVERED: 7,        // Paczka dostarczona
-            ADDITIONAL_CORR: 12,  // Wysłana dodatkowa korespondencja
-            REFUND_REQUESTED: 11, // Rezygnacja-chce zwrot kasy
-            CANCELLED: 14,       // Anulowane - nasza porażka
-            DO_NOT_USE: 10       // NIE UŻYWAĆ
+            SUBMITTED: '1',
+            CONFIRMED: '2',
+            ACCEPTED: '3',
+            // READY: '4',
+            READY: '5'
         }
     }
 };
@@ -79,7 +69,7 @@ export const getDarwinaCredentials = async () => {
             hasClientSecret: !!credentials.client_secret
         });
         
-        const tokenUrl = `${API_BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.TOKEN}`;
+        const tokenUrl = `${API_BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.AUTH}`;
         console.log('🔗 Token URL:', 'info', tokenUrl);
         
         console.log('📤 Sending token request...', 'info', {

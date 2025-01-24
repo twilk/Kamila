@@ -6,6 +6,7 @@ import {
     CLEANUP_BATCH_SIZE,
     LOCK_TIMEOUT
 } from '../config/storage.js';
+import { BaseManager } from './core/BaseManager.js';
 
 // Helper function to get storage info
 async function getStorageInfo() {
@@ -19,8 +20,22 @@ async function getStorageInfo() {
     }
 }
 
-export class StorageManager {
+export class StorageManager extends BaseManager {
+    static _instance = null;
+
+    static getInstance() {
+        if (!StorageManager._instance) {
+            StorageManager._instance = new StorageManager();
+        }
+        return StorageManager._instance;
+    }
+
     constructor() {
+        if (StorageManager._instance) {
+            throw new Error('StorageManager is a singleton. Use StorageManager.getInstance() instead.');
+        }
+        super('StorageManager');
+        StorageManager._instance = this;
         this.locks = new Map();
         this.lockTimeouts = new Map();
         this.quotaWarningEmitted = false;
@@ -249,7 +264,7 @@ export class StorageManager {
 }
 
 // Export singleton instance
-export const storageManager = new StorageManager();
+export const storageManager = StorageManager.getInstance();
 
 // Re-export storage keys for backward compatibility
 export { STORAGE_KEYS }; 

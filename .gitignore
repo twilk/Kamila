@@ -24,6 +24,8 @@ dist/
 
 # Environment variables
 .env
+.env.*
+!.env.example
 
 # IDE files
 .vscode/
@@ -63,3 +65,36 @@ wallpapers/custom/
 
 # Test coverage
 coverage/
+
+# Dependency directories
+vendor/
+
+# Build outputs
+*.min.js
+*.min.css
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+debug.log
+
+# Cache directories
+.cache/
+.temp/
+.tmp/
+
+# OS generated files
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Backup files
+*.backup
+*copy*
+
+# Test directories
+tests_old/
+__tests__old/

@@ -72,7 +72,8 @@
         "updateStarted": "🔄 Rozpoczynam aktualizację...",
         "updateDownloaded": "✅ Aktualizacja pobrana",
         "updateError": "❌ Błąd aktualizacji: {message}",
-        "updateComplete": "✅ Aktualizacja zakończona"
+        "updateComplete": "✅ Aktualizacja zakończona",
+        "storeChanged": "Zmieniono sklep z {from} na {to}"
     },
     "clear": "Wyczyść",
     "leadDetails": "Szczegóły zamówień",

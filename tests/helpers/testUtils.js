@@ -189,4 +189,46 @@ export function setupConsoleMocks() {
  */
 export function restoreConsole(originalConsole) {
     global.console = originalConsole;
-} 
+}
+
+/**
+ * Common test utilities for Kamila extension tests
+ */
+
+/**
+ * Creates a mock storage implementation
+ */
+export const createMockStorage = () => {
+    const storage = {};
+    return {
+        getItem: jest.fn(key => storage[key]),
+        setItem: jest.fn((key, value) => { storage[key] = value; }),
+        removeItem: jest.fn(key => { delete storage[key]; }),
+        clear: jest.fn(() => { Object.keys(storage).forEach(key => delete storage[key]); })
+    };
+};
+
+/**
+ * Creates a mock DOM event
+ */
+export const createMockEvent = (type, data = {}) => ({
+    type,
+    preventDefault: jest.fn(),
+    stopPropagation: jest.fn(),
+    ...data
+});
+
+/**
+ * Waits for promises to resolve
+ */
+export const flushPromises = () => new Promise(resolve => setImmediate(resolve));
+
+/**
+ * Creates a mock manager instance
+ */
+export const createMockManager = () => ({
+    initialize: jest.fn().mockResolvedValue(undefined),
+    destroy: jest.fn().mockResolvedValue(undefined),
+    isInitialized: jest.fn().mockReturnValue(true),
+    getName: jest.fn().mockReturnValue('MockManager')
+}); 

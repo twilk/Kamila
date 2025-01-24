@@ -1,328 +1,199 @@
-// Constants
-const REFRESH_INTERVAL = 300000; // 5 minut
-const STATUS_MAP = {
-    'submitted': '1',
-    'confirmed': '2',
-    'accepted': '3',
-    'ready': 'READY',
-    'overdue': 'OVERDUE'
-};
-
-// Import all services from index
-import { 
+// Import all managers and services from central point
+import {
+    // Core services
     InitLogger,
-    MetricsManager,
     BaseManager,
-    CacheManager,
-    DataManager,
-    MenuManager,
-    LoadingManager,
-    ProgressManager,
-    UpdateManager,
-    InterfaceManager,
-    StatusManager,
-    i18n,
-    stores,
-    UserCardService,
-    OrderService,
-    LanguageManager,
-    RankingManager,
-    VolumeManager,
-    RefreshManager,
-    UIManager,
-    UserManager,
-    ErrorHandler,
-    DebugManager,
-    EventManager,
+    errorHandler,
+    initializationManager,
+    LogLevel,
     ErrorType,
     ErrorSeverity,
-    ConnectionManager,
+    
+    // Core managers
+    eventManager,
+    loadingManager,
+    connectionManager,
+    cacheManager,
+    uiManager,
+    debugManager,
+    themeManager,
+    progressManager,
+    menuManager,
+    
+    // Feature managers
+    dataManager,
     storeManager,
-    storageManager
+    statusManager,
+    userManager,
+    languageManager,
+    updateManager,
+    refreshManager,
+    rankingManager,
+    settingsManager,
+    messageManager,
+    notificationManager
 } from './services/index.js';
 
-// Config imports
-import { API_CONFIG, getDarwinaCredentials } from './config/api.js';
-import { STORAGE_KEYS } from './config/storage.js';
-import { DEFAULT_INTERVALS, getIntervalSettings } from './config/intervals.js';
+import { OrderService } from './services/api/OrderService.js';
 
-// Make stores available globally
-window.stores = stores;
-
-// Declare all managers and services
-let metricsManager, errorHandler, uiManager, debugManager, eventManager,
-    connectionManager, cacheManager, progressManager, loadingManager,
-    menuManager, volumeManager, dataManager, statusManager, userManager,
-    interfaceManager, updateManager, languageManager, refreshManager, orderService;
+// Import constants from configuration
+import { INTERVALS } from './config/intervals.js';
+import { STATUS_MAP } from './services/core/StatusManager.js';
+import { API_CONFIG, getDarwinaCredentials, sendLogToPopup } from './config/api.js';
 
 // Initialize static fields
 BaseManager.initLogger = new InitLogger();
-metricsManager = new MetricsManager();
-BaseManager.metricsManager = metricsManager;
 
-// Initialize core services first
-async function initializeManagers() {
+// Initialize services
+let orderService = null;
+
+/**
+ * Initialize the application
+ * @returns {Promise<void>}
+ */
+async function initialize() {
     try {
-        // 1. Core Services
-        await metricsManager.initialize();
+        // Initialize base functionality
+        BaseManager.initLogger = new InitLogger();
         
-        errorHandler = new ErrorHandler();
-        uiManager = new UIManager();
-        debugManager = new DebugManager();
-        eventManager = new EventManager();
-        connectionManager = new ConnectionManager();
-        cacheManager = new CacheManager({ compression: true });
+        // Initialize all managers
+        const success = await initializationManager.initialize('startup');
+        if (!success) {
+            throw new Error('Initialization manager failed to initialize');
+        }
 
-        // Initialize OrderService
-        const credentials = await getDarwinaCredentials();
-        orderService = new OrderService(credentials);
-
-        // Set error handlers for core services
-        uiManager.setErrorHandler(errorHandler);
-        debugManager.setErrorHandler(errorHandler);
-        eventManager.setErrorHandler(errorHandler);
-        connectionManager.setErrorHandler(errorHandler);
-        cacheManager.setErrorHandler(errorHandler);
-
-        // Initialize core services
-        await errorHandler.initialize();
-        await uiManager.initialize();
-        await debugManager.initialize();
-        await eventManager.initialize();
-        await connectionManager.initialize();
-        await cacheManager.initialize();
-        await storeManager.initialize();
-
-        // 2. Base Managers
-        loadingManager = new LoadingManager(eventManager);
-        progressManager = new ProgressManager(eventManager);
-        menuManager = new MenuManager(eventManager);
-        volumeManager = new VolumeManager(eventManager);
-
-        // Set error handlers for base managers
-        loadingManager.setErrorHandler(errorHandler);
-        progressManager.setErrorHandler(errorHandler);
-        menuManager.setErrorHandler(errorHandler);
-        volumeManager.setErrorHandler(errorHandler);
-
-        // Initialize base managers
-        await loadingManager.initialize();
-        await progressManager.initialize();
-        await menuManager.initialize();
-        await volumeManager.initialize();
-
-        // 3. Feature Managers
-        dataManager = new DataManager(uiManager);
-        statusManager = new StatusManager(eventManager);
-        userManager = new UserManager(uiManager);
-        interfaceManager = new InterfaceManager(uiManager, eventManager, debugManager);
-        updateManager = new UpdateManager(eventManager);
-        languageManager = new LanguageManager(eventManager);
-        refreshManager = new RefreshManager(dataManager);
-
-        // Set error handlers for feature managers
-        dataManager.setErrorHandler(errorHandler);
-        statusManager.setErrorHandler(errorHandler);
-        userManager.setErrorHandler(errorHandler);
-        interfaceManager.setErrorHandler(errorHandler);
-        updateManager.setErrorHandler(errorHandler);
-        languageManager.setErrorHandler(errorHandler);
-        refreshManager.setErrorHandler(errorHandler);
-
-        // Add dependencies
-        dataManager.addDependency(uiManager);
-        dataManager.addDependency(cacheManager);
-
-        // Initialize feature managers
-        await dataManager.initialize();
-        await statusManager.initialize();
-        await userManager.initialize();
-        await interfaceManager.initialize();
-        await updateManager.initialize();
-        await languageManager.initialize();
-        await refreshManager.initialize();
-
-        // Set up event handlers
-        eventManager.on('data:updated', (data) => {
-            updateCounters(data.counts);
-        });
-
-        eventManager.on('store:changed', async (storeId) => {
-            await loadAndUpdateData(true);
-        });
-
-        eventManager.on('error', (error) => {
-            errorHandler.handleError(error);
-        });
-
-        console.log('[SUCCESS] ✅ All managers initialized successfully');
+        // Verify all required managers are initialized
+        await verifyManagerInitialization();
+        
+        // Set up event listeners
+        await setupEventListeners();
+        
+        console.log('✅ Application initialized successfully');
     } catch (error) {
-        console.error('[ERROR] ❌ Manager initialization failed:', error);
+        console.error('[ERROR] ❌ Initialization failed:', error);
         throw error;
     }
 }
 
-// Helper function to check if all required managers are initialized
-function checkRequiredManagers() {
-    const required = {
+/**
+ * Verify all required managers are initialized
+ * @returns {Promise<void>}
+ * @throws {Error} If verification fails
+ */
+async function verifyManagerInitialization() {
+    const requiredManagers = {
         connectionManager,
         loadingManager,
         dataManager,
         errorHandler,
         debugManager,
-        uiManager
+        uiManager,
+        themeManager,
+        menuManager,
+        statusManager
     };
 
-    const missing = Object.entries(required)
-        .filter(([, manager]) => !manager)
+    const uninitializedManagers = Object.entries(requiredManagers)
+        .filter(([, manager]) => !manager?.isInitialized())
         .map(([name]) => name);
 
-    if (missing.length > 0) {
-        throw new Error(`Required managers not initialized: ${missing.join(', ')}`);
+    if (uninitializedManagers.length > 0) {
+        throw new Error(`Required managers not initialized: ${uninitializedManagers.join(', ')}`);
     }
-
-    return true;
 }
 
-// Initialize on DOMContentLoaded
-document.addEventListener('DOMContentLoaded', async () => {
+/**
+ * Set up event listeners
+ * @returns {Promise<void>}
+ */
+async function setupEventListeners() {
     try {
-        // Initialize all managers
-        await initializeManagers();
-        
-        // Initial data load
-        await loadAndUpdateData();
-        
-        // Set up refresh interval
-        setInterval(async () => {
-            await loadAndUpdateData(true);
-        }, REFRESH_INTERVAL);
-        
-        // Set up event listeners
-        setupEventListeners();
-        
-        console.log('[SUCCESS] ✅ Popup initialized successfully');
-    } catch (error) {
-        console.error('[ERROR] ❌ Initialization failed:', error);
-        errorHandler?.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.CRITICAL, {
-            method: 'DOMContentLoaded'
+        // Initialize Bootstrap tabs
+        const tabElements = document.querySelectorAll('[data-bs-toggle="tab"]');
+        tabElements.forEach(tab => {
+            new bootstrap.Tab(tab);
         });
-    }
-});
 
-// Set up event listeners
-function setupEventListeners() {
-    // Refresh button
-    document.getElementById('refresh-button')?.addEventListener('click', async () => {
-        try {
-            await loadAndUpdateData(true);
-        } catch (error) {
-            errorHandler?.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
-                method: 'refreshButton'
-            });
-        }
-    });
+        // Refresh button
+        document.getElementById('refresh-button')?.addEventListener('click', async () => {
+            try {
+                await loadAndUpdateData(true);
+            } catch (error) {
+                errorHandler?.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                    method: 'refreshButton'
+                });
+            }
+        });
 
-    // Store selector
-    document.getElementById('store-select')?.addEventListener('change', async (event) => {
-        try {
-            const newStore = event.target.value;
-            await storeManager.changeStore(newStore);
-            await loadAndUpdateData(true);
-        } catch (error) {
-            errorHandler?.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
-                method: 'storeSelect'
-            });
-        }
-    });
+        // Store selector
+        document.getElementById('store-select')?.addEventListener('change', async (event) => {
+            try {
+                const newStore = event.target.value;
+                await storeManager.changeStore(newStore);
+                await loadAndUpdateData(true);
+            } catch (error) {
+                errorHandler?.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                    method: 'storeSelect'
+                });
+            }
+        });
 
-    // Theme toggle
-    document.getElementById('theme-toggle')?.addEventListener('change', (event) => {
-        try {
-            const isDarkTheme = event.target.checked;
-            document.body.classList.toggle('dark-theme', isDarkTheme);
-            storageManager.save('theme', isDarkTheme ? 'dark' : 'light').catch(error => {
-                console.warn('[WARNING] Failed to save theme preference:', error);
-            });
-        } catch (error) {
-            console.warn('[WARNING] Theme toggle error:', error);
-        }
-    });
-}
+        // Theme toggle
+        document.getElementById('theme-toggle')?.addEventListener('change', (event) => {
+            try {
+                const isDarkTheme = event.target.checked;
+                themeManager.setTheme(isDarkTheme ? 'dark' : 'light', false);
+            } catch (error) {
+                errorHandler?.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                    method: 'themeToggle',
+                    context: error.message
+                });
+            }
+        });
 
-// UI Helper Functions
-function safeUpdateElement(selector, updateFn) {
-    try {
-        const element = document.querySelector(selector);
-        if (element) {
-            updateFn(element);
-        }
+        // Debug toggle
+        document.getElementById('debug-toggle')?.addEventListener('change', (event) => {
+            try {
+                const isDebugEnabled = event.target.checked;
+                debugManager.setDebugMode(isDebugEnabled);
+            } catch (error) {
+                errorHandler?.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
+                    method: 'debugToggle',
+                    context: error.message
+                });
+            }
+        });
     } catch (error) {
-        console.error(`Error updating element ${selector}:`, error);
+        errorHandler?.handleError(error, ErrorType.UI, ErrorSeverity.HIGH, {
+            method: 'setupEventListeners'
+        });
+        throw error;
     }
 }
 
-function safeUpdateElements(selector, updateFn) {
-    try {
-        const elements = document.querySelectorAll(selector);
-        if (elements.length > 0) {
-            elements.forEach((element, index) => {
-                try {
-                    updateFn(element, index);
-                } catch (error) {
-                    console.warn(`Error updating element at index ${index}:`, error);
-                }
-            });
-        }
-    } catch (error) {
-        console.error('Error in safeUpdateElements:', error);
-    }
-}
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', initialize);
 
 // Message Handling Functions
 function showMessage(type, key) {
-    const message = document.querySelector(`.${type}-message`);
-    if (message) {
-        message.textContent = i18n.translate(key);
-        message.classList.remove('d-none');
-    }
+    uiManager.showMessage(type, key);
 }
 
 function hideMessage(type) {
-    const message = document.querySelector(`.${type}-message`);
-    if (message) {
-        message.classList.add('d-none');
-    }
+    uiManager.hideMessage(type);
 }
 
 function hideAllMessages() {
-    document.querySelectorAll('.error-message, .loading-message').forEach(el => {
-        el.classList.add('d-none');
-    });
+    uiManager.hideAllMessages();
 }
 
 // Window Management Functions
 function adjustWindowHeight() {
-    const debugPanel = document.querySelector('.debug-panel');
-    if (debugPanel && document.body.classList.contains('debug-enabled')) {
-        const debugPanelHeight = debugPanel.offsetHeight;
-        document.body.style.height = `calc(var(--window-height) + ${debugPanelHeight/2}px)`;
-    } else {
-        document.body.style.height = 'var(--window-height)';
-    }
+    uiManager.adjustWindowHeight();
 }
 
 async function resizeWindow(height) {
-    try {
-        if (chrome?.windows?.getCurrent) {
-            const window = await chrome.windows.getCurrent();
-            await chrome.windows.update(window.id, { height });
-        } else {
-            document.body.style.height = `${height}px`;
-        }
-    } catch (error) {
-        document.body.style.height = `${height}px`;
-    }
+    await uiManager.resizeWindow(height);
 }
 
 // Load and update data
@@ -346,7 +217,7 @@ async function loadAndUpdateData(forceRefresh = false) {
         if (!data || forceRefresh) {
             console.log('[INFO] 📥 Fetching fresh data for store:', currentStore.id);
 
-        // Show loading state
+            // Show loading state
             updateLoadingState(true);
             
             // Get fresh credentials
@@ -354,20 +225,41 @@ async function loadAndUpdateData(forceRefresh = false) {
             if (!credentials || !credentials.token) {
                 throw new Error('Failed to obtain valid API token');
             }
+
+            // Log API request details
+            console.log('[DEBUG] 🔍 API Request Details:', {
+                baseUrl: API_CONFIG.DARWINA.BASE_URL,
+                endpoint: API_CONFIG.DARWINA.ENDPOINTS.ORDERS,
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${credentials.token}`,
+                    'Content-Type': 'application/json'
+                },
+                storeId: currentStore.id
+            });
             
-            // Initialize OrderService with fresh credentials
-            orderService = new OrderService({ token: credentials.token });
+            // Initialize or reinitialize OrderService with fresh credentials
+            if (!orderService) {
+                orderService = new OrderService(credentials);
+                await orderService.initialize();
+            } else {
+                // Update credentials if service exists
+                orderService.updateCredentials(credentials);
+            }
             
-            // Fetch new data
-            const result = await orderService.fetchAllOrders(currentStore);
-            if (!result.success) {
+            // Fetch orders
+            const orders = await orderService.fetchOrders(currentStore);
+            if (!orders) {
                 throw new Error('Failed to fetch orders');
             }
 
+            // Calculate counts
+            const counts = calculateOrderCounts(orders);
+
             // Save new data
             data = {
-                orders: result.orders,
-                counts: result.counts,
+                orders,
+                counts,
                 timestamp: Date.now()
             };
             
@@ -387,6 +279,41 @@ async function loadAndUpdateData(forceRefresh = false) {
         updateLoadingState(false);
         return false;
     }
+}
+
+// Helper function to calculate order counts
+function calculateOrderCounts(orders) {
+    const counts = {
+        '1': 0,  // SUBMITTED
+        '2': 0,  // CONFIRMED
+        '3': 0,  // ACCEPTED
+        'READY': 0,
+        'OVERDUE': 0
+    };
+
+    const twoWeeksAgo = new Date(Date.now() - 14 * 86400000);
+
+    orders.forEach(order => {
+        const status = order.status_id?.toString();
+        if (!status) return;
+
+        // For READY status, check if it's overdue
+        if (status === '5') {
+            const readyDate = order.ready_date || order.status_change_date || order.modified_at;
+            if (readyDate) {
+                const orderDate = new Date(readyDate.replace(' ', 'T'));
+                if (orderDate < twoWeeksAgo) {
+                    counts['OVERDUE']++;
+                } else {
+                    counts['READY']++;
+                }
+            }
+        } else if (['1', '2', '3'].includes(status)) {
+            counts[status]++;
+        }
+    });
+
+    return counts;
 }
 
 function updateLoadingState(isLoading) {

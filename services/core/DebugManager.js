@@ -1,205 +1,372 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { LogLevel } from './LogLevel.js';
 
 /**
  * Manager for debug functionality
  */
 export class DebugManager extends BaseManager {
-    constructor(uiManager) {
-        super();
-        this.uiManager = uiManager;
-        this.isDebugEnabled = false;
-        this.logs = [];
-        this.maxLogs = 1000;
-        this._boundAdjustWindowHeight = this.adjustWindowHeight.bind(this);
+    static _instance = null;
+
+    static getInstance() {
+        if (!DebugManager._instance) {
+            DebugManager._instance = new DebugManager();
+        }
+        return DebugManager._instance;
+    }
+
+    constructor() {
+        if (DebugManager._instance) {
+            throw new Error('DebugManager is a singleton. Use DebugManager.getInstance() instead.');
+        }
+        super('DebugManager');
+        this._errorHandler = null;
+        this.debugPanel = null;
+        this.debugEnabled = false;
+        this.logHistory = [];
+        this.MAX_LOG_HISTORY = 100;
+        this._panelConfig = {
+            id: 'debug-panel',
+            class: 'debug-panel',
+            position: 'bottom-right'
+        };
+        DebugManager._instance = this;
     }
 
     /**
-     * Initialize debug functionality
+     * Initialize the debug manager
+     * @returns {Promise<boolean>}
      */
-    async _doInitialize() {
+    async initialize() {
         try {
-            // Load debug state from storage
-            const result = await chrome.storage.local.get('debugMode');
-            this.isDebugEnabled = result.debugMode || false;
-            
-            // Wait for DOM to be ready
-            if (document.readyState !== 'complete') {
-                await new Promise(resolve => {
-                    window.addEventListener('load', resolve, { once: true });
-                });
-            }
+            this._startTime = performance.now();
+            this.log(LogLevel.INFO, '🚀 Starting debug manager initialization');
 
-            // Update UI state
-            this.updateDebugState();
-            
-            // Initialize debug panel and switch
-            await this.initializeDebugPanel();
+            // Initialize debug manager
+            this.log(LogLevel.INFO, '🔧 Starting debug manager initialization');
+            await super.initialize();
+
+            // Ensure debug panel exists
+            this.log(LogLevel.INFO, '🎯 Ensuring debug panel exists');
+            await this.ensureDebugPanelExists();
+            this.log(LogLevel.SUCCESS, '✅ Debug panel ready');
+
+            // Load debug state
+            this.log(LogLevel.INFO, '💾 Loading debug state');
+            await this.loadDebugState();
+            this.log(LogLevel.SUCCESS, '✅ Debug state loaded');
+
+            // Initialize debug switch
+            this.log(LogLevel.INFO, '🔄 Initializing debug switch');
             await this.initializeDebugSwitch();
 
-            // Add resize observer for window height adjustments
-            this.setupResizeObserver();
+            const duration = (performance.now() - this._startTime).toFixed(2);
+            this.log(LogLevel.SUCCESS, '✅ Debug manager initialized', {
+                debugEnabled: this.debugEnabled,
+                hasDebugPanel: !!this.debugPanel,
+                logHistorySize: this.logHistory.length
+            });
 
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.ERROR);
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
+                context: 'Debug manager initialization failed'
+            });
             return false;
         }
     }
 
     /**
-     * Update debug state in UI
+     * Ensure debug panel exists in the DOM
+     * @returns {Promise<void>}
      */
-    updateDebugState() {
-        const debugClass = this.isDebugEnabled ? 'debug-enabled' : 'debug-disabled';
-        document.documentElement.setAttribute('data-debug', debugClass);
-    }
-
-    /**
-     * Setup resize observer
-     */
-    setupResizeObserver() {
-        if ('ResizeObserver' in window) {
-            const debugPanel = document.querySelector('.debug-panel');
-            if (debugPanel) {
-                const observer = new ResizeObserver(this._boundAdjustWindowHeight);
-                observer.observe(debugPanel);
-            }
-        }
-    }
-
-    /**
-     * Initialize debug panel
-     */
-    async initializeDebugPanel() {
-        const debugPanel = document.querySelector('.debug-panel');
-        if (!debugPanel) return;
-
-        const clearLogsBtn = document.getElementById('clear-logs');
-        if (clearLogsBtn) {
-            clearLogsBtn.addEventListener('click', () => this.clearLogs());
-        }
-    }
-
-    /**
-     * Initialize debug switch
-     */
-    async initializeDebugSwitch() {
-        const debugSwitch = document.getElementById('debug-switch');
-        if (!debugSwitch) return;
-
-        debugSwitch.checked = this.isDebugEnabled;
+    async ensureDebugPanelExists() {
+        this.log(LogLevel.DEBUG, '🔍 Checking for existing debug panel');
         
-        debugSwitch.addEventListener('change', async (e) => {
-            this.isDebugEnabled = e.target.checked;
-            this.updateDebugState();
-            await chrome.storage.local.set({ debugMode: this.isDebugEnabled });
-            
-            this.logToPanel(
-                this.isDebugEnabled ? 'Debug mode enabled' : 'Debug mode disabled',
-                this.isDebugEnabled ? 'success' : 'info'
-            );
-            
-            requestAnimationFrame(() => this.adjustWindowHeight());
-        });
+        let panel = document.getElementById(this._panelConfig.id);
+        if (!panel) {
+            panel = await this.createDebugPanel();
+        }
+
+        this.debugPanel = panel;
+        this.initializePanelStyles();
+        this.initializePanelControls();
     }
 
     /**
-     * Log a message to the debug panel
-     * @param {string} message 
-     * @param {string} level 
-     * @param {*} data 
+     * Create debug panel in the DOM
+     * @returns {Promise<HTMLElement>}
      */
-    logToPanel(message, level = 'info', data = null) {
-        const debugLogs = document.getElementById('debug-logs');
-        if (!debugLogs) return;
+    async createDebugPanel() {
+        const panel = document.createElement('div');
+        panel.id = this._panelConfig.id;
+        panel.className = this._panelConfig.class;
+        
+        // Create panel structure
+        panel.innerHTML = `
+            <div class="debug-panel-header">
+                <h3>Debug Panel</h3>
+                <div class="debug-panel-controls">
+                    <button id="clear-logs" title="Clear logs">🗑️</button>
+                </div>
+            </div>
+            <div class="debug-panel-content">
+                <div class="debug-log-container"></div>
+            </div>
+        `;
 
-        // Format timestamp
-        const now = new Date();
-        const timestamp = [
-            now.getHours().toString().padStart(2, '0'),
-            now.getMinutes().toString().padStart(2, '0'),
-            now.getSeconds().toString().padStart(2, '0')
-        ].join(':');
+        document.body.appendChild(panel);
+        return panel;
+    }
 
-        // Format message
-        let logMessage = message;
-        if (data) {
-            if (typeof data === 'string') {
-                logMessage += `: ${data}`;
-            } else if (data instanceof Error) {
-                logMessage += `: ${data.message}`;
-            } else if (typeof data === 'object') {
-                logMessage += `: ${JSON.stringify(data)}`;
+    /**
+     * Initialize panel styles
+     */
+    initializePanelStyles() {
+        const style = document.createElement('style');
+        style.textContent = `
+            .debug-panel {
+                position: fixed;
+                ${this._panelConfig.position === 'bottom-right' ? 'right: 20px; bottom: 20px;' : ''}
+                width: 300px;
+                max-height: 400px;
+                background: rgba(0, 0, 0, 0.8);
+                color: #fff;
+                border-radius: 8px;
+                font-family: monospace;
+                z-index: 9999;
+                overflow: hidden;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
             }
+            .debug-panel-header {
+                padding: 8px;
+                background: rgba(0, 0, 0, 0.5);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            .debug-panel-header h3 {
+                margin: 0;
+                font-size: 14px;
+            }
+            .debug-panel-controls {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+            }
+            .debug-panel-controls button {
+                background: none;
+                border: none;
+                color: #fff;
+                cursor: pointer;
+                padding: 4px;
+                opacity: 0.7;
+                transition: opacity 0.2s;
+            }
+            .debug-panel-controls button:hover {
+                opacity: 1;
+            }
+            .debug-panel-content {
+                padding: 8px;
+                max-height: 350px;
+                overflow-y: auto;
+            }
+            .debug-log-container {
+                font-size: 12px;
+                line-height: 1.4;
+            }
+            .debug-log {
+                margin: 4px 0;
+                padding: 4px;
+                border-radius: 4px;
+                background: rgba(255, 255, 255, 0.1);
+            }
+            .debug-log.error { color: #ff4444; }
+            .debug-log.warn { color: #ffbb33; }
+            .debug-log.info { color: #33b5e5; }
+            .debug-log.success { color: #00C851; }
+        `;
+        document.head.appendChild(style);
+    }
+
+    /**
+     * Initialize panel controls
+     */
+    initializePanelControls() {
+        const clearBtn = this.debugPanel.querySelector('#clear-logs');
+        const toggleBtn = this.debugPanel.querySelector('#toggle-debug');
+
+        clearBtn?.addEventListener('click', () => this.clearLogs());
+        toggleBtn?.addEventListener('click', () => this.toggleDebug());
+    }
+
+    /**
+     * Load debug state from storage
+     */
+    async loadDebugState() {
+        this.log(LogLevel.DEBUG, '🔍 Loading debug state from storage');
+        try {
+            const state = await chrome.storage.local.get('debugEnabled');
+            this.debugEnabled = state.debugEnabled || false;
+            this.log(LogLevel.INFO, '🔄 Updating UI with debug state', { debugEnabled: this.debugEnabled });
+            this.updateDebugUI();
+        } catch (error) {
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
+                context: 'Failed to load debug state'
+            });
+            this.debugEnabled = false;
+        }
+    }
+
+    /**
+     * Update debug UI based on current state
+     */
+    updateDebugUI() {
+        // Update debug panel visibility
+        if (this.debugPanel) {
+            this.debugPanel.style.display = this.debugEnabled ? 'block' : 'none';
         }
 
-        // Create log entry
+        // Update debug button state
+        const debugButton = document.getElementById('debug-button');
+        if (debugButton) {
+            debugButton.classList.toggle('active', this.debugEnabled);
+        }
+    }
+
+    /**
+     * Toggle debug mode
+     */
+    async toggleDebug() {
+        this.debugEnabled = !this.debugEnabled;
+        try {
+            await chrome.storage.local.set({ debugEnabled: this.debugEnabled });
+            this.log(LogLevel.INFO, `🔄 Debug mode ${this.debugEnabled ? 'enabled' : 'disabled'}`);
+            this.updateDebugUI();
+        } catch (error) {
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
+                context: 'Failed to save debug state'
+            });
+        }
+    }
+
+    /**
+     * Log message to debug panel
+     */
+    logToPanel(message, level = LogLevel.INFO, data = null) {
+        if (!this.debugEnabled || !this.debugPanel) return;
+
+        const logContainer = this.debugPanel.querySelector('.debug-log-container');
+        if (!logContainer) return;
+
         const logEntry = document.createElement('div');
-        logEntry.className = `log-entry log-${level}`;
-        logEntry.innerHTML = `[${timestamp}] ${logMessage}`;
+        logEntry.className = `debug-log ${level.toLowerCase()}`;
         
-        // Add to panel
-        debugLogs.appendChild(logEntry);
-        debugLogs.scrollTop = debugLogs.scrollHeight;
+        const timestamp = new Date().toISOString();
+        const dataString = data ? `\n${JSON.stringify(data, null, 2)}` : '';
+        
+        logEntry.textContent = `[${timestamp}] ${message}${dataString}`;
+        
+        logContainer.appendChild(logEntry);
+        logContainer.scrollTop = logContainer.scrollHeight;
 
-        // Store log
-        this.logs.push({
-            timestamp: now.toISOString(),
-            level,
-            message: logMessage,
-            data
-        });
-
-        // Trim logs if needed
-        if (this.logs.length > this.maxLogs) {
-            this.logs = this.logs.slice(-this.maxLogs);
+        // Maintain log history
+        this.logHistory.push({ timestamp, level, message, data });
+        if (this.logHistory.length > this.MAX_LOG_HISTORY) {
+            this.logHistory.shift();
         }
     }
 
     /**
-     * Clear debug logs
+     * Clear all logs
      */
     clearLogs() {
-        const debugLogs = document.getElementById('debug-logs');
-        if (debugLogs) {
-            debugLogs.innerHTML = '';
-            this.logToPanel('Logs cleared', 'success');
+        if (!this.debugPanel) return;
+
+        const logContainer = this.debugPanel.querySelector('.debug-log-container');
+        if (logContainer) {
+            logContainer.innerHTML = '';
         }
-        this.logs = [];
+        this.logHistory = [];
+        this.log(LogLevel.INFO, '🗑️ Logs cleared');
     }
 
     /**
-     * Adjust window height based on debug panel
+     * Dispose debug manager
      */
-    adjustWindowHeight() {
-        const debugPanel = document.querySelector('.debug-panel');
-        if (!debugPanel) return;
-
-        const debugPanelHeight = debugPanel.offsetHeight;
-        const windowHeight = window.innerHeight;
-        
-        requestAnimationFrame(() => {
-            document.documentElement.style.setProperty(
-                '--debug-panel-offset',
-                `${this.isDebugEnabled ? debugPanelHeight/2 : 0}px`
-            );
-        });
+    async dispose() {
+        try {
+            this.log(LogLevel.INFO, '🗑️ Disposing debug manager');
+            
+            if (this.debugPanel && this.debugPanel.parentNode) {
+                this.debugPanel.parentNode.removeChild(this.debugPanel);
+            }
+            
+            this.debugPanel = null;
+            this.logHistory = [];
+            
+            await super.dispose();
+            this.log(LogLevel.SUCCESS, '✅ Debug manager disposed');
+        } catch (error) {
+            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.MEDIUM, {
+                context: 'Failed to dispose debug manager'
+            });
+        }
     }
 
-    /**
-     * Get debug logs
-     */
-    getLogs() {
-        return [...this.logs];
-    }
+    async initializeDebugSwitch() {
+        try {
+            const debugButton = document.getElementById('debug-button');
+            if (!debugButton) {
+                this.log(LogLevel.WARN, '⚠️ Debug button element not found, skipping initialization');
+                return false;
+            }
+            
+            // Initialize debug button state
+            debugButton.classList.toggle('active', this.debugEnabled);
+            
+            // Add click handler
+            debugButton.addEventListener('click', () => {
+                this.toggleDebug();
+                debugButton.classList.toggle('active', this.debugEnabled);
+            });
 
-    /**
-     * Dispose debug functionality
-     */
-    async _doDispose() {
-        this.clearLogs();
-        document.documentElement.removeAttribute('data-debug');
-        document.documentElement.style.removeProperty('--debug-panel-offset');
+            // Add styles for active state if not exists
+            if (!document.querySelector('style[data-id="debug-button-styles"]')) {
+                const style = document.createElement('style');
+                style.setAttribute('data-id', 'debug-button-styles');
+                style.textContent = `
+                    .BugButton {
+                        background: none;
+                        border: none;
+                        cursor: pointer;
+                        padding: 8px;
+                        border-radius: 8px;
+                        transition: background-color 0.3s ease;
+                    }
+                    .BugButton:hover {
+                        background: rgba(207, 207, 207, 0.1);
+                    }
+                    .BugButton.active {
+                        background: rgba(51, 181, 229, 0.2);
+                    }
+                    .BugButton.active .bugsvg path {
+                        stroke: #33b5e5;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                context: 'Failed to initialize debug button'
+            });
+            return false;
+        }
     }
-} 
+}
+
+// Export singleton instance
+export const debugManager = DebugManager.getInstance(); 

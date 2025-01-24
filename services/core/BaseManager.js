@@ -1,373 +1,339 @@
+import { LogLevel } from './LogLevel.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
-import { IInitializable } from './IInitializable.js';
+import { TimeoutError } from './errors/TimeoutError.js';
+import { getManagerTimeout, getRetryDelay, MAX_RETRY_ATTEMPTS } from '../../config/timeouts.js';
+import { environment } from './environment.js';
 
 /**
  * Base class for all managers
- * @implements {IInitializable}
  */
-export class BaseManager extends IInitializable {
-    static INIT_TIMEOUT = 5000; // 5 second timeout
-    static initLogger = null;
-    static metricsManager = null;
-
-    constructor(dependencies = []) {
-        super();
-        this._initialized = false;
-        this._initializing = false;
-        this._dependencies = dependencies;
-        this._lazyInit = false;
-        this._initPromise = null;
-        this.eventListeners = new Map();
-        this._errorHandler = null;
-        this.dependencies = new Set();
-        this.dependents = new Set();
+export class BaseManager {
+    static _errorHandler = null;
+    
+    #name;
+    #isInitialized = false;
+    #retryConfig = {
+        maxRetries: 3,
+        baseDelay: 1000,
+        maxDelay: 5000
+    };
+    
+    #initializationStack = new Set();
+    
+    constructor(name) {
+        if (!name) {
+            throw new Error('Manager name is required');
+        }
+        this.#name = name;
+        this._environment = environment;
+        this._disposed = false;
+        this._dependencies = new Set();
+        this._startTime = 0;
+        this._handlingError = false;
     }
-
-    setLazyInit(lazy = true) {
-        this._lazyInit = lazy;
-        return this;
-    }
-
+    
     /**
-     * Get the name of the manager
+     * Get manager name
      * @returns {string}
      */
     get name() {
-        return this.constructor.name;
+        return this.#name;
     }
-
-    /**
-     * Set the error handler for this manager
-     * @param {ErrorHandler} errorHandler
-     */
-    setErrorHandler(errorHandler) {
-        this._errorHandler = errorHandler;
-    }
-
-    /**
-     * Handle an error
-     * @param {Error} error
-     * @param {ErrorType} type
-     * @param {ErrorSeverity} severity
-     * @param {Object} context
-     */
-    handleError(error, type = ErrorType.UNKNOWN, severity = ErrorSeverity.ERROR, context = {}) {
-        if (this._errorHandler) {
-            return this._errorHandler.handleError(error, type, severity, {
-                manager: this.name,
-                ...context
-            });
-        } else {
-            console.error(`[${this.name}] Error:`, error, context);
-            return error;
-        }
-    }
-
+    
     /**
      * Check if manager is initialized
      * @returns {boolean}
      */
     isInitialized() {
-        return this._initialized;
+        return this.#isInitialized;
     }
 
     /**
-     * Get manager dependencies
-     * @returns {Array<string>}
+     * Get a dependency by name
+     * @param {string} name - Name of the dependency to get
+     * @returns {BaseManager} The dependency manager instance
+     * @throws {Error} If dependency not found
      */
-    getDependencies() {
-        return this._dependencies.map(dep => dep.name);
+    getDependency(name) {
+        const dep = Array.from(this._dependencies)
+            .find(d => d.constructor.name === name || d.name === name);
+            
+        if (!dep) {
+            throw new Error(`Dependency ${name} not found in ${this.#name}`);
+        }
+        return dep;
     }
 
     /**
-     * Initialize the manager with timeout and error handling
-     * @returns {Promise<boolean>}
+     * Initialize the manager
+     * @param {Object} config Configuration object
+     * @returns {Promise<boolean>} Success status
      */
-    async initialize() {
-        // Return existing initialization if in progress
-        if (this._initPromise) {
-            return this._initPromise;
-        }
-
-        // Skip if already initialized
-        if (this._initialized) {
-            return true;
-        }
-
-        // Skip if lazy init and not explicitly called
-        if (this._lazyInit && !this._initializing) {
-            return true;
-        }
-
-        this._initializing = true;
-        BaseManager.initLogger.startInit(this.name);
-        const startTime = performance.now();
-
-        // Create initialization promise with timeout
-        this._initPromise = Promise.race([
-            this._doInitialize().then(() => true),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error(`Initialization timeout for ${this.name}`)), 
-                BaseManager.INIT_TIMEOUT)
-            )
-        ]).catch(error => {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.ERROR, {
-                method: 'initialize',
-                manager: this.name
-            });
-            return false;
-        }).finally(() => {
-            const duration = performance.now() - startTime;
-            BaseManager.metricsManager.trackTiming(`${this.name}_init_time`, duration);
-            this._initializing = false;
-            this._initPromise = null;
-        });
-
-        return this._initPromise;
-    }
-
-    /**
-     * Protected initialization implementation
-     * @protected
-     * @returns {Promise<void>}
-     */
-    async _doInitialize() {
+    async initialize(config = {}) {
         try {
+            // Check for initialization cycles
+            if (this.#initializationStack.has(this.#name)) {
+                throw new Error(`Circular dependency detected: ${Array.from(this.#initializationStack).join(' -> ')} -> ${this.#name}`);
+            }
+            this.#initializationStack.add(this.#name);
+
+            this.log(LogLevel.INFO, `🚀 Starting initialization of ${this.#name}`);
+            this._startTime = performance.now();
+
+            // Set environment from config or use default
+            this._environment = config.environment || environment;
+            
             // Initialize dependencies first
             for (const dependency of this._dependencies) {
                 if (!dependency.isInitialized()) {
-                    await BaseManager.metricsManager.trackOperation(
-                        `${dependency.name}_init`,
-                        () => dependency.initialize()
-                    );
+                    this.log(LogLevel.INFO, `⏳ Waiting for dependency: ${dependency.name}`);
+                    const success = await dependency.initialize(config);
+                    if (!success) {
+                        throw new Error(`Failed to initialize dependency: ${dependency.name}`);
+                    }
                 }
             }
 
-            // Perform initialization
-            await BaseManager.metricsManager.trackOperation(
-                `${this.name}_init`,
-                () => this.onInitialize()
-            );
-            
-            this._initialized = true;
-            BaseManager.initLogger.endInit(this.name, true);
-        } catch (error) {
-            BaseManager.initLogger.endInit(this.name, false, error.message);
-            throw error;
-        }
-    }
-
-    /**
-     * Hook for actual initialization code
-     * @protected
-     * @returns {Promise<void>}
-     */
-    async onInitialize() {
-        // To be implemented by derived classes
-    }
-
-    /**
-     * Dispose of manager resources
-     * @returns {Promise<boolean>}
-     */
-    async dispose() {
-        if (!this._initialized) {
-            return true;
-        }
-
-        try {
-            // Dispose dependents first
-            for (const dependent of this.dependents) {
-                await BaseManager.metricsManager.trackOperation(
-                    `${dependent.name}_dispose`,
-                    () => dependent.dispose()
-                );
+            // Initialize this manager
+            const success = await this.onInitialize();
+            if (!success) {
+                throw new Error(`${this.#name} initialization returned false`);
             }
 
-            // Do manager-specific disposal
-            await BaseManager.metricsManager.trackOperation(
-                `${this.name}_dispose`,
-                () => this._doDispose()
-            );
-
-            // Clear event listeners
-            this.eventListeners.clear();
+            this.#isInitialized = true;
+            const duration = performance.now() - this._startTime;
+            this.log(LogLevel.SUCCESS, `✅ ${this.#name} initialized in ${duration.toFixed(2)}ms`);
             
-            this._initialized = false;
-            
-            // Clear dependencies
-            this.dependencies.clear();
-            this.dependents.clear();
-            
+            // Clear from initialization stack after success
+            this.#initializationStack.delete(this.#name);
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.ERROR, {
-                method: 'dispose'
+            // Clear from initialization stack on error
+            this.#initializationStack.delete(this.#name);
+            
+            const duration = performance.now() - this._startTime;
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
+                method: 'initialize',
+                manager: this.#name,
+                duration: `${duration.toFixed(2)}ms`,
+                dependencies: Array.from(this._dependencies).map(dep => dep.name)
             });
             return false;
         }
     }
 
     /**
-     * Implementation specific disposal
-     * @protected
-     * @returns {Promise<void>}
+     * Initialize with retry mechanism
+     * @returns {Promise<boolean>}
      */
-    async _doDispose() {
-        // To be implemented by derived classes
-    }
-
-    /**
-     * Add event listener
-     * @param {string} eventName
-     * @param {Function} callback
-     */
-    on(eventName, callback) {
-        if (!this.eventListeners.has(eventName)) {
-            this.eventListeners.set(eventName, new Set());
-        }
-        this.eventListeners.get(eventName).add(callback);
-    }
-
-    /**
-     * Remove event listener
-     * @param {string} eventName
-     * @param {Function} callback
-     */
-    off(eventName, callback) {
-        if (this.eventListeners.has(eventName)) {
-            this.eventListeners.get(eventName).delete(callback);
-        }
-    }
-
-    /**
-     * Emit event
-     * @param {string} eventName
-     * @param {*} data
-     */
-    emit(eventName, data = {}) {
-        if (this.eventListeners.has(eventName)) {
-            this.eventListeners.get(eventName).forEach(callback => {
-                try {
-                    callback(data);
-                } catch (error) {
-                    this.handleError(error, ErrorType.EVENT, ErrorSeverity.WARNING, {
-                        method: 'emit',
-                        eventName,
-                        data
-                    });
-                }
-            });
-        }
-    }
-
-    /**
-     * Send message to background script with retry mechanism
-     * @param {Object} message - Message to send
-     * @param {Object} options - Options for sending
-     * @returns {Promise<*>}
-     */
-    async sendMessage(message, options = {}) {
-        const {
-            maxRetries = 3,
-            retryDelay = 1000,
-            timeout = 5000
-        } = options;
-
-        let attempts = 0;
-        let lastError = null;
-
-        while (attempts < maxRetries) {
+    async initializeWithRetry() {
+        let attempt = 0;
+        
+        while (attempt < this.#retryConfig.maxRetries) {
             try {
-                const response = await Promise.race([
-                    new Promise((resolve, reject) => {
-                        chrome.runtime.sendMessage(message, response => {
-                            if (chrome.runtime.lastError) {
-                                reject(chrome.runtime.lastError);
-                            } else {
-                                resolve(response);
-                            }
-                        });
-                    }),
-                    new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error('Message timeout')), timeout)
-                    )
-                ]);
+                this.log(LogLevel.INFO, `🔄 Initializing ${this.#name} (attempt ${attempt + 1}/${this.#retryConfig.maxRetries})`);
                 
-                return response;
+                const success = await this.initialize();
+                if (success) {
+                    this.#isInitialized = true;
+                    this.log(LogLevel.SUCCESS, `✅ ${this.#name} initialization successful`);
+                    return true;
+                }
+                
+                throw new Error(`${this.#name} initialization returned false`);
             } catch (error) {
-                lastError = error;
-                attempts++;
+                attempt++;
                 
-                // Log the attempt
-                console.log(`[RETRY] Attempt ${attempts}/${maxRetries} failed:`, error.message);
-                
-                // If it's not a connection error, don't retry
-                if (!error.message.includes('Receiving end does not exist')) {
-                    break;
+                if (attempt >= this.#retryConfig.maxRetries) {
+                    this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
+                        method: 'initializeWithRetry',
+                        manager: this.#name,
+                        attempts: attempt
+                    });
+                    return false;
                 }
                 
-                // Wait before retrying
-                if (attempts < maxRetries) {
-                    await new Promise(resolve => setTimeout(resolve, retryDelay * attempts));
-                }
+                const delay = Math.min(
+                    this.#retryConfig.baseDelay * Math.pow(2, attempt),
+                    this.#retryConfig.maxDelay
+                );
+                
+                this.log(LogLevel.WARN, `⚠️ ${this.#name} initialization failed, retrying in ${delay}ms...`, {
+                    attempt,
+                    error: error.message
+                });
+                
+                await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
+        
+        return false;
+    }
 
-        // All retries failed
-        console.error('[ERROR] All message sending attempts failed:', lastError);
-        throw lastError;
+    /**
+     * Initialize with timeout
+     * @private
+     * @param {Function} initFn Initialization function
+     * @param {string} managerName Manager name for error reporting
+     * @returns {Promise<boolean>}
+     */
+    async #initializeWithTimeout(initFn, managerName) {
+        const timeout = getManagerTimeout(managerName);
+        
+        try {
+            const result = await Promise.race([
+                initFn(),
+                new Promise((_, reject) => {
+                    setTimeout(() => {
+                        reject(new TimeoutError(
+                            `Initialization timed out after ${timeout}ms`,
+                            managerName,
+                            timeout
+                        ));
+                    }, timeout);
+                })
+            ]);
+
+            return result;
+        } catch (error) {
+            if (error instanceof TimeoutError) {
+                throw error;
+            }
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
+                method: 'initialize',
+                manager: managerName
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Override this method to implement initialization logic
+     * @protected
+     * @returns {Promise<boolean>} Success status
+     */
+    async onInitialize() {
+        return true;
     }
 
     /**
      * Add a dependency
-     * @param {BaseManager} manager 
+     * @param {BaseManager} manager Manager instance
      */
     addDependency(manager) {
         if (manager instanceof BaseManager) {
-            this.dependencies.add(manager);
-            manager.dependents.add(this);
+            this._dependencies.add(manager);
         }
     }
 
     /**
-     * Remove a dependency
-     * @param {BaseManager} manager 
+     * Clean up manager resources
+     * @returns {Promise<void>}
      */
-    removeDependency(manager) {
-        this.dependencies.delete(manager);
-        manager.dependents.delete(this);
+    async dispose() {
+        try {
+            this.#isInitialized = false;
+            this._disposed = true;
+            this._dependencies.clear();
+            this.log(LogLevel.INFO, `${this.#name} disposed`);
+        } catch (error) {
+            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.MEDIUM, {
+                method: 'dispose',
+                manager: this.#name
+            });
+        }
     }
 
     /**
-     * Get initialization metrics
+     * Handle an error
+     * @param {Error} error Error object
+     * @param {ErrorType} type Error type
+     * @param {ErrorSeverity} severity Error severity
+     * @param {Object} context Additional context
      */
-    static getInitMetrics() {
-        return {
-            logs: BaseManager.initLogger.getLogs(),
-            metrics: BaseManager.metricsManager.getMetrics()
-        };
+    handleError(error, type = ErrorType.RUNTIME, severity = ErrorSeverity.MEDIUM, context = {}) {
+        if (BaseManager._errorHandler) {
+            BaseManager._errorHandler.handle(error, type, severity, {
+                ...context,
+                manager: this.#name,
+                environment: this._environment.isDevelopment ? 'development' : 'production'
+            });
+        } else {
+            console.error(`[${this.#name}]`, error, context);
+        }
     }
 
     /**
-     * Get initialization logs
+     * Log a message with specified level
+     * @param {LogLevel} level Log level
+     * @param {string} message Message to log
+     * @param {Object} [data] Additional data to log
      */
-    static getInitLogs() {
-        return BaseManager.initLogger.getLogs();
-    }
-
-    /**
-     * Get a specific dependency by its class
-     * @param {Function} dependencyClass - The class of the dependency to get
-     * @returns {BaseManager} The dependency instance
-     * @throws {Error} If dependency not found
-     */
-    getDependency(dependencyClass) {
-        for (const dependency of this.dependencies) {
-            if (dependency instanceof dependencyClass) {
-                return dependency;
+    log(level, message, data = null) {
+        const timestamp = new Date().toISOString();
+        const prefix = `[${this.constructor.name}]`;
+        
+        // Format message
+        let formattedMessage = `${prefix} ${message}`;
+        
+        // Add data if present
+        if (data) {
+            if (typeof data === 'object') {
+                // If data is an object, format it nicely
+                if (Array.isArray(data)) {
+                    console.log(`${timestamp} ${formattedMessage}:`);
+                    console.table(data);
+                    return;
+                } else {
+                    // For objects, show them in a formatted way
+                    const cleanData = Object.entries(data).reduce((acc, [key, value]) => {
+                        acc[key] = value?.toString() || value;
+                        return acc;
+                    }, {});
+                    console.log(`${timestamp} ${formattedMessage}:`, cleanData);
+                    return;
+                }
+            } else {
+                formattedMessage += ` ${data}`;
             }
         }
-        throw new Error(`Dependency ${dependencyClass.name} not found in ${this.name}`);
+
+        // Log based on level
+        switch (level) {
+            case LogLevel.DEBUG:
+                console.debug(`${timestamp} ${formattedMessage}`);
+                break;
+            case LogLevel.INFO:
+                console.info(`${timestamp} ${formattedMessage}`);
+                break;
+            case LogLevel.WARNING:
+                console.warn(`${timestamp} ${formattedMessage}`);
+                break;
+            case LogLevel.ERROR:
+                console.error(`${timestamp} ${formattedMessage}`);
+                break;
+            case LogLevel.SUCCESS:
+                console.log(`${timestamp} ✅ ${formattedMessage}`);
+                break;
+            default:
+                console.log(`${timestamp} ${formattedMessage}`);
+        }
+    }
+
+    /**
+     * Set error handler
+     * @param {ErrorHandler} handler Error handler instance
+     */
+    static setErrorHandler(handler) {
+        BaseManager._errorHandler = handler;
+    }
+
+    /**
+     * Set initialization state
+     * @protected
+     * @param {boolean} state
+     */
+    _setInitialized(state) {
+        this.#isInitialized = state;
     }
 } 

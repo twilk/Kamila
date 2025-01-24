@@ -1,22 +1,16 @@
 {
     "manifest_version": 3,
-    "name": "Kamila",
-    "version": "1.0.0",
-    "description": "Inteligentny asystent dla pracowników DARWINA.PL",
+    "name": "Kamila - Intelligent Assistant for DARWINA.PL",
+    "version": "3.0.0",
+    "description": "Intelligent assistant enhancing DARWINA.PL platform functionality",
     "permissions": [
         "storage",
         "tabs",
-        "windows",
-        "webRequest",
-        "notifications",
-        "downloads",
-        "scripting",
-        "alarms",
-        "runtime"
+        "scripting"
     ],
     "host_permissions": [
-        "https://darwina.pl/*",
         "https://*.darwina.pl/*",
+        "https://darwina.pl/*",
         "https://darwina.weblucy.com/*",
         "https://docs.google.com/*",
         "https://spreadsheets.google.com/*",
@@ -26,7 +20,12 @@
         "https://cdn.jsdelivr.net/*"
     ],
     "action": {
-        "default_popup": "popup.html"
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icon16.png",
+            "48": "icon48.png",
+            "128": "icon128.png"
+        }
     },
     "icons": {
         "16": "icon16.png",
@@ -40,35 +39,31 @@
     "content_security_policy": {
         "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://darwina.pl https://*.darwina.pl https://darwina.weblucy.com https://docs.google.com https://spreadsheets.google.com https://*.googleapis.com https://github.com https://raw.githubusercontent.com https://cdn.jsdelivr.net;"
     },
-    "content_scripts": [{
-        "matches": [
-            "https://darwina.weblucy.com/raporty*"
-        ],
-        "js": [
-            "content_scripts/userDataCollector.js"
-        ],
-        "type": "module"
-    }],
+    "content_scripts": [
+        {
+            "matches": ["https://*.darwina.pl/*"],
+            "js": ["content_scripts/userDataCollector.js"],
+            "css": ["style.css", "styles/loading.css"]
+        }
+    ],
     "web_accessible_resources": [{
         "resources": [
-            "wallpapers/custom/*",
             "assets/*",
-            "users/*.json",
-            "config/*",
-            "services/*",
-            "services/core/*",
-            "config/api.js",
-            "qrcodes/*",
-            "lib/*",
-            "locales/*",
-            "src/*"
+            "styles/*",
+            "styles/loading.css",
+            "locales/*"
         ],
         "matches": [
             "https://darwina.pl/*",
             "https://*.darwina.pl/*",
-            "https://darwina.weblucy.com/*",
-            "https://github.com/*"
+            "https://darwina.weblucy.com/*"
         ]
     }],
-    "minimum_chrome_version": "88"
+    "minimum_chrome_version": "88",
+    "author": "DARWINA.PL Team",
+    "homepage_url": "https://darwina.pl",
+    "incognito": "spanning",
+    "offline_enabled": false,
+    "short_name": "Kamila",
+    "api_url": "https://api.darwina.pl/v1"
 }

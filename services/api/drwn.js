@@ -1,96 +1,126 @@
+/**
+ * @deprecated This file is being migrated to TypeScript implementation in services/api/index.ts
+ * Please refer to the migration guide in docs/api-migration.md
+ * This file will be removed in version 4.0.0
+ */
+
 import { API } from './api.js';
 import { ErrorType, ErrorSeverity } from '../core/ErrorTypes.js';
+import { ErrorHandler } from '../core/ErrorHandler.js';
+
+// API endpoints and configuration
+const API_BASE_URL = 'https://darwina.pl';
+const API_ENDPOINTS = {
+    ORDERS: '/api/orders'
+};
 
 export class OrderService extends API {
     constructor(credentials) {
         super();
-        this.setBaseUrl('https://darwina.pl');
+        this._errorHandler = ErrorHandler.getInstance();
+        this.setBaseUrl(API_BASE_URL);
         
-        // Debug log credentials (safely)
-        console.log('[DEBUG] 🔑 Credentials provided:', {
-            hasToken: !!credentials?.token,
-            tokenLength: credentials?.token?.length
-        });
-        
-        if (!credentials?.token) {
-            console.error('[ERROR] ❌ No token provided in credentials');
-            throw new Error('API token is required');
-        }
+        try {
+            // Validate credentials
+            if (!credentials) {
+                throw new Error('Credentials are required');
+            }
 
-        this.setHeader('Authorization', `Bearer ${credentials.token}`);
-        console.log('[DEBUG] 🔒 Authorization header set successfully');
+            // Debug log credentials (safely)
+            this.log(LogLevel.DEBUG, '🔑 Validating credentials', {
+                hasToken: !!credentials?.token,
+                tokenLength: credentials?.token?.length
+            });
+            
+            if (!credentials?.token) {
+                throw new Error('API token is required');
+            }
+
+            this.setHeader('Authorization', `Bearer ${credentials.token}`);
+            this.log(LogLevel.SUCCESS, '✅ API service initialized successfully');
+        } catch (error) {
+            this._errorHandler.handle(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
+                context: 'OrderService initialization failed'
+            });
+            throw error;
+        }
     }
 
-    async fetchOrders(params = {}, signal) {
+    /**
+     * Helper method to build API URLs with validation
+     */
+    buildApiUrl(endpoint, params = {}) {
         try {
-            // Build query parameters
+            if (!endpoint) {
+                throw new Error('Endpoint is required');
+            }
+
             const queryParams = new URLSearchParams();
             
-            // Debug the incoming params
-            console.log('[DEBUG] 📝 Incoming params:', params);
-            
-            // Add default parameters
-            queryParams.append('limit', params.limit || '50');
-            if (params.page) queryParams.append('page', params.page);
-            
-            // Handle status_id (can be array or single value)
-            if (params.status_id) {
-                // Convert array to comma-separated string
-                const statusValue = Array.isArray(params.status_id) 
-                    ? params.status_id.join(',')
-                    : params.status_id.toString();
-                queryParams.append('status_id', statusValue);
-                console.log('[DEBUG] 🔍 Adding status filter:', statusValue);
-            }
-            
-            // Handle delivery_id carefully
-            if (params.delivery_id && params.delivery_id !== 'ALL') {
-                queryParams.append('delivery_id', params.delivery_id.toString());
-                console.log('[DEBUG] 🏪 Adding delivery filter:', params.delivery_id);
-            }
-            
-            if (params.modified_from) queryParams.append('modified_from', params.modified_from);
-            
-            // Build final URL
-            const url = `/api/orders?${queryParams.toString()}`;
-            
-            // Log request details
-            console.log('[DEBUG] 🔍 Request details:', {
-                url,
-                headers: {
-                    accept: 'application/json',
-                    authorization: 'Bearer [REDACTED]',
-                    contentType: 'application/json'
-                },
-                params: Object.fromEntries(queryParams.entries())
-            });
-            
-            const response = await this.get(url, null, { signal });
-            
-            if (!response || !response.data) {
-                console.error('[ERROR] ❌ Invalid API response:', response);
-                throw new Error('Invalid API response structure');
-            }
-
-            if (!Array.isArray(response.data)) {
-                console.error('[ERROR] ❌ API response data is not an array:', response.data);
-                throw new Error('Invalid API response data format');
-            }
-
-            console.log('[DEBUG] ✅ Response received:', {
-                ordersCount: response.data.length,
-                metadata: response.__metadata
+            // Add parameters with validation
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    if (Array.isArray(value)) {
+                        queryParams.append(key, value.join(','));
+                    } else if (value !== 'ALL') {
+                        queryParams.append(key, value.toString());
+                    }
+                }
             });
 
-            return {
-                success: true,
-                orders: response.data,
-                metadata: response.__metadata || {},
-                timestamp: Date.now()
-            };
+            const url = `${this.baseUrl}${endpoint}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+            this.log(LogLevel.DEBUG, '🔗 Built API URL', { url });
+            return url;
         } catch (error) {
-            console.error('[ERROR] ❌ API request failed:', error);
-            throw new Error(`Failed to fetch orders: ${error.message}`);
+            this._errorHandler.handle(error, ErrorType.API, ErrorSeverity.MEDIUM, {
+                context: 'Failed to build API URL',
+                endpoint,
+                params
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Fetch orders with retry mechanism
+     */
+    async fetchOrders(params = {}, signal) {
+        let attempts = 0;
+        const maxRetries = 3;
+
+        while (attempts < maxRetries) {
+            try {
+                const url = this.buildApiUrl(API_ENDPOINTS.ORDERS, params);
+                const response = await this.request(url, { signal });
+
+                if (!response || typeof response !== 'object') {
+                    throw new Error('Invalid API response structure');
+                }
+
+                if (!Array.isArray(response.data)) {
+                    throw new Error('Invalid API response data format');
+                }
+
+                this.log(LogLevel.SUCCESS, '✅ Orders fetched successfully', {
+                    count: response.data.length
+                });
+
+                return response.data;
+            } catch (error) {
+                attempts++;
+                this._errorHandler.handle(error, ErrorType.API, ErrorSeverity.HIGH, {
+                    context: 'Failed to fetch orders',
+                    attempt: attempts,
+                    maxRetries
+                });
+
+                if (attempts >= maxRetries) {
+                    throw new Error(`Failed to fetch orders after ${maxRetries} attempts: ${error.message}`);
+                }
+
+                // Exponential backoff
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
+            }
         }
     }
 

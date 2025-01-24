@@ -1,5 +1,8 @@
 import { checkApiStatus, checkAuthStatus, checkOrdersStatus, checkCacheStatus } from './api.js';
 import { DataManager } from './dataManager.js';
+import { i18n } from './i18n.js';
+import { LanguageManager } from './languageManager.js';
+import { EventManager } from './eventManager.js';
 
 // Inicjalizacja DataManager dla testów
 const dataManager = new DataManager();
@@ -10,7 +13,7 @@ async function processOrders(orders) {
 }
 
 // Test runner service for integration tests
-class TestRunner {
+export class TestRunner {
     constructor() {
         console.log('🧪 Initializing TestRunner');
         this.results = {
@@ -20,7 +23,50 @@ class TestRunner {
             total: 0,
             current: 0
         };
-        this.tests = [];
+        this.tests = {
+            i18n: [
+                {
+                    name: 'getCurrentLanguage',
+                    description: 'Get Current Language',
+                    run: async () => {
+                        const currentLang = i18n.getCurrentLanguage();
+                        if (!currentLang) {
+                            throw new Error('Current language is not set');
+                        }
+                        return true;
+                    }
+                },
+                {
+                    name: 'languageSync',
+                    description: 'Language Synchronization',
+                    run: async () => {
+                        const eventManager = new EventManager();
+                        const languageManager = new LanguageManager(eventManager);
+                        await languageManager.handleLanguageChange({ lang: 'english' });
+                        
+                        const i18nLang = i18n.getCurrentLanguage();
+                        const managerLang = languageManager.getCurrentLanguage();
+                        
+                        if (i18nLang !== managerLang || i18nLang !== 'english') {
+                            throw new Error('Language synchronization failed');
+                        }
+                        return true;
+                    }
+                },
+                {
+                    name: 'translationLoading',
+                    description: 'Translation Loading',
+                    run: async () => {
+                        await i18n.waitForTranslations();
+                        if (!i18n.translationsLoaded || Object.keys(i18n.translations).length === 0) {
+                            throw new Error('Translations not loaded properly');
+                        }
+                        return true;
+                    }
+                }
+            ],
+            // ... existing tests ...
+        };
         this.running = false;
 
         // Rejestruj testy podczas inicjalizacji

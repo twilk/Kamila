@@ -1,201 +1,226 @@
-import { BaseManager } from './BaseManager.js';
+import { LogLevel } from './LogLevel.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { BaseManager } from './BaseManager.js';
 
-export class ErrorHandler extends BaseManager {
-    static MAX_ERROR_HISTORY = 100;
-    static ERROR_RETENTION_TIME = 3600000; // 1 hour
-
-    constructor(metricsManager) {
-        super();
-        this.metricsManager = metricsManager;
-        this.errorHistory = [];
-        this.recoveryStrategies = new Map();
-        this.errorSubscribers = new Set();
-        this.lastCleanup = Date.now();
-    }
-
-    async onInitialize() {
-        // Register default recovery strategies
-        this.registerDefaultStrategies();
+/**
+ * Core error handling functionality
+ */
+class ErrorHandlerCore {
+    #errors = [];
+    #maxErrors = 100;
+    #name = 'ErrorHandler';
+    
+    /**
+     * Log a message with the specified level
+     * @param {LogLevel} level Log level
+     * @param {string} message Message to log
+     * @param {Object} [data] Additional data to log
+     */
+    log(level, message, data = {}) {
+        const timestamp = new Date().toISOString();
+        const prefix = `[${this.#name}]`;
         
-        // Start cleanup timer
-        this.cleanupTimer = setInterval(() => this.cleanup(), 300000); // 5 minutes
-        
-        // Initial cleanup
-        await this.cleanup();
-
-            return true;
-    }
-
-    registerDefaultStrategies() {
-        // Network errors
-        this.registerRecoveryStrategy(ErrorType.NETWORK, async (error, context) => {
-            const retryCount = context.retryCount || 0;
-            if (retryCount < 3) {
-                await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount)));
-                return {
-                    shouldRetry: true,
-                    context: { ...context, retryCount: retryCount + 1 }
-                };
-            }
-            return { shouldRetry: false };
-        });
-
-        // Cache errors
-        this.registerRecoveryStrategy(ErrorType.CACHE, async (error, context) => {
-            await this.emit('cacheClear', { reason: 'error_recovery' });
-            return { shouldRetry: true };
-        });
-
-        // Initialization errors
-        this.registerRecoveryStrategy(ErrorType.INITIALIZATION, async (error, context) => {
-            const manager = context.manager;
-            if (manager && typeof manager.dispose === 'function') {
-                await manager.dispose();
-                return { shouldRetry: true };
-            }
-            return { shouldRetry: false };
-        });
-    }
-
-    registerRecoveryStrategy(errorType, strategy) {
-        this.recoveryStrategies.set(errorType, strategy);
-    }
-
-    async handleError(error, type = ErrorType.UNKNOWN, severity = ErrorSeverity.ERROR, context = {}) {
-        try {
-            // Create error record
-            const errorRecord = {
-                timestamp: Date.now(),
-                error: error instanceof Error ? error : new Error(error),
-                type,
-                severity,
-                context,
-                handled: false,
-                recovery: null
-            };
-
-            // Track in metrics
-            this.metricsManager?.trackError(errorRecord);
-
-            // Add to history
-            this.errorHistory.unshift(errorRecord);
-
-            // Try recovery if strategy exists
-            const recoveryStrategy = this.recoveryStrategies.get(type);
-            if (recoveryStrategy) {
-                try {
-                    const recovery = await recoveryStrategy(error, context);
-                    errorRecord.recovery = recovery;
-                    errorRecord.handled = recovery.shouldRetry;
-                } catch (recoveryError) {
-                    errorRecord.recovery = { error: recoveryError };
-                }
-            }
-
-            // Notify subscribers
-            this.notifySubscribers(errorRecord);
-
-            // Log error
-            this.logError(errorRecord);
-
-            return errorRecord;
-        } catch (handlerError) {
-            console.error('Error in ErrorHandler:', handlerError);
-            return {
-                timestamp: Date.now(),
-                error: handlerError,
-                type: ErrorType.SYSTEM,
-                severity: ErrorSeverity.CRITICAL,
-                context: { originalError: error },
-                handled: false
-            };
-        }
-    }
-
-    subscribe(callback) {
-        this.errorSubscribers.add(callback);
-        return () => this.errorSubscribers.delete(callback);
-    }
-
-    notifySubscribers(errorRecord) {
-        this.errorSubscribers.forEach(subscriber => {
-            try {
-                subscriber(errorRecord);
-            } catch (e) {
-                console.error('Error in error subscriber:', e);
-            }
-        });
-    }
-
-    logError(errorRecord) {
-        const { timestamp, error, type, severity, context, handled } = errorRecord;
-        const logMessage = `[${new Date(timestamp).toISOString()}] ${severity}: ${error.message}`;
-        
-        switch (severity) {
-            case ErrorSeverity.CRITICAL:
-                console.error(logMessage, { type, context, error });
+        let logFn;
+        switch (level) {
+            case LogLevel.ERROR:
+                logFn = console.error;
                 break;
-            case ErrorSeverity.ERROR:
-                console.error(logMessage, { type, context });
+            case LogLevel.WARN:
+                logFn = console.warn;
                 break;
-            case ErrorSeverity.WARNING:
-                console.warn(logMessage, { type, context });
+            case LogLevel.INFO:
+                logFn = console.info;
+                break;
+            case LogLevel.DEBUG:
+                logFn = console.debug;
+                break;
+            case LogLevel.SUCCESS:
+                logFn = console.info;
                 break;
             default:
-                console.log(logMessage, { type, context });
+                logFn = console.log;
         }
-
-        if (handled) {
-            console.info(`Error handled with recovery strategy for type: ${type}`);
-        }
-    }
-
-    async cleanup() {
-        const now = Date.now();
         
-        // Remove old errors
-        this.errorHistory = this.errorHistory.filter(record => 
-            now - record.timestamp < ErrorHandler.ERROR_RETENTION_TIME
+        if (Object.keys(data).length > 0) {
+            logFn(`${timestamp} ${prefix} ${message}`, data);
+        } else {
+            logFn(`${timestamp} ${prefix} ${message}`);
+        }
+    }
+
+    /**
+     * Handle an error
+     * @param {Error} error Error object
+     * @param {ErrorType} type Error type
+     * @param {ErrorSeverity} severity Error severity
+     * @param {Object} [context] Additional context
+     */
+    handle(error, type = ErrorType.RUNTIME, severity = ErrorSeverity.HIGH, context = {}) {
+        const errorInfo = {
+            timestamp: new Date().toISOString(),
+            type,
+            severity,
+            message: error.message,
+            stack: error.stack,
+            context: {
+                ...context,
+                url: window.location.href,
+                userAgent: navigator.userAgent
+            }
+        };
+
+        // Log error with appropriate level based on severity
+        const logLevel = severity === ErrorSeverity.HIGH ? LogLevel.ERROR :
+                        severity === ErrorSeverity.MEDIUM ? LogLevel.WARN :
+                        LogLevel.INFO;
+
+        this.log(logLevel, `[${type}] ${errorInfo.message}`, {
+            error,
+            context: errorInfo.context,
+            severity
+        });
+        
+        // Store error
+        this.#errors.unshift(errorInfo);
+        
+        // Trim errors array if needed
+        if (this.#errors.length > this.#maxErrors) {
+            this.#errors = this.#errors.slice(0, this.#maxErrors);
+        }
+        
+        // Store in chrome.storage for persistence
+        chrome.storage.local.set({
+            errors: this.#errors
+        }).catch(storageError => {
+            console.error('Failed to store error:', storageError);
+        });
+        
+        // Emit error event with type and severity
+        const errorEvent = new CustomEvent('app:error', {
+            detail: errorInfo
+        });
+        window.dispatchEvent(errorEvent);
+    }
+    
+    /**
+     * Get all stored errors
+     * @returns {Array} Array of errors
+     */
+    getErrors() {
+        return [...this.#errors];
+    }
+    
+    /**
+     * Clear all stored errors
+     */
+    clearErrors() {
+        this.#errors = [];
+        chrome.storage.local.remove('errors');
+    }
+
+    /**
+     * Handle global error
+     * @param {string} message Error message
+     * @param {string} source Source of error
+     * @param {number} lineno Line number
+     * @param {number} colno Column number
+     * @param {Error} error Error object
+     */
+    handleGlobalError(message, source, lineno, colno, error) {
+        this.handle(
+            error || new Error(message),
+            ErrorType.RUNTIME,
+            ErrorSeverity.HIGH,
+            { source, lineno, colno }
         );
-
-        // Trim to max size
-        if (this.errorHistory.length > ErrorHandler.MAX_ERROR_HISTORY) {
-            this.errorHistory = this.errorHistory.slice(0, ErrorHandler.MAX_ERROR_HISTORY);
-        }
-
-        this.lastCleanup = now;
     }
 
-    getErrorHistory(options = {}) {
-        let filtered = [...this.errorHistory];
+    /**
+     * Handle unhandled promise rejection
+     * @param {PromiseRejectionEvent} event Rejection event
+     */
+    handleUnhandledRejection(event) {
+        this.handle(
+            event.reason,
+            ErrorType.RUNTIME,
+            ErrorSeverity.HIGH,
+            { source: 'unhandledrejection' }
+        );
+    }
+}
 
-        if (options.type) {
-            filtered = filtered.filter(record => record.type === options.type);
+/**
+ * Error handler manager that integrates with the manager system
+ */
+export class ErrorHandler extends BaseManager {
+    static #instance = null;
+    #core;
+    
+    constructor() {
+        super('ErrorHandler');
+        if (ErrorHandler.#instance) {
+            return ErrorHandler.#instance;
         }
-        if (options.severity) {
-            filtered = filtered.filter(record => record.severity === options.severity);
+        ErrorHandler.#instance = this;
+        this.#core = new ErrorHandlerCore();
+    }
+    
+    /**
+     * Get singleton instance
+     * @returns {ErrorHandler}
+     */
+    static getInstance() {
+        if (!ErrorHandler.#instance) {
+            ErrorHandler.#instance = new ErrorHandler();
         }
-        if (options.handled !== undefined) {
-            filtered = filtered.filter(record => record.handled === options.handled);
-        }
-        if (options.since) {
-            filtered = filtered.filter(record => record.timestamp >= options.since);
-        }
-
-        return filtered;
+        return ErrorHandler.#instance;
     }
 
+    /**
+     * Initialize error handler
+     * @returns {Promise<boolean>}
+     */
+    async onInitialize() {
+        try {
+            this.log(LogLevel.INFO, '🔄 Initializing error handler...');
+            // Initialize error storage and listeners
+            window.onerror = this.#core.handleGlobalError.bind(this.#core);
+            window.onunhandledrejection = this.#core.handleUnhandledRejection.bind(this.#core);
+            
+            this.log(LogLevel.SUCCESS, '✅ Initialized successfully');
+            return true;
+        } catch (error) {
+            console.error('[ErrorHandler] Failed to initialize:', error);
+            return false;
+        }
+    }
+
+    // Delegate core error handling methods
+    handle(...args) { return this.#core.handle(...args); }
+    getErrors() { return this.#core.getErrors(); }
+    clearErrors() { return this.#core.clearErrors(); }
+    log(...args) { return this.#core.log(...args); }
+
+    /**
+     * Dispose error handler
+     */
     async dispose() {
-        if (this.cleanupTimer) {
-            clearInterval(this.cleanupTimer);
-            this.cleanupTimer = null;
+        try {
+            this.log(LogLevel.INFO, '🔄 Disposing error handler...');
+            
+            // Remove event listeners
+            window.onerror = null;
+            window.onunhandledrejection = null;
+            
+            // Clear errors
+            this.#core.clearErrors();
+            
+            await super.dispose();
+            this.log(LogLevel.SUCCESS, '✅ Disposed successfully');
+        } catch (error) {
+            console.error('[ErrorHandler] Failed to dispose:', error);
         }
-
-        this.errorHistory = [];
-        this.recoveryStrategies.clear();
-        this.errorSubscribers.clear();
-
-        await super.dispose();
     }
-} 
+}
+
+export const errorHandler = ErrorHandler.getInstance(); 

@@ -1,0 +1,668 @@
+/* Loading Container */
+.loading-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 1;
+    transition: opacity 0.3s ease-in-out;
+}
+
+.loading-container.fade-out {
+    opacity: 0;
+}
+
+/* Truck Loader */
+.loaderTruck {
+    width: 200px;
+    height: 120px;
+    margin-bottom: 40px;
+}
+
+.truckWrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.truckBody {
+    position: relative;
+    animation: truckDrive 2s infinite linear;
+}
+
+.truckTires {
+    position: absolute;
+    bottom: 0;
+    display: flex;
+    justify-content: space-between;
+    width: 80%;
+    left: 10%;
+}
+
+.tiresvg {
+    width: 30px;
+    height: 30px;
+    animation: tireSpin 1s infinite linear;
+}
+
+.road {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 4px;
+    background: var(--text-primary);
+    opacity: 0.3;
+}
+
+/* Progress Bar */
+.loaderBar {
+    width: 80%;
+    max-width: 400px;
+    height: 4px;
+    background: var(--bg-secondary);
+    border-radius: 2px;
+    margin: 20px 0;
+    position: relative;
+    overflow: hidden;
+}
+
+.load {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 0;
+    background: var(--primary);
+    transition: width 0.3s ease-in-out;
+}
+
+.loader-text {
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+/* Progress Steps */
+.progress-steps {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: 10px;
+}
+
+.step {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    transition: background-color 0.3s ease-in-out;
+}
+
+.step.completed {
+    background: var(--primary);
+}
+
+/* Words Loader */
+.loaderWords {
+    margin-top: 20px;
+    height: 20px;
+    text-align: center;
+}
+
+.words {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.word {
+    display: inline-block;
+    opacity: 0;
+    animation: wordFade 0.5s ease-in-out forwards;
+}
+
+/* Loading Time */
+.loading-time {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+/* Animations */
+@keyframes truckDrive {
+    0% {
+        transform: translateX(-5%);
+    }
+    50% {
+        transform: translateX(5%);
+    }
+    100% {
+        transform: translateX(-5%);
+    }
+}
+
+@keyframes tireSpin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes wordFade {
+    0% {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Truck Body */
+.loaderTruck .truckBody {
+    width: 130px;
+    height: fit-content;
+    margin-bottom: 6px;
+    animation: motion 1s linear infinite;
+}
+
+/* Truck SVG */
+.loaderTruck .truckBody svg {
+    min-width: 130px;
+    height: auto;
+}
+
+.loaderTruck .truckBody path,
+.loaderTruck .truckBody rect {
+    transition: fill var(--transition-normal), stroke var(--transition-normal);
+}
+
+/* Dark Mode Colors */
+[data-theme='dark'] .loaderTruck .truckBody path[stroke="#282828"],
+[data-theme='dark'] .loaderTruck .truckBody rect[stroke="#282828"] {
+    stroke: #1a1a1a;
+}
+
+[data-theme='dark'] .loaderTruck .truckBody path[fill="#F83D3D"] {
+    fill: #D63030;
+}
+
+[data-theme='dark'] .loaderTruck .truckBody rect[fill="#DFDFDF"] {
+    fill: #2a2a2a;
+}
+
+/* Truck Animation */
+@keyframes motion {
+    0% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(3px);
+    }
+    100% {
+        transform: translateY(0px);
+    }
+}
+
+/* Truck Tires */
+.loaderTruck .truckTires {
+    width: 130px;
+    height: fit-content;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0px 10px 0px 15px;
+    position: absolute;
+    bottom: 0;
+}
+
+.loaderTruck .truckTires svg {
+    width: 24px;
+    animation: wheelRotation 0.6s linear infinite;
+}
+
+@keyframes wheelRotation {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Road */
+.loaderTruck .road {
+    width: 100%;
+    height: 1.5px;
+    background-color: #282828;
+    position: relative;
+    bottom: 0;
+    align-self: flex-end;
+    border-radius: 3px;
+}
+
+[data-theme='dark'] .loaderTruck .road {
+    background-color: #1a1a1a;
+}
+
+.loaderTruck .road::before {
+    content: "";
+    position: absolute;
+    width: 20px;
+    height: 100%;
+    background-color: #282828;
+    right: -50%;
+    border-radius: 3px;
+    animation: roadAnimation 1.4s linear infinite;
+    border-left: 10px solid white;
+}
+
+.loaderTruck .road::after {
+    content: "";
+    position: absolute;
+    width: 10px;
+    height: 100%;
+    background-color: #282828;
+    right: -65%;
+    border-radius: 3px;
+    animation: roadAnimation 1.4s linear infinite;
+    border-left: 4px solid white;
+}
+
+[data-theme='dark'] .loaderTruck .road::before,
+[data-theme='dark'] .loaderTruck .road::after {
+    background-color: #1a1a1a;
+    border-left-color: #2a2a2a;
+}
+
+@keyframes roadAnimation {
+    0% {
+        transform: translateX(0px);
+    }
+    100% {
+        transform: translateX(-350px);
+    }
+}
+
+/* Lamp Post */
+.loaderTruck .lampPost {
+    position: absolute;
+    bottom: 0;
+    right: -90%;
+    height: 90px;
+    animation: roadAnimation 1.4s linear infinite;
+    fill: #282828;
+    transition: fill var(--transition-normal);
+}
+
+[data-theme='dark'] .loaderTruck .lampPost {
+    fill: #1a1a1a;
+}
+
+/* Bottom Loader */
+.loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.status-text {
+    margin: 10px 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+    text-align: center;
+    transition: color var(--transition-normal);
+}
+
+/* Progress Bar Styles */
+.loaderBar {
+    width: 80%;
+    height: 50px;
+    position: relative;
+    margin: 20px auto;
+}
+
+.loaderBar .loader-text {
+    position: absolute;
+    top: 0;
+    padding: 0;
+    margin: 0;
+    color: var(--text-primary);
+    animation: text_713 3.5s ease both infinite;
+    font-size: .8rem;
+    letter-spacing: 1px;
+    transition: color var(--transition-normal);
+}
+
+.loaderBar .load {
+    background-color: var(--wine-primary);
+    border-radius: 50px;
+    display: block;
+    height: 16px;
+    width: 16px;
+    bottom: 0;
+    position: absolute;
+    transform: translateX(64px);
+    animation: loading_713 3.5s ease both infinite;
+    transition: background-color var(--transition-normal);
+}
+
+[data-theme='dark'] .loaderBar .load {
+    background-color: var(--wine-accent);
+}
+
+.loaderBar .load::before {
+    position: absolute;
+    content: "";
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg-secondary);
+    border-radius: inherit;
+    animation: loading2_713 3.5s ease both infinite;
+    transition: background-color var(--transition-normal);
+}
+
+/* Progress Bar Animations */
+@keyframes text_713 {
+    0% {
+        letter-spacing: 1px;
+        transform: translateX(0px);
+    }
+
+    40% {
+        letter-spacing: 2px;
+        transform: translateX(26px);
+    }
+
+    80% {
+        letter-spacing: 1px;
+        transform: translateX(32px);
+    }
+
+    90% {
+        letter-spacing: 2px;
+        transform: translateX(0px);
+    }
+
+    100% {
+        letter-spacing: 1px;
+        transform: translateX(0px);
+    }
+}
+
+@keyframes loading_713 {
+    0% {
+        width: 16px;
+        transform: translateX(0px);
+    }
+
+    40% {
+        width: 100%;
+        transform: translateX(0px);
+    }
+
+    80% {
+        width: 16px;
+        transform: translateX(64px);
+    }
+
+    90% {
+        width: 100%;
+        transform: translateX(0px);
+    }
+
+    100% {
+        width: 16px;
+        transform: translateX(0px);
+    }
+}
+
+@keyframes loading2_713 {
+    0% {
+        transform: translateX(0px);
+        width: 16px;
+    }
+
+    40% {
+        transform: translateX(0%);
+        width: 80%;
+    }
+
+    80% {
+        width: 100%;
+        transform: translateX(0px);
+    }
+
+    90% {
+        width: 80%;
+        transform: translateX(15px);
+    }
+
+    100% {
+        transform: translateX(0px);
+        width: 16px;
+    }
+}
+
+/* Progress Steps */
+.progress-steps {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    margin-top: 10px;
+    position: absolute;
+    bottom: -20px;
+    width: 100%;
+}
+
+.progress-steps .step {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #D1C2FF;
+    transition: background-color 0.3s ease;
+}
+
+.progress-steps .step.completed {
+    background: #9A79FF;
+}
+
+/* Loading Time */
+.loading-time {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-size: 13px;
+    background: rgba(0,0,0,0.05);
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: #666;
+}
+
+/* Dark Mode Support */
+[data-theme="dark"] .loaderBar .loader-text,
+[data-theme="dark"] .loading-time {
+    color: #D1C2FF;
+}
+
+[data-theme="dark"] .progress-steps .step {
+    background: #4a4a4a;
+}
+
+[data-theme="dark"] .progress-steps .step.completed {
+    background: #9A79FF;
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+    .loaderBar .load,
+    .loaderBar .loader-text {
+        animation: none;
+    }
+    
+    .loaderBar .load {
+        width: 100%;
+        transform: none;
+    }
+}
+
+/* Words Loader Styles */
+.words {
+    overflow: hidden;
+    height: 40px;
+}
+
+.word {
+    display: block;
+    height: 100%;
+    padding-left: 6px;
+    color: #299fff;
+    animation: cycle-words 5s infinite;
+}
+
+@keyframes cycle-words {
+    10% {
+        transform: translateY(-105%);
+    }
+    25% {
+        transform: translateY(-100%);
+    }
+    35% {
+        transform: translateY(-205%);
+    }
+    50% {
+        transform: translateY(-200%);
+    }
+    60% {
+        transform: translateY(-305%);
+    }
+    75% {
+        transform: translateY(-300%);
+    }
+    85% {
+        transform: translateY(-405%);
+    }
+    100% {
+        transform: translateY(-400%);
+    }
+}
+
+.d-none {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+}
+
+.initialization-text {
+    font-size: 14px;
+    color: var(--text-primary);
+    margin-top: 20px;
+    text-align: center;
+    font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+    transition: color var(--transition-normal);
+}
+
+.manager-name {
+    display: inline-block;
+    background: #f0f0f0;
+    padding: 4px 8px;
+    border-radius: 4px;
+    margin: 0 4px;
+    font-weight: 500;
+    color: #2c3e50;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+@media (prefers-color-scheme: dark) {
+    .initialization-text {
+        color: #e0e0e0;
+    }
+    
+    .manager-name {
+        background: rgba(255,255,255,0.1);
+        color: #fff;
+    }
+    
+    .loading-time {
+        background: rgba(255,255,255,0.1);
+        color: #e0e0e0;
+    }
+}
+
+/* Progress Bar */
+.progress-container {
+    width: 200px;
+    margin: 20px auto;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 5px;
+    border-radius: 6px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+    position: relative;
+}
+
+.progress-bar {
+    height: 4px;
+    background: linear-gradient(90deg, #4CAF50 0%, #8BC34A 100%);
+    border-radius: 4px;
+    transition: width 0.4s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        rgba(255,255,255,0) 0%,
+        rgba(255,255,255,0.4) 50%,
+        rgba(255,255,255,0) 100%
+    );
+    animation: shimmer 1.5s infinite;
+}
+
+.progress-label {
+    position: absolute;
+    right: -40px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    color: #666;
+    font-weight: 500;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+/* Dark mode support */
+[data-theme="dark"] .progress-container {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .progress-label {
+    color: #999;
+} 

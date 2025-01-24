@@ -374,3 +374,220 @@ Thanks to integrations with various systems (Notion, Selly, Google Sheets, PC-Ma
 
 </details>
 
+## Project Overview
+- **Name**: Kamila
+- **Type**: Chrome Extension
+- **Purpose**: Intelligent Assistant for DARWINA.PL
+- **Stack**: Chrome Extension (100%) mainly vanilla JavaScript (~70%) with elements of Bootstrap for UI (~20%) and simple usage API/storage (~10%)
+
+## Core Development Rules
+
+### 1. Code Safety
+- NEVER modify working code without testing
+- ALWAYS create backups before major changes
+- MUST use version control for all changes
+- MUST follow TypeScript strict mode
+
+### 2. File Structure
+```
+src/
+├── components/     # React components
+├── services/      # Core business logic
+│   ├── core/      # Core services (Loading, Error, Event)
+│   ├── ui/        # UI services
+│   ├── data/      # Data services
+│   ├── features/  # Feature services
+│   └── api/       # API services
+├── utils/         # Helper functions
+├── config/        # Configuration files
+├── types/         # TypeScript types
+└── locales/       # Translations
+```
+
+### 3. Loading Screen Implementation
+```javascript
+// Core initialization sequence
+1. LoadingManager (first, independent)
+2. ErrorHandler (second)
+3. EventManager (third)
+4. Other managers (with progress tracking)
+
+// Loading screen features
+- Animated truck with rotating wheels
+- Progress bar with step indicators
+- Loading time display
+- Animated step text
+- Error-resistant display
+- Dark theme support
+```
+
+### 4. State Management
+```typescript
+interface AppState {
+  type: string;
+  data: unknown;
+  timestamp: number;
+  error?: Error;
+}
+```
+
+### 5. Error Handling
+```typescript
+// Core error handling sequence
+try {
+    await manager.initialize();
+} catch (error) {
+    // 1. Log to console
+    console.error('[ERROR]', error);
+    
+    // 2. Show on loading screen
+    loadingManager.updateProgress({ 
+        message: `Błąd: ${error.message}` 
+    });
+    
+    // 3. Handle with ErrorHandler if available
+    errorHandler?.handle(error, ErrorType.INITIALIZATION);
+}
+```
+
+### 6. UI Guidelines
+- Use Bootstrap 5.x components
+- Follow theme variables
+- Support dark/light modes
+- Maintain responsive design
+
+### 7. Security Rules
+- NO credentials in code
+- USE proper CSP headers
+- IMPLEMENT safe storage
+- FOLLOW extension best practices
+
+## Development Workflow
+
+### 1. Before Changes
+- Review existing code
+- Check dependencies
+- Plan change scope
+- Create backup if needed
+
+### 2. During Implementation
+- Follow TypeScript standards
+- Use proper error handling
+- Maintain existing patterns
+- Document complex logic
+
+### 3. After Changes
+- Run test suite
+- Verify all themes
+- Check performance
+- Update docs
+
+## Testing Requirements
+
+### 1. Unit Tests
+- Cover all utilities
+- Test edge cases
+- Mock external services
+- Verify type safety
+
+### 2. Integration Tests
+- Test API flows
+- Verify state changes
+- Check error handling
+- Validate caching
+
+### 3. UI Tests
+- Test components
+- Verify themes
+- Check responsiveness
+- Validate accessibility
+
+## Error Prevention
+
+### 1. Type Safety
+```typescript
+// Use strict types
+type StrictNull<T> = T | null;
+type StrictUndefined<T> = T | undefined;
+type StrictNullable<T> = StrictNull<StrictUndefined<T>>;
+```
+
+### 2. Error Handling
+```typescript
+interface AppError extends Error {
+  code: string;
+  context?: unknown;
+  timestamp: number;
+}
+```
+
+### 3. Validation
+- Validate all inputs
+- Check null/undefined
+- Verify types
+- Handle edge cases
+
+## Version Control
+
+### 1. Commit Messages
+- fix: Bug fixes
+- feat: New features
+- docs: Documentation
+- style: Formatting
+- refactor: Restructuring
+- test: Testing
+- chore: Maintenance
+
+### 2. Branch Names
+- feature/task-name
+- bugfix/task-name
+- hotfix/task-name
+
+## Documentation
+
+### 1. Code Comments
+- Document complex logic
+- Explain business rules
+- Note edge cases
+- Mark TODOs
+
+### 2. API Documentation
+- Document endpoints
+- Specify types
+- Note rate limits
+- List dependencies
+
+## Performance Guidelines
+
+### 1. Optimization
+- Minimize API calls
+- Use proper caching
+- Optimize renders
+- Lazy load components
+
+### 2. Monitoring
+- Track API usage
+- Monitor errors
+- Check performance
+- Log important events
+
+## Maintenance
+
+### 1. Regular Tasks
+- Update dependencies
+- Clean unused code
+- Review error logs
+- Update documentation
+
+### 2. Code Review
+- Check type safety
+- Verify error handling
+- Review performance
+- Validate patterns
+
+## Final Notes
+- Quality over speed
+- Maintain simplicity
+- Follow best practices
+- Document changes
+

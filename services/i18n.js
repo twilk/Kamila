@@ -13,6 +13,10 @@ export const i18n = {
     translationsLoaded: false,
     loadingPromise: null,
 
+    getCurrentLanguage() {
+        return this.currentLanguage;
+    },
+
     async waitForTranslations() {
         if (this.translationsLoaded) return;
         if (this.loadingPromise) {
