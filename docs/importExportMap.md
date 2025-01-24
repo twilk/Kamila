@@ -146,7 +146,9 @@
 
 ```mermaid
 graph TD
-    subgraph Core
+    %% Core Services
+    subgraph Core["Core Services"]
+        direction TB
         LogLevel --> BaseLogger
         LogLevel --> BaseManager
         LogLevel --> ConnectionManager
@@ -195,15 +197,30 @@ graph TD
         UserManager --> UIManager
     end
 
-    subgraph API
+    %% API Services
+    subgraph API["API Services"]
+        direction TB
         OrderService --> DataManager
         API --> DataManager
         API --> StoreManager
     end
 
-    subgraph Config
+    %% Configuration
+    subgraph Config["Configuration"]
+        direction TB
         API_CONFIG --> ConnectionManager
         API_CONFIG --> OrderService
         API_CONFIG --> API
     end
+
+    %% Style definitions
+    classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px;
+    classDef core fill:#e1f3d8,stroke:#333,stroke-width:1px;
+    classDef api fill:#d8e5f3,stroke:#333,stroke-width:1px;
+    classDef config fill:#f3e4d8,stroke:#333,stroke-width:1px;
+
+    %% Apply styles
+    class Core core;
+    class API api;
+    class Config config;
 ``` 
