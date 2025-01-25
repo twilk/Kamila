@@ -26,6 +26,7 @@ export { ThemeManager, themeManager } from './core/ThemeManager.js';
 export { SettingsManager, settingsManager } from './core/SettingsManager.js';
 export { MessageManager, messageManager } from './core/MessageManager.js';
 export { StoreManager, storeManager } from './core/StoreManager.js';
+export { InterfaceManager, interfaceManager } from './core/InterfaceManager.js';
 
 // API services
 export { OrderService } from './api/OrderService.js';

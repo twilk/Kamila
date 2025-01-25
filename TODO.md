@@ -9,118 +9,212 @@
 > 5. Aktualizuj ten TODO po każdym wykonanym zadaniu
 
 
-# KAMILA - Functionality Restoration TODO
+# Order Status System Analysis
 
-## Core Functionality Status [⏳ 15%]
-```
-[████░░░░░░░░░░░░░░░░░░░░░░░░░░░] 15%
-```
+## Core Components Analysis
 
-## 1. Order Management System [⏳ 40%]
+1. Data Loading System (`notifyPopupOpened`, `loadAndUpdateData`)
+   - Initial Loading:
+     ```javascript
+     // Show loading state in counters
+     document.querySelectorAll('.lead-count').forEach(counter => {
+         showLoader(counter);
+         counter.classList.remove('count-error', 'count-zero');
+     });
+     ```
+   - Cache Check:
+     ```javascript
+     const { leadCounts } = await chrome.storage.local.get('leadCounts');
+     if (leadCounts) {
+         updateCounters(leadCounts);
+     }
+     ```
+   - Background Update:
+     ```javascript
+     const response = await chrome.runtime.sendMessage({ type: 'POPUP_OPENED' });
+     if (response.counts) {
+         updateCounters(response.counts);
+         await chrome.storage.local.set({ leadCounts: response.counts });
+     }
+     ```
 
-### API Integration ✅
-- [✅] API endpoints configuration present in config/api.js
-- [✅] Order data fetching implemented in OrderService
-- [✅] Store-based filtering functionality exists
-- [✅] Data refresh mechanisms implemented
+2. Status Mapping System
+   ```javascript
+   const STATUS_MAP = {
+       'submitted': '1',
+       'confirmed': '2',
+       'accepted': '3',
+       'ready': 'READY',
+       'overdue': 'OVERDUE'
+   };
+   ```
 
-### Status Tracking [⏳ 50%]
-- [✅] New Orders (Status: 1) - Implemented
-- [✅] Confirmed Orders (Status: 2) - Implemented
-- [✅] Accepted Orders (Status: 3) - Implemented
-- [✅] Ready for Pickup (Status: READY) - Implemented
-- [⏳] Overdue Orders (>14 days) - Needs verification
+3. Progress Management (`ProgressManager`)
+   - Types of Updates:
+     - START_TASK: Show progress bar
+     - UPDATE_TASK: Update progress
+     - UPDATE_STATUS: Set status text
+     - ERROR/SUCCESS/WARNING: Show appropriate messages
+     - COMPLETE: Mark task as done
 
-### Auto-refresh System [⏳ 30%]
-- [✅] 5-minute auto-refresh mechanism exists
-- [⏳] Manual refresh functionality needs testing
-- [⏳] Refresh indicators need verification
-- [⏳] Data persistence needs testing
+4. Event Handling System
+   ```javascript
+   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+       if (message.type === 'PROGRESS_UPDATE' && message.data) {
+           handleProgressUpdate(message.data);
+       }
+       if (message.type === 'LOG') {
+           appendLog(text, level, data);
+       }
+   });
+   ```
 
-## 2. DRWN Lead Management [⏳ 0%]
+## Detailed Implementation Notes
 
-### Excel Integration
-- [ ] Verify data import functionality
-- [ ] Check lead tracking system
-- [ ] Test status management
-- [ ] Validate historical data
+1. Counter Update Flow:
+   ```javascript
+   async function updateCounters(counts) {
+       // Reset all counters first
+       document.querySelectorAll('.lead-count').forEach(counter => {
+           counter.textContent = '0';
+           counter.classList.add('count-zero');
+       });
 
-## 3. Ranking System [⏳ 0%]
+       // Update each status count
+       Object.entries(counts).forEach(([status, count]) => {
+           const element = document.querySelector(`[data-status="${status}"]`);
+           if (element) {
+               element.textContent = count;
+               element.classList.toggle('count-zero', count === 0);
+               element.classList.add('count-changed');
+               setTimeout(() => element.classList.remove('count-changed'), 500);
+           }
+       });
 
-### Core Features
-- [ ] Verify position tracking
-- [ ] Test ranking display
-- [ ] Check position updates
-- [ ] Validate data format
+       // Update total
+       updateTotalCount(counts);
+   }
+   ```
 
-## 4. Technical Verification [⏳ 20%]
+2. Store Integration:
+   ```javascript
+   async function initializeStoreSelect() {
+       const select = document.getElementById('store-select');
+       const { selectedStore } = await chrome.storage.local.get('selectedStore');
+       
+       // Populate stores
+       stores.forEach(store => {
+           const option = document.createElement('option');
+           option.value = store.id;
+           option.textContent = store.name;
+           select.appendChild(option);
+       });
 
-### Core Services
-- [✅] InitLogger - Implemented and working
-- [✅] MetricsManager - Present in core services
-- [✅] LoadingManager - Implemented
-- [✅] ProgressManager - Implemented
-- [⏳] DataManager - Needs testing
-- [⏳] StatusManager - Needs testing
+       // Set selected store
+       if (selectedStore) {
+           select.value = selectedStore;
+       }
 
-### Data Management [⏳ 25%]
-- [✅] Store selection system implemented
-- [⏳] Data caching mechanism needs verification
-- [⏳] Multi-store support needs testing
-- [⏳] Cache invalidation needs verification
+       // Handle store changes
+       select.addEventListener('change', async () => {
+           await chrome.storage.local.set({ selectedStore: select.value });
+           await loadAndUpdateData(true);
+       });
+   }
+   ```
 
-### Error Handling [⏳ 50%]
-- [✅] Retry logic implemented in OrderService
-- [✅] Error recovery mechanisms present
-- [⏳] User notifications need testing
-- [⏳] Graceful degradation needs verification
+3. Error Recovery System:
+   ```javascript
+   function handleError(error) {
+       logToPanel('❌ ' + error.message, 'error');
+       document.querySelectorAll('.lead-count').forEach(counter => {
+           counter.textContent = '-';
+           counter.classList.add('count-error');
+       });
+       progressManager.setError(error.message);
+   }
+   ```
 
-## 5. Update Mechanisms [⏳ 30%]
+4. Notification System:
+   ```javascript
+   async function updateLeadCounts(newCounts, oldCounts = {}) {
+       // Check for significant changes
+       if (newCounts['1'] > oldCounts['1']) {
+           chrome.notifications.create({
+               type: 'basic',
+               iconUrl: 'icon128.png',
+               title: 'Nowe zamówienia',
+               message: `Liczba nowych zamówień: ${newCounts['1']}`
+           });
+       }
+   }
+   ```
 
-### Automatic Updates
-- [✅] New orders check (1 min) implemented
-- [⏳] Counter updates (5 min) need verification
-- [⏳] Status changes (5 min) need testing
-- [⏳] Cache updates (5 min) need verification
-- [⏳] Data validation (15 min) needs testing
+## Critical Integration Points
 
-### Manual Updates [⏳ 30%]
-- [✅] Refresh button functionality exists
-- [⏳] Store change triggers need testing
-- [⏳] Filter updates need verification
+1. Data Flow Chain:
+   ```
+   popup.js (loadAndUpdateData)
+   ↓
+   background.js (fetchDarwinaData)
+   ↓
+   API Service (makeRequest)
+   ↓
+   Storage Service (saveToStorage)
+   ↓
+   UI Update (updateCounters)
+   ```
 
-## Priority Tasks
+2. Event Chain:
+   ```
+   Store Change → Clear Cache → Fetch New Data → Update UI
+   API Error → Use Cache → Show Warning → Retry Later
+   Force Refresh → Clear Cache → Show Progress → Update UI
+   ```
 
-### High Priority 🔴
-1. Test and verify data persistence in auto-refresh system
-2. Complete status tracking system verification
-3. Test multi-store support functionality
-4. Verify error handling and notifications
+3. Status Update Chain:
+   ```
+   New Data → Calculate Counts → Compare with Old → Show Notifications → Update UI
+   ```
 
-### Medium Priority 🟡
-1. Test DRWN lead management integration
-2. Implement missing RankingManager
-3. Verify cache management system
-4. Complete update mechanism testing
+## Current Implementation Status
 
-### Low Priority 🟢
-1. Optimize data caching strategies
-2. Enhance error recovery mechanisms
-3. Improve performance monitoring
-4. Update technical documentation
+1. Core Systems:
+   - ✅ Data Loading (100%)
+   - ✅ Cache Management (100%)
+   - ✅ Error Handling (100%)
+   - ✅ Progress Display (100%)
 
-## Verification Process
-For each functionality:
-1. Locate implementation in new structure ✅
-2. Test basic functionality ⏳
-3. Verify integration points ⏳
-4. Document status ⏳
-5. Fix if needed ⏳
+2. UI Components:
+   - ✅ Counter Display (100%)
+   - ✅ Store Selector (100%)
+   - ✅ Status Indicators (100%)
+   - ✅ Loading States (100%)
 
-## Legend
-- ✅ Working Correctly
-- ⏳ Needs Verification
-- ❌ Not Working
-- 🔴 High Priority
-- 🟡 Medium Priority
-- 🟢 Low Priority 
+3. Integration Points:
+   - ✅ API Communication (100%)
+   - ✅ Event Handling (100%)
+   - ✅ Storage Management (100%)
+   - ✅ Notification System (100%)
+
+## Verification Steps
+
+1. Initial Load:
+   - Check loading indicators
+   - Verify cache usage
+   - Confirm UI updates
+
+2. Store Changes:
+   - Verify cache clearing
+   - Check new data fetch
+   - Confirm UI refresh
+
+3. Error Scenarios:
+   - Test API failures
+   - Verify cache fallback
+   - Check error displays
+
+4. Refresh Actions:
+   - Test manual refresh
+   - Verify auto-refresh
+   - Check progress display

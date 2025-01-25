@@ -143,54 +143,68 @@ export class OrderService extends BaseManager {
     /**
      * Fetch orders from API
      * @param {Object} [store] Optional store filter
+     * @param {Object} [options] Additional options like modified_from
      * @returns {Promise<Array>} List of orders
      */
-    async fetchOrders(store = null) {
+    async fetchOrders(store = null, options = {}) {
         try {
             const params = new URLSearchParams();
             
-            // Add store filter if provided
+            // Add store filter if provided and not ALL
             if (store && store.id !== 'ALL' && store.deliveryId) {
                 params.append('delivery_id', store.deliveryId);
+                this.log(LogLevel.DEBUG, '🏪 Using store filter:', {
+                    store_id: store.id,
+                    delivery_id: store.deliveryId
+                });
             }
 
-            // Add status filter for relevant statuses
-            params.append('status_id', [1,2,3,5].join(','));
+            // Add status filter using STATUS_CODES
+            const statusIds = [
+                API_CONFIG.DARWINA.STATUS_CODES.SUBMITTED,
+                API_CONFIG.DARWINA.STATUS_CODES.CONFIRMED,
+                API_CONFIG.DARWINA.STATUS_CODES.ACCEPTED,
+                API_CONFIG.DARWINA.STATUS_CODES.READY
+            ].join(',');
+            params.append('status_id', statusIds);
             
-            // Add pagination and time filters
+            // Add pagination
             params.append('limit', '50');
             params.append('page', '1');
             
-            // Add modified_from filter (24h ago)
-            const modifiedFrom = new Date(Date.now() - 24 * 60 * 60 * 1000);
-            params.append('modified_from', modifiedFrom.toISOString());
+            // Add modified_from filter only if it's not the first request
+            // and we have valid cached data
+            if (!options.isFirstRequest && options.modified_from) {
+                const modifiedFrom = new Date(options.modified_from);
+                params.append('modified_from', modifiedFrom.toISOString());
+                this.log(LogLevel.DEBUG, '🕒 Using modified_from filter:', {
+                    modified_from: modifiedFrom.toISOString()
+                });
+            }
             
             const queryString = params.toString();
             const fullEndpoint = `${API_CONFIG.DARWINA.BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}${queryString ? `?${queryString}` : ''}`;
             
             // Log request details
-            console.log('[DEBUG] 🔍 API Request:', {
+            this.log(LogLevel.DEBUG, '🔍 API Request:', {
                 url: fullEndpoint,
                 method: 'GET',
-                headers: {
-                    'Authorization': 'Bearer [REDACTED]',
-                    'Content-Type': 'application/json'
-                },
-                store: store?.id || 'ALL',
-                params: Object.fromEntries(params)
+                params: Object.fromEntries(params),
+                options,
+                store: store?.id || 'ALL'
             });
 
             const response = await this.#makeRequest(fullEndpoint);
-            
-            // Log response status
-            console.log('[DEBUG] 📥 API Response:', {
-                status: response.status,
-                statusText: response.statusText,
-                headers: Object.fromEntries(response.headers)
-            });
-
             const data = await response.json();
             
+            // Log raw response data for debugging
+            this.log(LogLevel.DEBUG, '📥 Raw API Response:', JSON.stringify({
+                metadata: data.__metadata,
+                firstRecord: data.data?.[0],
+                totalRecords: data.data?.length,
+                allRecords: data.data
+            }, null, 2));
+
             // Check if we have more pages
             const totalPages = data.__metadata?.page_count || 1;
             let allOrders = [...(data.data || [])];
@@ -200,7 +214,7 @@ export class OrderService extends BaseManager {
                 params.set('page', page.toString());
                 const nextEndpoint = `${API_CONFIG.DARWINA.BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}?${params.toString()}`;
                 
-                console.log(`[DEBUG] 📑 Fetching page ${page}/${totalPages}`);
+                this.log(LogLevel.DEBUG, `📑 Fetching page ${page}/${totalPages}`);
                 const nextResponse = await this.#makeRequest(nextEndpoint);
                 const nextData = await nextResponse.json();
                 
@@ -208,29 +222,97 @@ export class OrderService extends BaseManager {
                     allOrders = [...allOrders, ...nextData.data];
                 }
             }
-            
-            // Log response data summary
-            console.log('[DEBUG] 📊 Response Data:', {
-                totalOrders: allOrders.length,
-                firstOrderId: allOrders[0]?.id,
-                lastOrderId: allOrders[allOrders.length - 1]?.id,
-                store: store?.id || 'ALL',
-                pages: totalPages
+
+            // Transform orders before processing
+            const transformedOrders = this.transformOrdersData(allOrders);
+            this.log(LogLevel.DEBUG, '📦 Transformed orders:', JSON.stringify(transformedOrders, null, 2));
+
+            // Calculate counts using STATUS_CODES
+            const twoWeeksAgo = new Date(Date.now() - 14 * 86400000);
+            const counts = {
+                submitted: 0,
+                confirmed: 0,
+                accepted: 0,
+                ready: 0,
+                overdue: 0
+            };
+
+            transformedOrders.forEach(order => {
+                const readyDate = new Date(order.ready_date || order.modified_at);
+                
+                switch (order.status_id) {
+                    case API_CONFIG.DARWINA.STATUS_CODES.SUBMITTED:
+                        counts.submitted++;
+                        break;
+                    case API_CONFIG.DARWINA.STATUS_CODES.CONFIRMED:
+                        counts.confirmed++;
+                        break;
+                    case API_CONFIG.DARWINA.STATUS_CODES.ACCEPTED:
+                        counts.accepted++;
+                        break;
+                    case API_CONFIG.DARWINA.STATUS_CODES.READY:
+                        if (readyDate < twoWeeksAgo) {
+                            counts.overdue++;
+                        } else {
+                            counts.ready++;
+                        }
+                        break;
+                }
             });
 
-            this.log(LogLevel.SUCCESS, '✅ Orders fetched successfully', {
-                count: allOrders.length,
-                store: store?.id || 'ALL'
-            });
-            
-            return allOrders;
+            this.log(LogLevel.DEBUG, '📊 Final counts:', counts);
+            return counts;
         } catch (error) {
-            this.handleError(error, ErrorType.API, ErrorSeverity.MEDIUM, {
+            this.handleError(error, ErrorType.API, ErrorSeverity.HIGH, {
                 method: 'fetchOrders',
-                store: store?.id || 'ALL'
+                store,
+                options
             });
             throw error;
         }
+    }
+    
+    /**
+     * Transform raw orders data into a consistent format
+     * @private
+     * @param {Array} orders Raw orders from API
+     * @returns {Array} Transformed orders
+     */
+    transformOrdersData(orders) {
+        return orders.map(order => ({
+            id: order.order_id,
+            status_id: order.status_id,
+            status_name: this.getStatusName(order.status_id),
+            customer: {
+                name: order.customer_name,
+                email: order.customer_email
+            },
+            items: order.items?.map(item => ({
+                name: item.product_name,
+                quantity: item.quantity,
+                price: item.price
+            })) || [],
+            total: order.total_amount,
+            created_at: order.created_at,
+            modified_at: order.modified_at,
+            ready_date: order.ready_date
+        }));
+    }
+    
+    /**
+     * Get status name from status ID
+     * @private
+     * @param {number} statusId Status ID
+     * @returns {string} Status name
+     */
+    getStatusName(statusId) {
+        const statusMap = {
+            [API_CONFIG.DARWINA.STATUS_CODES.SUBMITTED]: 'submitted',
+            [API_CONFIG.DARWINA.STATUS_CODES.CONFIRMED]: 'confirmed',
+            [API_CONFIG.DARWINA.STATUS_CODES.ACCEPTED]: 'accepted',
+            [API_CONFIG.DARWINA.STATUS_CODES.READY]: 'ready'
+        };
+        return statusMap[statusId] || 'unknown';
     }
     
     /**

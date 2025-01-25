@@ -1,8 +1,28 @@
 import { BaseManager } from './BaseManager.js';
-import { ErrorHandler } from './ErrorHandler.js';
+import { ErrorHandler, errorHandler } from './ErrorHandler.js';
 import { LogLevel } from './LogLevel.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
-import { LoadingManager } from './LoadingManager.js';
+import { LoadingManager, loadingManager } from './LoadingManager.js';
+import { eventManager } from './EventManager.js';
+import { connectionManager } from './ConnectionManager.js';
+import { cacheManager } from './CacheManager.js';
+import { uiManager } from './UIManager.js';
+import { debugManager } from './DebugManager.js';
+import { themeManager } from './ThemeManager.js';
+import { progressManager } from './ProgressManager.js';
+import { menuManager } from './MenuManager.js';
+import { languageManager } from './LanguageManager.js';
+import { storeManager } from './StoreManager.js';
+import { interfaceManager } from './InterfaceManager.js';
+import { dataManager } from './DataManager.js';
+import { statusManager } from './StatusManager.js';
+import { userManager } from './UserManager.js';
+import { updateManager } from './UpdateManager.js';
+import { refreshManager } from './RefreshManager.js';
+import { rankingManager } from './RankingManager.js';
+import { settingsManager } from './SettingsManager.js';
+import { messageManager } from './MessageManager.js';
+import { notificationManager } from './NotificationManager.js';
 import { managers, registerManagers } from './managers.js';
 
 /**
@@ -27,11 +47,6 @@ export class InitializationManager extends BaseManager {
         }
         super('InitializationManager');
         
-        // Only log if ErrorHandler exists, don't create new instance
-        if (BaseManager._errorHandler) {
-            this.log(LogLevel.INFO, '📝 Using existing ErrorHandler instance');
-        }
-        
         this.#managers = managers;
         InitializationManager._instance = this;
     }
@@ -51,117 +66,92 @@ export class InitializationManager extends BaseManager {
      * Initialize the initialization manager
      * @returns {Promise<boolean>}
      */
-    async initialize(context = 'startup') {
-        try {
-            // Check if already initialized
-            if (this.isInitialized()) {
-                this.log(LogLevel.WARNING, '⚠️ InitializationManager already initialized');
-                return true;
-            }
-
-            this.#startTime = performance.now();
-            this.log(LogLevel.INFO, `🚀 Starting initialization (${context})`);
-
-            // Initialize base functionality
-            await super.initialize();
-
-            // Get LoadingManager instance
-            this.#loadingManager = LoadingManager.getInstance();
-
-            // Get initialization order
-            const initializationOrder = registerManagers();
-
-            // Log registered managers
-            this.log(LogLevel.INFO, '\n📝 Registered Managers:', this.#managers);
-
-            // Create initialization plan
-            const plan = initializationOrder.map(name => ({
-                name,
-                type: this.#managers[name]?.constructor.name || 'Unknown',
-                status: this.#managers[name]?.isInitialized() ? 'Initialized' : 'Pending',
-                dependencies: Array.from(this.#managers[name]?._dependencies || [])
-                    .map(dep => dep.name)
-                    .join(', ') || 'none'
-            }));
-
-            this.log(LogLevel.INFO, '\n📋 Initialization Plan:');
-            console.table(plan);
-
-            // Start loading screen with total number of managers
-            await this.#loadingManager.startLoading(initializationOrder.length);
-
-            // Track failed managers
-            const failedManagers = [];
-
-            // Initialize managers in order
-            for (const [index, name] of initializationOrder.entries()) {
-                const manager = this.#managers[name];
-                
-                if (!manager) {
-                    failedManagers.push({ name, error: 'Manager not found' });
-                    this.#loadingManager.updateProgress(index + 1, `${name} (failed)`);
-                    continue;
-                }
-
-                if (manager.isInitialized()) {
-                    this.log(LogLevel.INFO, `⏭️ Skipping ${name} - already initialized`);
-                    this.#loadingManager.updateProgress(index + 1, `${name} (skipped)`);
-                    continue;
-                }
-
-                try {
-                    this.log(LogLevel.INFO, `🚀 Initializing ${name}`);
-                    const success = await manager.initialize({ context });
-                    
-                    if (!success) {
-                        failedManagers.push({ name, error: 'Initialization returned false' });
-                        this.#loadingManager.updateProgress(index + 1, `${name} (failed)`);
-                    } else {
-                        this.#loadingManager.updateProgress(index + 1, name);
-                    }
-                } catch (error) {
-                    failedManagers.push({ name, error: error.message });
-                    this.#loadingManager.updateProgress(index + 1, `${name} (error)`);
-                }
-            }
-
-            // Check for failed managers
-            if (failedManagers.length > 0) {
-                const duration = (performance.now() - this.#startTime).toFixed(2);
-                const error = new Error(`Failed to initialize ${failedManagers.length} managers`);
-                this.log(LogLevel.ERROR, `❌ Initialization failed after ${duration}ms:`, failedManagers);
-                this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                    context,
-                    duration,
-                    failedManagers
-                });
-
-                // Finish loading with error
-                await this.#loadingManager.finishLoading(true);
-                return false;
-            }
-
-            // Log success
-            const duration = (performance.now() - this.#startTime).toFixed(2);
-            this.log(LogLevel.SUCCESS, `✅ Initialization completed in ${duration}ms`);
-
-            // Finish loading successfully
-            await this.#loadingManager.finishLoading();
+    async initialize(mode = 'startup') {
+        if (this.initialized) {
             return true;
+        }
 
-        } catch (error) {
-            const duration = (performance.now() - this.#startTime).toFixed(2);
-            this.log(LogLevel.ERROR, `❌ Critical initialization error after ${duration}ms:`, error);
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.CRITICAL, {
-                context,
-                duration
-            });
+        try {
+            console.log('[DEBUG] 🚀 Starting initialization...');
 
-            // Ensure loading screen is hidden even on error
-            if (this.#loadingManager) {
-                await this.#loadingManager.finishLoading(true);
+            // Ensure ErrorHandler is initialized first
+            if (!errorHandler.isInitialized()) {
+                await errorHandler.initialize();
             }
 
+            // Initialize LoadingManager first and start loading screen
+            if (!loadingManager.isInitialized()) {
+                await loadingManager.initialize();
+            }
+            await loadingManager.startLoading(22); // Total number of managers to initialize
+
+            // Initialize core managers in correct order
+            const managers = [
+                { instance: errorHandler, name: 'Error Handler' },
+                { instance: eventManager, name: 'Event Manager' },
+                { instance: loadingManager, name: 'Loading Manager' },
+                { instance: connectionManager, name: 'Connection Manager' },
+                { instance: cacheManager, name: 'Cache Manager' },
+                { instance: uiManager, name: 'UI Manager' },
+                { instance: debugManager, name: 'Debug Manager' },
+                { instance: themeManager, name: 'Theme Manager' },
+                { instance: progressManager, name: 'Progress Manager' },
+                { instance: menuManager, name: 'Menu Manager' },
+                { instance: languageManager, name: 'Language Manager' },
+                { instance: storeManager, name: 'Store Manager' },
+                { instance: interfaceManager, name: 'Interface Manager' },
+                { instance: dataManager, name: 'Data Manager' },
+                { instance: statusManager, name: 'Status Manager' },
+                { instance: userManager, name: 'User Manager' },
+                { instance: updateManager, name: 'Update Manager' },
+                { instance: refreshManager, name: 'Refresh Manager' },
+                { instance: rankingManager, name: 'Ranking Manager' },
+                { instance: settingsManager, name: 'Settings Manager' },
+                { instance: messageManager, name: 'Message Manager' },
+                { instance: notificationManager, name: 'Notification Manager' }
+            ];
+
+            // Initialize each manager
+            for (const [index, { instance, name }] of managers.entries()) {
+                try {
+                    if (!instance) {
+                        console.warn(`[WARNING] ⚠️ Manager ${name} not found`);
+                        await loadingManager.updateProgress(index + 1, `${name} (not found)`);
+                        continue;
+                    }
+                    
+                    if (instance.isInitialized()) {
+                        console.log(`[DEBUG] ⏭️ ${name} already initialized`);
+                        await loadingManager.updateProgress(index + 1, `${name} (skipped)`);
+                        continue;
+                    }
+
+                    console.log(`[DEBUG] 🚀 Initializing ${name}...`);
+                    await instance.initialize();
+                    await loadingManager.updateProgress(index + 1, name);
+                    console.log(`[DEBUG] ✅ ${name} initialized`);
+                } catch (error) {
+                    console.error(`[ERROR] ❌ Failed to initialize ${name}:`, error);
+                    await loadingManager.updateProgress(index + 1, `${name} (error)`);
+                    throw error;
+                }
+            }
+
+            this.initialized = true;
+            console.log('[DEBUG] ✅ All managers initialized successfully');
+            
+            // Finish loading screen
+            await loadingManager.finishLoading();
+            return true;
+        } catch (error) {
+            console.error('[ERROR] ❌ Initialization failed:', error);
+            if (errorHandler.isInitialized()) {
+                errorHandler.handleError(error);
+            }
+            // Ensure loading screen is hidden even on error
+            if (loadingManager.isInitialized()) {
+                await loadingManager.finishLoading(true);
+            }
             return false;
         }
     }
@@ -188,7 +178,9 @@ export class InitializationManager extends BaseManager {
             await super.dispose();
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH);
+            if (errorHandler.isInitialized()) {
+                errorHandler.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH);
+            }
             return false;
         }
     }

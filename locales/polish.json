@@ -24,7 +24,19 @@
     "serviceStatus": "Status usług",
     "apiSelly": "API Selly",
     "authorization": "Autoryzacja",
-    "orders": "Zamówienia",
+    "orders": {
+        "title": "Zamówienia",
+        "refresh": "Odśwież",
+        "loading": "Ładowanie zamówień...",
+        "noOrders": "Brak zamówień",
+        "error": "Błąd podczas ładowania zamówień",
+        "counters": {
+            "title": "Liczniki zamówień",
+            "updating": "Aktualizacja liczników...",
+            "updated": "Liczniki zaktualizowane",
+            "error": "Błąd aktualizacji liczników"
+        }
+    },
     "cache": "Cache",
     "workingProperly": "Działa poprawnie",
     "hasIssues": "Występują problemy",
@@ -69,11 +81,7 @@
         "dataFetchGenericError": "Błąd podczas pobierania danych",
         "storeDataRefreshed": "🔄 Odświeżono dane dla sklepu: {store}",
         "refreshError": "❌ Błąd odświeżania danych",
-        "updateStarted": "🔄 Rozpoczynam aktualizację...",
-        "updateDownloaded": "✅ Aktualizacja pobrana",
-        "updateError": "❌ Błąd aktualizacji: {message}",
-        "updateComplete": "✅ Aktualizacja zakończona",
-        "storeChanged": "Zmieniono sklep z {from} na {to}"
+        "storeChanged": "Zmieniono sklep na: {store}"
     },
     "clear": "Wyczyść",
     "leadDetails": "Szczegóły zamówień",
@@ -205,10 +213,24 @@
         "tooltipAbout": "Informacje o aplikacji",
         "tooltipStatus": "Status usług",
         "tooltipDrwn": "Zarządzanie DRWN",
-        "tooltipRanking": "Ranking sprzedaży"
+        "tooltipRanking": "Ranking sprzedaży",
+        "languagePolish": "Zmień język na polski",
+        "languageEnglish": "Change language to English",
+        "languageUkrainian": "Змінити мову на українську",
+        "leadStatuses": {
+            "submitted": "Zamówienia złożone przez klientów",
+            "confirmed": "Zamówienia potwierdzone przez klientów",
+            "accepted": "Zamówienia przyjęte do realizacji",
+            "ready": "Zamówienia gotowe do odbioru",
+            "overdue": "Zamówienia zaległe (ponad 2 tygodnie)"
+        }
     },
     "testPanel": "Panel testowy",
     "runAllTests": "Uruchom wszystkie testy",
     "drwn": "DRWN",
-    "ranking": "Ranking"
+    "ranking": "Ranking",
+    "errors": {
+        "unknown": "Wystąpił nieznany błąd",
+        "fetch": "Błąd podczas pobierania danych"
+    }
 }

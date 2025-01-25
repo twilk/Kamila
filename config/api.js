@@ -6,7 +6,7 @@ export const API_CONFIG = {
         BASE_URL: 'https://darwina.pl',
         ENDPOINTS: {
             ORDERS: '/api/orders',
-            AUTH: '/api/auth/access_token'
+            AUTH: '/auth/access_token'
         },
         STATUS_CODES: {
             SUBMITTED: '1',
