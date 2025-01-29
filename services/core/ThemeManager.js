@@ -13,6 +13,17 @@ export class ThemeManager extends BaseManager {
     #useSystemTheme = true;
     #eventManager = null;
 
+    constructor() {
+        if (ThemeManager.#instance) {
+            return ThemeManager.#instance;
+        }
+        super('ThemeManager');
+        ThemeManager.#instance = this;
+        
+        // Add EventManager dependency
+        this.addDependency(EventManager.getInstance());
+    }
+
     static getInstance() {
         if (!ThemeManager.#instance) {
             ThemeManager.#instance = new ThemeManager();
@@ -20,24 +31,12 @@ export class ThemeManager extends BaseManager {
         return ThemeManager.#instance;
     }
 
-    constructor() {
-        super('ThemeManager');
-        if (ThemeManager.#instance) {
-            throw new Error('Use ThemeManager.getInstance()');
-        }
-        
-        // Add EventManager dependency
-        this.addDependency(EventManager.getInstance());
-    }
-
     /**
      * Initialize theme manager
      * @returns {Promise<boolean>}
      */
-    async initialize() {
+    async onInitialize() {
         try {
-            await super.initialize();
-            
             // Get EventManager instance
             this.#eventManager = EventManager.getInstance();
 

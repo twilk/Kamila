@@ -1,4 +1,5 @@
 import { BaseManager } from './BaseManager.js';
+import { LogLevel } from './LogLevel.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 
 /**
@@ -7,13 +8,25 @@ import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
  */
 export class UserManager extends BaseManager {
     static _instance = null;
+    #setupEventListeners = () => {
+        try {
+            // Add event listener for logout button
+            const logoutButton = document.getElementById('logout-button');
+            if (logoutButton) {
+                logoutButton.addEventListener('click', () => this.logout());
+            }
 
-    static getInstance() {
-        if (!UserManager._instance) {
-            UserManager._instance = new UserManager();
+            // Add event listener for user menu
+            const userMenu = document.getElementById('user-menu');
+            if (userMenu) {
+                userMenu.addEventListener('click', () => this._toggleUserMenu());
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: '_setupEventListeners'
+            });
         }
-        return UserManager._instance;
-    }
+    };
 
     constructor() {
         super('UserManager');
@@ -24,15 +37,27 @@ export class UserManager extends BaseManager {
         this._isAuthenticated = false;
     }
 
+    static getInstance() {
+        if (!UserManager._instance) {
+            UserManager._instance = new UserManager();
+        }
+        return UserManager._instance;
+    }
+
     /**
      * Initialize user manager
      * @returns {Promise<boolean>}
      */
-    async initialize() {
+    async onInitialize() {
         try {
-            await super.initialize();
+            // Load user preferences
             await this._loadUserData();
             this._updateUI();
+
+            // Set up event listeners
+            this.#setupEventListeners();
+
+            this.log(LogLevel.SUCCESS, '👤 User manager initialized');
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {

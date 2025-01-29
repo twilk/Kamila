@@ -1,6 +1,6 @@
 import { ErrorHandler } from './ErrorHandler.js';
 import { EventManager } from './EventManager.js';
-import { LoadingManager } from './LoadingManager.js';
+import { InitialLoadingManager } from './LoadingManager.js';
 import { ConnectionManager } from './ConnectionManager.js';
 import { CacheManager } from './CacheManager.js';
 import { UIManager } from './UIManager.js';
@@ -10,7 +10,7 @@ import { DebugManager } from './DebugManager.js';
 import { DataManager } from './DataManager.js';
 import { StoreManager } from './StoreManager.js';
 import { StatusManager } from './StatusManager.js';
-import { ProgressManager } from './ProgressManager.js';
+import { OperationProgressManager } from './ProgressManager.js';
 import { NotificationManager } from './NotificationManager.js';
 import { VolumeManager } from './VolumeManager.js';
 import { UpdateManager } from './UpdateManager.js';
@@ -45,7 +45,7 @@ export function registerManagers() {
     // Core Layer (No UI dependencies)
     dependencyValidator.addDependencies('ErrorHandler', []);
     dependencyValidator.addDependencies('EventManager', ['ErrorHandler']);
-    dependencyValidator.addDependencies('LoadingManager', ['ErrorHandler', 'EventManager']);
+    dependencyValidator.addDependencies('InitialLoadingManager', ['ErrorHandler', 'EventManager']);
     dependencyValidator.addDependencies('ConnectionManager', ['ErrorHandler', 'EventManager']);
     dependencyValidator.addDependencies('CacheManager', ['ErrorHandler', 'ConnectionManager']);
 
@@ -59,7 +59,7 @@ export function registerManagers() {
     
     // UI Features Layer (After data layer)
     dependencyValidator.addDependencies('MenuManager', ['ErrorHandler', 'UIManager', 'ThemeManager', 'EventManager']);
-    dependencyValidator.addDependencies('ProgressManager', ['ErrorHandler', 'UIManager']);
+    dependencyValidator.addDependencies('OperationProgressManager', ['ErrorHandler', 'UIManager']);
     dependencyValidator.addDependencies('NotificationManager', ['ErrorHandler', 'UIManager', 'EventManager']);
     dependencyValidator.addDependencies('DebugManager', ['ErrorHandler', 'UIManager', 'EventManager']);
     dependencyValidator.addDependencies('VolumeManager', ['ErrorHandler', 'UIManager']);
@@ -85,7 +85,7 @@ export function registerManagers() {
 // Create instances in optimal order (following the dependency order)
 export const errorHandler = ErrorHandler.getInstance();
 export const eventManager = EventManager.getInstance();
-export const loadingManager = LoadingManager.getInstance();
+export const loadingManager = InitialLoadingManager.getInstance();
 export const connectionManager = ConnectionManager.getInstance();
 export const cacheManager = CacheManager.getInstance();
 export const uiManager = UIManager.getInstance();
@@ -93,7 +93,7 @@ export const themeManager = ThemeManager.getInstance();
 export const dataManager = DataManager.getInstance();
 export const storeManager = StoreManager.getInstance();
 export const menuManager = MenuManager.getInstance();
-export const progressManager = ProgressManager.getInstance();
+export const progressManager = OperationProgressManager.getInstance();
 export const notificationManager = NotificationManager.getInstance();
 export const debugManager = DebugManager.getInstance();
 export const volumeManager = VolumeManager.getInstance();
@@ -109,13 +109,13 @@ export const statusManager = StatusManager.getInstance();
 const managerInstances = {
     ErrorHandler: errorHandler,
     EventManager: eventManager,
-    LoadingManager: loadingManager,
+    InitialLoadingManager: loadingManager,
     ConnectionManager: connectionManager,
     CacheManager: cacheManager,
     UIManager: uiManager,
     ThemeManager: themeManager,
     MenuManager: menuManager,
-    ProgressManager: progressManager,
+    OperationProgressManager: progressManager,
     NotificationManager: notificationManager,
     DebugManager: debugManager,
     VolumeManager: volumeManager,

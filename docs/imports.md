@@ -18,7 +18,7 @@
 - [x] EventManager
 - [x] ConnectionManager
 - [x] UIManager
-- [x] LoadingManager
+- [x] InitialLoadingManager
 - [x] InitializationManager
 - [x] DataManager
 - [x] StatusManager
@@ -62,7 +62,7 @@ graph TD
     EventManager --> BaseManager
     ConnectionManager --> BaseManager
     UIManager --> BaseManager
-    LoadingManager --> BaseManager
+    InitialLoadingManager --> BaseManager
     InitializationManager --> BaseManager
     DataManager --> BaseManager
     StatusManager --> BaseManager
@@ -106,7 +106,7 @@ graph TD
 1. Core Services
    - ErrorHandler (no dependencies)
    - EventManager (depends on ErrorHandler)
-   - LoadingManager (depends on ErrorHandler, EventManager)
+   - InitialLoadingManager (depends on ErrorHandler, EventManager)
    - ConnectionManager (depends on ErrorHandler, EventManager)
    - CacheManager (depends on ErrorHandler, ConnectionManager)
    - UIManager (depends on ErrorHandler, EventManager)
@@ -146,7 +146,7 @@ import { LogLevel } from './LogLevel.js'
 // InitializationManager.js
 import { BaseManager } from './BaseManager.js'
 import { ErrorHandler } from './ErrorHandler.js'
-import { LoadingManager } from './LoadingManager.js'
+import { InitialLoadingManager } from './LoadingManager.js'
 import { ManagerGroup } from './ManagerGroup.js'
 import { environment } from './environment.js'
 ```
@@ -180,11 +180,11 @@ import { ErrorType } from './core/ErrorTypes.js'
 
 ## Circular Dependencies 🔄
 
-### 1. UIManager <-> LoadingManager
+### 1. UIManager <-> InitialLoadingManager
 ```javascript
 // Solution: Event-based communication
 UIManager.showLoading() -> EventManager.emit('loading:show')
-LoadingManager.onLoadingShow() -> EventManager.on('loading:show')
+InitialLoadingManager.onLoadingShow() -> EventManager.on('loading:show')
 ```
 
 ### 2. DataManager <-> StatusManager
@@ -216,11 +216,11 @@ NotificationManager.formatMessage() -> MessageInterface.format()
 3. **Initialization Order**
    - ✅ Core Services (ErrorHandler, EventManager)
    - ✅ Base Services (CacheManager, ConnectionManager)
-   - ✅ UI Layer (UIManager, LoadingManager)
+   - ✅ UI Layer (UIManager, InitialLoadingManager)
    - ✅ Feature Layer (all feature managers)
    - ✅ API Layer (services and endpoints)
 
 4. **Circular Dependencies**
-   - ⚠️ Watch for UIManager <-> LoadingManager
+   - ⚠️ Watch for UIManager <-> InitialLoadingManager
    - ⚠️ Watch for DataManager <-> StatusManager
    - ⚠️ Watch for MessageManager <-> NotificationManager 

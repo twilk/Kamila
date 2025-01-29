@@ -261,6 +261,20 @@ export class StorageManager extends BaseManager {
             this.releaseLock(key);
         }
     }
+
+    /**
+     * Get all storage keys
+     * @returns {Promise<string[]>} List of all storage keys
+     */
+    async keys() {
+        try {
+            const allData = await chrome.storage.local.get(null);
+            return Object.keys(allData);
+        } catch (error) {
+            console.error('[ERROR] ❌ Error getting storage keys:', error);
+            return [];
+        }
+    }
 }
 
 // Export singleton instance

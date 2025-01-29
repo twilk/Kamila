@@ -10,9 +10,10 @@
         "notifications"
     ],
     "host_permissions": [
-        "https://*.darwina.pl/*",
-        "https://darwina.pl/*",
-        "https://darwina.weblucy.com/*",
+        // "https://*.darwina.pl/*",
+        "https://darwina.pl/api/*",
+        "https://api.darwina.pl/v1/*",
+        // "https://darwina.weblucy.com/*",
         "https://docs.google.com/*",
         "https://spreadsheets.google.com/*",
         "https://*.googleapis.com/*",
@@ -42,7 +43,7 @@
     },
     "content_scripts": [
         {
-            "matches": ["https://*.darwina.pl/*"],
+            "matches": ["https://darwina.pl/api/*"],
             "js": ["content_scripts/userDataCollector.js"],
             "css": ["style.css", "styles/loading.css"]
         }
@@ -55,9 +56,9 @@
             "locales/*"
         ],
         "matches": [
-            "https://darwina.pl/*",
-            "https://*.darwina.pl/*",
-            "https://darwina.weblucy.com/*"
+            // "https://darwina.pl/api/*",
+            "https://*.darwina.pl/*"
+            // "https://darwina.weblucy.com/*"
         ]
     }],
     "minimum_chrome_version": "88",

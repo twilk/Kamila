@@ -50,8 +50,8 @@ export class ConnectionManager extends BaseManager {
             
             // Get EventManager instance
             const eventManager = this.getDependency('EventManager');
-            if (!eventManager?.isInitialized()) {
-                throw new Error('EventManager must be initialized');
+            if (!eventManager?.isReady()) {
+                throw new Error('EventManager must be ready before ConnectionManager can initialize');
             }
 
             // In development mode, we can initialize without connection

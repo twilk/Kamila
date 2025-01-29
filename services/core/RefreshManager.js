@@ -39,9 +39,8 @@ export class RefreshManager extends BaseManager {
      * Initialize refresh manager
      * @returns {Promise<boolean>}
      */
-    async initialize() {
+    async onInitialize() {
         try {
-            await super.initialize();
             await this._loadSettings();
             this._setupEventListeners();
             this._applySettings();

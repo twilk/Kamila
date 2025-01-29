@@ -6,6 +6,7 @@ import { eventManager } from './EventManager.js';
 import { EventType } from './EventType.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { LogLevel } from './LogLevel.js';
+import { ThemeManager } from './ThemeManager.js';
 
 export class InterfaceManager extends BaseManager {
     static instance = null;
@@ -26,7 +27,7 @@ export class InterfaceManager extends BaseManager {
         return InterfaceManager.instance;
     }
 
-    async initialize() {
+    async onInitialize() {
         if (this.initialized) {
             return true;
         }
@@ -182,35 +183,31 @@ export class InterfaceManager extends BaseManager {
     }
 
     initializeThemeSwitcher() {
-        const lightTheme = document.getElementById('light-theme');
-        const darkTheme = document.getElementById('dark-theme');
+        const themeToggle = document.getElementById('theme-switch');
         
-        if (!lightTheme || !darkTheme) return;
+        if (!themeToggle) return;
 
-        const currentTheme = localStorage.getItem('theme') || 'light';
-        document.body.classList.toggle('dark-theme', currentTheme === 'dark');
+        // Use ThemeManager instead of direct class toggle
+        const themeManager = ThemeManager.getInstance();
+        const { theme: currentTheme } = themeManager.getThemeSettings();
         
-        if (currentTheme === 'dark') {
-            darkTheme.checked = true;
-        } else {
-            lightTheme.checked = true;
-        }
+        // Set initial state of toggle
+        themeToggle.checked = currentTheme === 'dark';
 
-        const handleThemeChange = (theme) => {
-            document.body.classList.toggle('dark-theme', theme === 'dark');
-            localStorage.setItem('theme', theme);
-            
-            // Emit theme change event
-            eventManager.emit(EventType.THEME_CHANGED, {
-                theme,
-                timestamp: new Date().toISOString()
-            });
-            
-            console.log('[DEBUG] 🎨 Theme changed to:', theme);
+        const handleThemeChange = async (event) => {
+            try {
+                const newTheme = event.target.checked ? 'dark' : 'light';
+                await themeManager.setTheme(newTheme);
+                this.log(LogLevel.DEBUG, '🎨 Theme changed', { theme: newTheme });
+            } catch (error) {
+                this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                    method: 'handleThemeChange',
+                    theme: event.target.checked ? 'dark' : 'light'
+                });
+            }
         };
 
-        lightTheme.addEventListener('change', () => handleThemeChange('light'));
-        darkTheme.addEventListener('change', () => handleThemeChange('dark'));
+        themeToggle.addEventListener('change', handleThemeChange);
     }
 
     initializeStatusButtons() {

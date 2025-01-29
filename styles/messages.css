@@ -163,7 +163,7 @@
 }
 
 /* Dark Theme Support */
-body.dark-theme .message {
+body[data-theme="dark"] .message {
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 

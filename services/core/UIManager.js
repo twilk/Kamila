@@ -1,14 +1,15 @@
-import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
-import { BaseManager } from './BaseManager.js';
+import { BaseManager, InitState } from './BaseManager.js';
 import { ErrorHandler } from './ErrorHandler.js';
 import { LogLevel } from './LogLevel.js';
+import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { ThemeManager } from './ThemeManager.js';
 
 /**
  * @extends {BaseManager}
  * Base class for UI-related managers
  */
 export class UIManager extends BaseManager {
-    static _instance = null;
+    static #instance = null;
     #tooltips = new Map();
     #modals = new Map();
     #eventListeners = new Map();
@@ -28,11 +29,11 @@ export class UIManager extends BaseManager {
      * @param {Array<UIManager>} [uiDependencies=[]] - UI manager dependencies
      */
     constructor(coreDependencies = [], uiDependencies = []) {
-        if (UIManager._instance) {
-            throw new Error('Use UIManager.getInstance()');
+        if (UIManager.#instance) {
+            return UIManager.#instance;
         }
         super('UIManager');
-        UIManager._instance = this;
+        UIManager.#instance = this;
         this._dependencies = new Set(coreDependencies);
         this._uiDependencies = uiDependencies;
         
@@ -48,10 +49,10 @@ export class UIManager extends BaseManager {
      * @returns {UIManager}
      */
     static getInstance() {
-        if (!UIManager._instance) {
-            UIManager._instance = new UIManager();
+        if (!UIManager.#instance) {
+            UIManager.#instance = new UIManager();
         }
-        return UIManager._instance;
+        return UIManager.#instance;
     }
 
     /**
@@ -92,65 +93,59 @@ export class UIManager extends BaseManager {
     }
 
     /**
+     * Wait for Bootstrap to be loaded
+     * @private
+     * @returns {Promise<void>}
+     */
+    async #waitForBootstrap() {
+        const maxAttempts = 10;
+        const delayMs = 500;
+        let attempts = 0;
+
+        while (typeof bootstrap === 'undefined' && attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            attempts++;
+            this.log(LogLevel.DEBUG, `Waiting for Bootstrap (attempt ${attempts}/${maxAttempts})`);
+        }
+
+        if (typeof bootstrap === 'undefined') {
+            throw new Error('Bootstrap failed to load after multiple attempts');
+        }
+    }
+
+    /**
      * Initialize UI manager and its dependencies
      * @returns {Promise<boolean>}
      */
-    async initialize() {
+    async onInitialize() {
         try {
             this.log(LogLevel.INFO, 'Starting UI manager initialization');
 
             // Ensure error handler is initialized
             this.#errorHandler = ErrorHandler.getInstance();
             
-            // Initialize base and dependencies
-            await super.initialize();
-
+            // Wait for Bootstrap to be loaded
+            await this.#waitForBootstrap();
+            
             // Initialize UI components
-            await this.#initializeComponents();
+            await this.#initializeTooltips();
+            await this.#initializeModals();
+            await this.#initializeEventListeners();
 
-            this.log(LogLevel.SUCCESS, 'UI manager initialized', {
-                tooltipsCount: this.#tooltips.size,
-                modalsCount: this.#modals.size,
-                listenersCount: this.#eventListeners.size
-            });
+            // Check if all components are initialized
+            const allInitialized = this.#tooltipsInitialized && 
+                                 this.#modalsInitialized && 
+                                 this.#listenersInitialized;
+                                 
+            if (!allInitialized) {
+                throw new Error('Not all UI components were initialized');
+            }
 
+            this.log(LogLevel.SUCCESS, '🎨 UI manager initialized');
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
                 method: 'initialize'
-            });
-            return false;
-        }
-    }
-
-    /**
-     * Initialize all UI components
-     * @private
-     */
-    async #initializeComponents() {
-        try {
-            // Initialize tooltips
-            this.log(LogLevel.INFO, 'Initializing tooltips');
-            await this.#initializeTooltips();
-            this.#tooltipsInitialized = true;
-
-            // Initialize modals
-            this.log(LogLevel.INFO, 'Initializing modals');
-            await this.#initializeModals();
-            this.#modalsInitialized = true;
-
-            // Setup event listeners
-            this.log(LogLevel.INFO, 'Setting up event listeners');
-            await this.#setupEventListeners();
-            this.#listenersInitialized = true;
-
-            // Set initialized state if all components are ready
-            this.#checkInitializationState();
-            
-            return true;
-        } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initializeComponents'
             });
             return false;
         }
@@ -162,11 +157,6 @@ export class UIManager extends BaseManager {
      */
     async #initializeTooltips() {
         try {
-            this.log(LogLevel.DEBUG, 'Checking Bootstrap availability');
-            if (typeof bootstrap === 'undefined') {
-                throw new Error('Bootstrap is not loaded');
-            }
-
             this.log(LogLevel.INFO, 'Disposing existing tooltips');
             // Clear existing tooltips
             this.#tooltips.forEach((tooltip, key) => {
@@ -201,6 +191,7 @@ export class UIManager extends BaseManager {
                 }
             });
 
+            this.#tooltipsInitialized = true;
             this.log(LogLevel.SUCCESS, 'Tooltips initialized', {
                 count: this.#tooltips.size
             });
@@ -221,11 +212,6 @@ export class UIManager extends BaseManager {
      */
     async #initializeModals() {
         try {
-            this.log(LogLevel.DEBUG, 'Checking Bootstrap availability');
-            if (typeof bootstrap === 'undefined') {
-                throw new Error('Bootstrap is not loaded');
-            }
-
             this.log(LogLevel.INFO, 'Disposing existing modals');
             // Clear existing modals
             this.#modals.forEach((modal, key) => {
@@ -258,9 +244,13 @@ export class UIManager extends BaseManager {
                 }
             });
 
+            this.#modalsInitialized = true;
             this.log(LogLevel.SUCCESS, 'Modals initialized', {
                 count: this.#modals.size
             });
+            
+            // Check if all components are initialized
+            this.#checkInitializationState();
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
                 method: 'initializeModals'
@@ -273,7 +263,7 @@ export class UIManager extends BaseManager {
      * Setup event listeners
      * @private
      */
-    async #setupEventListeners() {
+    async #initializeEventListeners() {
         try {
             // Clear existing listeners
             this.#eventListeners.forEach((listener, element) => {
@@ -293,9 +283,13 @@ export class UIManager extends BaseManager {
             // Debug panel toggle
             this.setupButtonListener('#debugToggle', 'click', this.handleDebugToggle.bind(this));
 
+            this.#listenersInitialized = true;
             this.log(LogLevel.SUCCESS, 'Event listeners initialized', {
                 count: this.#eventListeners.size
             });
+            
+            // Check if all components are initialized
+            this.#checkInitializationState();
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.ERROR, {
@@ -392,15 +386,24 @@ export class UIManager extends BaseManager {
     async handleThemeToggle(event) {
         try {
             const button = event.target;
-            const isDark = document.body.classList.toggle('dark-theme');
+            const themeManager = ThemeManager.getInstance();
+            const { theme: currentTheme } = themeManager.getThemeSettings();
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
+            // Update theme using ThemeManager
+            await themeManager.setTheme(newTheme, false);
             
             // Update button state
-            button.setAttribute('aria-pressed', String(isDark));
-            
-            // Save preference
-            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+            button.setAttribute('aria-pressed', String(newTheme === 'dark'));
+            button.classList.toggle('theme-dark', newTheme === 'dark');
 
-            this.log(LogLevel.DEBUG, '🎨 Theme toggled', { isDark });
+            // Update theme switch if exists
+            const themeSwitch = document.getElementById('theme-switch');
+            if (themeSwitch) {
+                themeSwitch.checked = newTheme === 'dark';
+            }
+
+            this.log(LogLevel.DEBUG, '🎨 Theme toggled', { theme: newTheme });
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
                 method: 'handleThemeToggle'
@@ -595,20 +598,6 @@ export class UIManager extends BaseManager {
     }
 
     /**
-     * Adjust window height based on debug panel
-     */
-    adjustWindowHeight() {
-        this.safeUpdateElement('.debug-panel', debugPanel => {
-            if (document.body.classList.contains('debug-enabled')) {
-                const debugPanelHeight = debugPanel.offsetHeight;
-                document.body.style.height = `calc(var(--window-height) + ${debugPanelHeight/2}px)`;
-            } else {
-                document.body.style.height = 'var(--window-height)';
-            }
-        });
-    }
-
-    /**
      * Check if all UI components are initialized
      * @private
      */
@@ -617,9 +606,10 @@ export class UIManager extends BaseManager {
                               this.#modalsInitialized && 
                               this.#listenersInitialized;
                               
-        if (allInitialized && !this.isInitialized()) {
-            this._setInitialized(true);
+        if (allInitialized) {
             this.log(LogLevel.SUCCESS, '✨ All UI components initialized');
+            // Emit UI ready event
+            window.dispatchEvent(new CustomEvent('ui:ready'));
         }
     }
 

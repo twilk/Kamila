@@ -412,4 +412,135 @@ async function getCurrentState() {
         intervals: await getIntervalSettings()
     };
 }
+
+// API handling
+async function fetchDarwinaData(store = 'ALL') {
+    try {
+        const darwinaConfig = await getDarwinaCredentials();
+        if (!darwinaConfig) {
+            throw new Error('Brak konfiguracji API');
+        }
+
+        let allOrders = [];
+        const statusGroups = ['1', '2', '3', '5'];
+        
+        // Fetch orders for each status
+        for (const status of statusGroups) {
+            const params = new URLSearchParams({
+                status_id: status
+            });
+
+            if (store !== 'ALL') {
+                params.append('delivery_id', store);
+            }
+
+            const response = await fetch(`${API_CONFIG.baseUrl}/orders?${params}`, {
+                headers: {
+                    'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            allOrders = allOrders.concat(data.orders || []);
+        }
+
+        // Process orders and count statuses
+        const counts = processOrders(allOrders);
+        
+        // Cache the results
+        await cacheResults(store, { counts, orders: allOrders });
+
+        return {
+            success: true,
+            counts,
+            orders: allOrders
+        };
+    } catch (error) {
+        console.error('Error fetching Darwina data:', error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+// Process orders and count statuses
+function processOrders(orders) {
+    const counts = {
+        '1': 0,
+        '2': 0,
+        '3': 0,
+        'ready': 0,
+        'overdue': 0
+    };
+
+    const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
+    orders.forEach(order => {
+        const status = order.status_id?.toString();
+        if (!status) return;
+
+        if (status === '5') {
+            const orderDate = new Date(order.ready_date || order.modified_at || order.created_at);
+            if (orderDate < twoWeeksAgo) {
+                counts.overdue++;
+            } else {
+                counts.ready++;
+            }
+        } else if (status in counts) {
+            counts[status]++;
+        }
+    });
+
+    return counts;
+}
+
+// Cache results
+async function cacheResults(store, data) {
+    const cacheKey = `darwina_cache_${store}`;
+    await chrome.storage.local.set({
+        [cacheKey]: {
+            data,
+            timestamp: Date.now()
+        }
+    });
+}
+
+// Message handling
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    const handleAsyncMessage = async (handler) => {
+        try {
+            const response = await handler();
+            sendResponse(response);
+        } catch (error) {
+            console.error('Error in message handler:', error);
+            sendResponse({ success: false, error: error.message });
+        }
+    };
+
+    if (message.type === 'FETCH_DARWINA_DATA') {
+        handleAsyncMessage(async () => {
+            return await fetchDarwinaData(message.selectedStore);
+        });
+        return true;
+    }
+
+    if (message.type === 'CHECK_ORDERS_NOW') {
+        handleAsyncMessage(async () => {
+            const data = await fetchDarwinaData(message.selectedStore);
+            if (data.success) {
+                await chrome.storage.local.set({
+                    lastUpdate: Date.now(),
+                    leadCounts: data.counts
+                });
+            }
+            return data;
+        });
+        return true;
+    }
+});
   

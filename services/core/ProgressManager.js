@@ -4,9 +4,9 @@ import { LogLevel } from './LogLevel.js';
 
 /**
  * @extends {BaseManager}
- * Manages progress indicators and loading states
+ * Manages progress indicators and loading states for ongoing operations
  */
-export class ProgressManager extends BaseManager {
+export class OperationProgressManager extends BaseManager {
     static #instance = null;
     #progressBar = null;
     #progressText = null;
@@ -14,24 +14,26 @@ export class ProgressManager extends BaseManager {
     #currentTask = null;
     #isVisible = false;
     #hideTimeout = null;
+    #progress = 0;
+    #total = 0;
+    #text = '';
 
     static getInstance() {
-        if (!ProgressManager.#instance) {
-            ProgressManager.#instance = new ProgressManager();
+        if (!OperationProgressManager.#instance) {
+            OperationProgressManager.#instance = new OperationProgressManager();
         }
-        return ProgressManager.#instance;
+        return OperationProgressManager.#instance;
     }
 
     constructor() {
-        super('ProgressManager');
-        if (ProgressManager.#instance) {
-            throw new Error('Use ProgressManager.getInstance()');
+        super('OperationProgressManager');
+        if (OperationProgressManager.#instance) {
+            throw new Error('Use OperationProgressManager.getInstance()');
         }
     }
 
-    async initialize() {
+    async onInitialize() {
         try {
-            await super.initialize();
             this.#ensureProgressElements();
             return true;
         } catch (error) {
@@ -45,21 +47,21 @@ export class ProgressManager extends BaseManager {
     #ensureProgressElements() {
         try {
             // Check if container exists
-            let container = document.querySelector('.progress-container');
+            let container = document.querySelector('.operation-progress-container');
             if (!container) {
                 container = document.createElement('div');
-                container.className = 'progress-container d-none';
+                container.className = 'operation-progress-container hidden';
                 document.body.appendChild(container);
             }
             this.#progressContainer = container;
 
             // Check if progress bar exists
-            let progressBar = container.querySelector('.progress-bar');
+            let progressBar = container.querySelector('.operation-progress-bar');
             if (!progressBar) {
                 const progressWrapper = document.createElement('div');
-                progressWrapper.className = 'progress';
+                progressWrapper.className = 'operation-progress';
                 progressBar = document.createElement('div');
-                progressBar.className = 'progress-bar';
+                progressBar.className = 'operation-progress-bar';
                 progressBar.setAttribute('role', 'progressbar');
                 progressBar.setAttribute('aria-valuenow', '0');
                 progressBar.setAttribute('aria-valuemin', '0');
@@ -70,10 +72,10 @@ export class ProgressManager extends BaseManager {
             this.#progressBar = progressBar;
 
             // Check if progress text exists
-            let progressText = container.querySelector('.progress-text');
+            let progressText = container.querySelector('.operation-progress-text');
             if (!progressText) {
                 progressText = document.createElement('div');
-                progressText.className = 'progress-text';
+                progressText.className = 'operation-progress-text';
                 container.appendChild(progressText);
             }
             this.#progressText = progressText;
@@ -93,7 +95,7 @@ export class ProgressManager extends BaseManager {
                 this.#hideTimeout = null;
             }
             if (this.#progressContainer) {
-                this.#progressContainer.classList.remove('d-none');
+                this.#progressContainer.classList.remove('hidden');
                 if (status) {
                     this.setStatus(status);
                 }
@@ -111,7 +113,7 @@ export class ProgressManager extends BaseManager {
     hide() {
         try {
             if (this.#progressContainer) {
-                this.#progressContainer.classList.add('d-none');
+                this.#progressContainer.classList.add('hidden');
                 this.setProgress(0);
                 this.setStatus('');
             }
@@ -275,4 +277,4 @@ export class ProgressManager extends BaseManager {
 }
 
 // Export singleton instance
-export const progressManager = ProgressManager.getInstance(); 
+export const progressManager = OperationProgressManager.getInstance(); 

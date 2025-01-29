@@ -1,12 +1,15 @@
-.progress-container {
+.operation-progress-container {
     width: 100%;
-    background: transparent;
+    background: rgba(255, 255, 255, 0.1);
     padding: 8px;
     transition: all 0.3s ease;
     margin-top: 8px;
+    border-radius: 6px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+    position: relative;
 }
 
-.progress-container.hidden {
+.operation-progress-container.hidden {
     opacity: 0;
     pointer-events: none;
     height: 0;
@@ -14,11 +17,7 @@
     margin: 0;
 }
 
-.progress-wrapper {
-    width: 100%;
-}
-
-.progress {
+.operation-progress {
     height: 4px;
     background-color: rgba(0, 0, 0, 0.1);
     border-radius: 2px;
@@ -26,39 +25,85 @@
     margin-bottom: 4px;
 }
 
-.progress-bar {
-    background-color: #4CAF50;
-    transition: width 0.3s ease;
+.operation-progress-bar {
+    background: linear-gradient(90deg, #4CAF50 0%, #8BC34A 100%);
+    border-radius: 4px;
+    transition: width 0.4s ease;
+    height: 100%;
+    width: 0;
+    position: relative;
+    overflow: hidden;
 }
 
-.progress-status {
-    font-size: 10px;
+.operation-progress-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        rgba(255,255,255,0) 0%,
+        rgba(255,255,255,0.4) 50%,
+        rgba(255,255,255,0) 100%
+    );
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+.operation-progress-text {
+    font-size: 12px;
     color: #666;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-weight: 500;
 }
 
-.progress-percentage {
-    font-size: 10px;
-    color: #4CAF50;
-    text-align: right;
+.operation-progress-container.error .operation-progress-bar {
+    background: linear-gradient(90deg, #dc3545 0%, #ff4444 100%);
 }
 
-.progress-container.error .progress-bar {
-    background-color: #dc3545;
+.operation-progress-container.error .operation-progress-text {
+    color: #dc3545;
 }
 
-.progress-container.warning .progress-bar {
-    background-color: #ffc107;
+.operation-progress-container.warning .operation-progress-bar {
+    background: linear-gradient(90deg, #ffc107 0%, #ffdb4a 100%);
 }
 
-.progress-container.success .progress-bar {
-    background-color: #28a745;
+.operation-progress-container.warning .operation-progress-text {
+    color: #ffc107;
 }
 
-/* Remove the margin-bottom from side panel since progress is now inside */
+.operation-progress-container.success .operation-progress-bar {
+    background: linear-gradient(90deg, #28a745 0%, #34ce57 100%);
+}
+
+.operation-progress-container.success .operation-progress-text {
+    color: #28a745;
+}
+
+/* Dark theme overrides */
+[data-theme="dark"] .operation-progress-container {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .operation-progress {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .operation-progress-text {
+    color: #aaa;
+}
+
+/* Remove the margin-bottom from side panel since progress is inside */
 #side-panel {
     margin-bottom: 0;
 } 

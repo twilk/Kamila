@@ -27,8 +27,8 @@
 7. Utworzenie i inicjalizacja CacheManager (zarządzanie cache)
 
 ## 5. Inicjalizacja menedżerów bazowych (Base Managers)
-1. Utworzenie i inicjalizacja LoadingManager (wskaźniki ładowania)
-2. Utworzenie i inicjalizacja ProgressManager (postęp operacji)
+1. Utworzenie i inicjalizacja InitialLoadingManager (ekran ładowania podczas inicjalizacji)
+2. Utworzenie i inicjalizacja OperationProgressManager (postęp operacji w trakcie działania)
 3. Utworzenie i inicjalizacja MenuManager (zarządzanie menu)
 4. Utworzenie i inicjalizacja VolumeManager (zarządzanie dźwiękiem)
 

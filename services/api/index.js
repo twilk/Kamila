@@ -47,7 +47,7 @@ class APIManager extends BaseManager {
         if (APIManager._instance) {
             throw new Error('Use APIManager.getInstance()');
         }
-        super();
+        super('APIManager');
         this._initializeApiKey();
     }
 

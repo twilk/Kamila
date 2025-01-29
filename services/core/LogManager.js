@@ -1,18 +1,30 @@
+import { BaseManager } from './BaseManager.js';
 import { BaseLogger } from './BaseLogger.js';
+import { LogLevel } from './LogLevel.js';
 
 /**
  * Manager for application logging
+ * @extends BaseManager
  */
-export class LogManager {
+export class LogManager extends BaseManager {
+    /** @private */
+    static #instance = null;
+
+    /** @private */
+    #logger = new BaseLogger();
+
+    /** @private */
+    #logHistory = [];
+
+    /** @private */
+    #MAX_LOG_HISTORY = 1000;
+
     constructor() {
-        if (LogManager.instance) {
-            return LogManager.instance;
+        super('LogManager');
+        if (LogManager.#instance) {
+            return LogManager.#instance;
         }
-        LogManager.instance = this;
-        
-        this._logger = new BaseLogger();
-        this._logHistory = [];
-        this.MAX_LOG_HISTORY = 1000;
+        LogManager.#instance = this;
     }
 
     /**
@@ -20,10 +32,10 @@ export class LogManager {
      * @returns {LogManager} Singleton instance
      */
     static getInstance() {
-        if (!LogManager.instance) {
-            LogManager.instance = new LogManager();
+        if (!LogManager.#instance) {
+            LogManager.#instance = new LogManager();
         }
-        return LogManager.instance;
+        return LogManager.#instance;
     }
 
     /**
@@ -31,18 +43,18 @@ export class LogManager {
      * @returns {BaseLogger} Logger instance
      */
     getLogger() {
-        return this._logger;
+        return this.#logger;
     }
 
     /**
      * Log a message
-     * @param {string} level - Log level
+     * @param {LogLevel} level - Log level
      * @param {string} message - Message to log
      * @param {Object} [context] - Additional context
      */
     log(level, message, context) {
-        this._logger.log(level, message, context);
-        this._addToHistory(level, message, context);
+        this.#logger.log(level, message, context);
+        this.#addToHistory(level, message, context);
     }
 
     /**
@@ -52,8 +64,7 @@ export class LogManager {
      * @param {Object} [context] - Additional context
      */
     error(message, error, context) {
-        this._logger.error(message, error, context);
-        this._addToHistory('ERROR', message, { ...context, error: error.message, stack: error.stack });
+        this.log(LogLevel.ERROR, message, { error, ...context });
     }
 
     /**
@@ -62,57 +73,53 @@ export class LogManager {
      * @param {Object} [context] - Additional context
      */
     warn(message, context) {
-        this._logger.warn(message, context);
-        this._addToHistory('WARN', message, context);
+        this.log(LogLevel.WARN, message, context);
     }
 
     /**
-     * Log info message
+     * Log an info message
      * @param {string} message - Info message
      * @param {Object} [context] - Additional context
      */
     info(message, context) {
-        this._logger.info(message, context);
-        this._addToHistory('INFO', message, context);
+        this.log(LogLevel.INFO, message, context);
     }
 
     /**
-     * Log debug message
+     * Log a debug message
      * @param {string} message - Debug message
      * @param {Object} [context] - Additional context
      */
     debug(message, context) {
-        this._logger.debug(message, context);
-        this._addToHistory('DEBUG', message, context);
+        this.log(LogLevel.DEBUG, message, context);
     }
 
     /**
-     * Log success message
+     * Log a success message
      * @param {string} message - Success message
      * @param {Object} [context] - Additional context
      */
     success(message, context) {
-        this._logger.success(message, context);
-        this._addToHistory('SUCCESS', message, context);
+        this.log(LogLevel.SUCCESS, message, context);
     }
 
     /**
      * Add log entry to history
      * @private
-     * @param {string} level - Log level
-     * @param {string} message - Message to log
+     * @param {LogLevel} level - Log level
+     * @param {string} message - Log message
      * @param {Object} [context] - Additional context
      */
-    _addToHistory(level, message, context) {
-        this._logHistory.unshift({
+    #addToHistory(level, message, context) {
+        this.#logHistory.unshift({
             timestamp: new Date().toISOString(),
             level,
             message,
             context
         });
 
-        if (this._logHistory.length > this.MAX_LOG_HISTORY) {
-            this._logHistory = this._logHistory.slice(0, this.MAX_LOG_HISTORY);
+        if (this.#logHistory.length > this.#MAX_LOG_HISTORY) {
+            this.#logHistory.pop();
         }
     }
 
@@ -121,21 +128,31 @@ export class LogManager {
      * @returns {Array} Log history
      */
     getHistory() {
-        return [...this._logHistory];
+        return [...this.#logHistory];
     }
 
     /**
      * Clear log history
      */
     clearHistory() {
-        this._logHistory = [];
+        this.#logHistory = [];
     }
 
     /**
-     * Export logs to JSON
+     * Export logs to file
      * @returns {string} JSON string of logs
      */
     exportLogs() {
-        return JSON.stringify(this._logHistory, null, 2);
+        return JSON.stringify(this.#logHistory, null, 2);
+    }
+
+    /**
+     * Clean up resources
+     * @returns {Promise<void>}
+     */
+    async dispose() {
+        this.clearHistory();
+        LogManager.#instance = null;
+        await super.dispose();
     }
 } 

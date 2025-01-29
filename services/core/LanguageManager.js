@@ -1,41 +1,52 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { LogLevel } from './LogLevel.js';
+import { eventManager } from './EventManager.js';
 
 /**
  * @extends {BaseManager}
  * Manages language settings and translations
  */
 export class LanguageManager extends BaseManager {
-    static _instance = null;
-
-    static getInstance() {
-        if (!LanguageManager._instance) {
-            LanguageManager._instance = new LanguageManager();
-        }
-        return LanguageManager._instance;
-    }
+    static #instance = null;
+    #currentLanguage = 'polish';
+    #translations = {};
+    #supportedLanguages = ['polish', 'english', 'ukrainian'];
+    #eventManager = null;
 
     constructor() {
-        super('LanguageManager');
-        if (LanguageManager._instance) {
-            throw new Error('Use LanguageManager.getInstance()');
+        if (LanguageManager.#instance) {
+            return LanguageManager.#instance;
         }
-        this._currentLanguage = 'polish';
-        this._translations = {};
-        this._supportedLanguages = ['polish', 'english', 'ukrainian'];
+        super('LanguageManager');
+        LanguageManager.#instance = this;
+        
+        // Add EventManager dependency
+        this.addDependency(eventManager);
+    }
+
+    static getInstance() {
+        if (!LanguageManager.#instance) {
+            LanguageManager.#instance = new LanguageManager();
+        }
+        return LanguageManager.#instance;
     }
 
     /**
      * Initialize language manager
      * @returns {Promise<boolean>}
      */
-    async initialize() {
+    async onInitialize() {
         try {
-            await super.initialize();
-            await this._loadLanguagePreference();
-            await this._loadTranslations();
-            this._setupEventListeners();
-            this._updateUI();
+            // Get EventManager instance
+            this.#eventManager = eventManager;
+
+            await this.#loadLanguagePreference();
+            await this.#loadTranslations();
+            this.#setupEventListeners();
+            await this.#updateUI();
+            
+            this.log(LogLevel.SUCCESS, '✅ Language manager initialized');
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
@@ -49,11 +60,12 @@ export class LanguageManager extends BaseManager {
      * Load saved language preference
      * @private
      */
-    async _loadLanguagePreference() {
+    async #loadLanguagePreference() {
         try {
             const { language } = await chrome.storage.local.get('language');
-            if (language && this._supportedLanguages.includes(language)) {
-                this._currentLanguage = language;
+            if (language && this.#supportedLanguages.includes(language)) {
+                this.#currentLanguage = language;
+                this.log(LogLevel.DEBUG, `Loaded language preference: ${language}`);
             }
         } catch (error) {
             this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
@@ -66,17 +78,17 @@ export class LanguageManager extends BaseManager {
      * Load translations for current language
      * @private
      */
-    async _loadTranslations() {
+    async #loadTranslations() {
         try {
-            const response = await fetch(chrome.runtime.getURL(`locales/${this._currentLanguage}.json`));
+            const response = await fetch(chrome.runtime.getURL(`locales/${this.#currentLanguage}.json`));
             if (!response.ok) {
-                throw new Error(`Failed to load translations for ${this._currentLanguage}`);
+                throw new Error(`Failed to load translations for ${this.#currentLanguage}`);
             }
-            this._translations = await response.json();
+            this.#translations = await response.json();
         } catch (error) {
             this.handleError(error, ErrorType.RESOURCE, ErrorSeverity.HIGH, {
                 method: '_loadTranslations',
-                language: this._currentLanguage
+                language: this.#currentLanguage
             });
         }
     }
@@ -85,10 +97,21 @@ export class LanguageManager extends BaseManager {
      * Set up language switcher event listeners
      * @private
      */
-    _setupEventListeners() {
-        document.querySelectorAll('#language-switcher .flag').forEach(flag => {
-            flag.addEventListener('click', (e) => this._handleLanguageChange(e));
-        });
+    #setupEventListeners() {
+        if (this.#eventManager) {
+            // Use event delegation for language switching
+            this.#eventManager.delegate('#language-switcher .flag', 'click', async (event) => {
+                await this.#handleLanguageChange(event);
+            });
+
+            // Listen for language change events from other parts of the app
+            window.addEventListener('language:change', async (event) => {
+                const { language } = event.detail;
+                await this.setLanguage(language);
+            });
+
+            this.log(LogLevel.DEBUG, '🌍 Language event listeners set up');
+        }
     }
 
     /**
@@ -96,15 +119,22 @@ export class LanguageManager extends BaseManager {
      * @private
      * @param {Event} event Click event
      */
-    async _handleLanguageChange(event) {
+    async #handleLanguageChange(event) {
         try {
-            const newLanguage = event.currentTarget.dataset.lang;
-            if (this._supportedLanguages.includes(newLanguage)) {
+            const newLanguage = event.target.dataset.lang;
+            if (this.#supportedLanguages.includes(newLanguage)) {
                 await this.setLanguage(newLanguage);
+                
+                // Update UI elements
+                document.querySelectorAll('#language-switcher .flag').forEach(flag => {
+                    flag.classList.toggle('active', flag.dataset.lang === newLanguage);
+                });
+                
+                this.log(LogLevel.INFO, `🌍 Language changed to: ${newLanguage}`);
             }
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: '_handleLanguageChange'
+                method: 'handleLanguageChange'
             });
         }
     }
@@ -113,13 +143,8 @@ export class LanguageManager extends BaseManager {
      * Update UI language indicators
      * @private
      */
-    _updateUI() {
+    async #updateUI() {
         try {
-            // Update language switcher
-            document.querySelectorAll('#language-switcher .flag').forEach(flag => {
-                flag.classList.toggle('active', flag.dataset.lang === this._currentLanguage);
-            });
-
             // Update all translatable elements
             document.querySelectorAll('[data-i18n]').forEach(element => {
                 const key = element.dataset.i18n;
@@ -150,14 +175,14 @@ export class LanguageManager extends BaseManager {
      */
     async setLanguage(language) {
         try {
-            if (!this._supportedLanguages.includes(language)) {
+            if (!this.#supportedLanguages.includes(language)) {
                 throw new Error(`Unsupported language: ${language}`);
             }
 
-            this._currentLanguage = language;
+            this.#currentLanguage = language;
             await chrome.storage.local.set({ language });
-            await this._loadTranslations();
-            this._updateUI();
+            await this.#loadTranslations();
+            await this.#updateUI();
 
         } catch (error) {
             this.handleError(error, ErrorType.LANGUAGE, ErrorSeverity.MEDIUM, {
@@ -172,7 +197,7 @@ export class LanguageManager extends BaseManager {
      * @returns {string} Current language code
      */
     getCurrentLanguage() {
-        return this._currentLanguage;
+        return this.#currentLanguage;
     }
 
     /**
@@ -180,7 +205,7 @@ export class LanguageManager extends BaseManager {
      * @returns {string[]} List of supported language codes
      */
     getSupportedLanguages() {
-        return [...this._supportedLanguages];
+        return [...this.#supportedLanguages];
     }
 
     /**
@@ -191,7 +216,7 @@ export class LanguageManager extends BaseManager {
      */
     translate(key, params = {}) {
         try {
-            let text = this._translations[key]?.message || key;
+            let text = this.#translations[key]?.message || key;
 
             // Replace parameters
             Object.entries(params).forEach(([param, value]) => {
@@ -214,9 +239,9 @@ export class LanguageManager extends BaseManager {
      */
     async dispose() {
         try {
-            document.querySelectorAll('#language-switcher .flag').forEach(flag => {
-                flag.removeEventListener('click', this._handleLanguageChange);
-            });
+            if (this.#eventManager) {
+                this.#eventManager.removeAllDelegates();
+            }
             await super.dispose();
         } catch (error) {
             this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH, {

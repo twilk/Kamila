@@ -1,4 +1,5 @@
 import { BaseManager } from './BaseManager.js';
+import { LogLevel } from './LogLevel.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { i18n } from '../i18n.js';
 
@@ -34,8 +35,10 @@ export class NotificationManager extends BaseManager {
         NotificationManager._instance = this;
     }
 
-    async initialize() {
+    async onInitialize() {
         try {
+            this.log(LogLevel.INFO, '🔄 Initializing notification manager...');
+
             // Wczytaj historię z storage
             const data = await chrome.storage.local.get('notifications');
             
@@ -44,11 +47,11 @@ export class NotificationManager extends BaseManager {
                 this.lastNotificationTime = data.notifications.lastTime || 0;
             }
 
-            this.log('debug', '✅ NotificationManager initialized');
+            this.log(LogLevel.SUCCESS, '✅ NotificationManager initialized');
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.NOTIFICATION, ErrorSeverity.LOW, {
-                method: 'initialize'
+                method: 'onInitialize'
             });
             return false;
         }

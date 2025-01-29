@@ -2,6 +2,9 @@ import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { LogLevel } from './LogLevel.js';
 import { statusManager } from './StatusManager.js';
+import { eventManager } from './EventManager.js';
+import { eventType as EventType } from './EventTypes.js';
+import { errorHandler } from './ErrorHandler.js';
 
 /**
  * @typedef {Object} CacheConfig
@@ -22,13 +25,27 @@ import { statusManager } from './StatusManager.js';
  * Manages data operations and caching
  */
 export class DataManager extends BaseManager {
-    static _instance = null;
+    static #instance = null;
+
+    // Private fields
+    #statusManager = null;
+    #refreshTimer = null;
+    #isRefreshing = false;
+    #lastUpdate = null;
+
+    constructor() {
+        if (DataManager.#instance) {
+            return DataManager.#instance;
+        }
+        super('DataManager');
+        DataManager.#instance = this;
+    }
 
     static getInstance() {
-        if (!DataManager._instance) {
-            DataManager._instance = new DataManager();
+        if (!DataManager.#instance) {
+            DataManager.#instance = new DataManager();
         }
-        return DataManager._instance;
+        return DataManager.#instance;
     }
 
     /** @type {CacheConfig} */
@@ -45,37 +62,23 @@ export class DataManager extends BaseManager {
         retryAttempts: 3
     };
 
-    constructor() {
-        super('DataManager');
-        if (DataManager._instance) {
-            throw new Error('Use DataManager.getInstance()');
-        }
-
-        this._statusManager = null;
-        this._refreshTimer = null;
-        this._isRefreshing = false;
-        this._lastUpdate = null;
-    }
-
     /**
      * Initialize data manager
      * @returns {Promise<boolean>}
      */
-    async initialize() {
+    async onInitialize() {
         try {
-            await super.initialize();
-
             // Get status manager instance
-            this._statusManager = statusManager;
+            this.#statusManager = statusManager;
 
             // Load initial data
             await this.loadAndUpdateData(true);
 
             // Setup refresh timer
-            this._setupRefreshTimer();
-
+            this.#setupRefreshTimer();
+            
             // Setup event listeners
-            this._setupEventListeners();
+            this.#setupEventListeners();
 
             this.log(LogLevel.SUCCESS, '✨ Data manager initialized');
             return true;
@@ -91,7 +94,7 @@ export class DataManager extends BaseManager {
      * Setup event listeners
      * @private
      */
-    _setupEventListeners() {
+    #setupEventListeners() {
         // Listen for manual refresh requests
         window.addEventListener('data:refresh', async () => {
             await this.loadAndUpdateData(true);
@@ -107,12 +110,12 @@ export class DataManager extends BaseManager {
      * Setup refresh timer
      * @private
      */
-    _setupRefreshTimer() {
-        if (this._refreshTimer) {
-            clearInterval(this._refreshTimer);
+    #setupRefreshTimer() {
+        if (this.#refreshTimer) {
+            clearInterval(this.#refreshTimer);
         }
 
-        this._refreshTimer = setInterval(async () => {
+        this.#refreshTimer = setInterval(async () => {
             await this.loadAndUpdateData();
         }, DataManager.REFRESH_CONFIG.interval);
     }
@@ -124,37 +127,37 @@ export class DataManager extends BaseManager {
      */
     async loadAndUpdateData(forceRefresh = false) {
         try {
-            if (this._isRefreshing) {
+            if (this.#isRefreshing) {
                 this.log(LogLevel.DEBUG, '🔄 Data refresh already in progress');
                 return false;
             }
 
-            this._isRefreshing = true;
+            this.#isRefreshing = true;
 
             // Check cache first
             if (!forceRefresh) {
-                const cachedData = await this._loadFromCache();
+                const cachedData = await this.#loadFromCache();
                 if (cachedData) {
                     this.log(LogLevel.DEBUG, '📦 Using cached data');
-                    await this._updateData(cachedData);
+                    await this.#updateData(cachedData);
                     return true;
                 }
             }
 
             // Fetch fresh data
-            const data = await this._fetchData();
+            const data = await this.#fetchData();
             if (!data) return false;
 
             // Validate data
-            if (!this._validateData(data)) {
+            if (!this.#validateData(data)) {
                 throw new Error('Invalid data format');
             }
 
             // Update cache
-            await this._updateCache(data);
+            await this.#updateCache(data);
 
             // Update UI
-            await this._updateData(data);
+            await this.#updateData(data);
 
             this.log(LogLevel.DEBUG, '✅ Data updated successfully');
             return true;
@@ -165,7 +168,7 @@ export class DataManager extends BaseManager {
             });
             return false;
         } finally {
-            this._isRefreshing = false;
+            this.#isRefreshing = false;
         }
     }
 
@@ -174,7 +177,7 @@ export class DataManager extends BaseManager {
      * @private
      * @returns {Promise<Object|null>}
      */
-    async _loadFromCache() {
+    async #loadFromCache() {
         try {
             const { key, expiration, version } = DataManager.CACHE_CONFIG;
             const cached = await chrome.storage.local.get(key);
@@ -192,7 +195,7 @@ export class DataManager extends BaseManager {
             return data;
         } catch (error) {
             this.handleError(error, ErrorType.CACHE, ErrorSeverity.LOW, {
-                method: '_loadFromCache'
+                method: '#loadFromCache'
             });
             return null;
         }
@@ -204,7 +207,7 @@ export class DataManager extends BaseManager {
      * @param {Object} data - Data to cache
      * @returns {Promise<void>}
      */
-    async _updateCache(data) {
+    async #updateCache(data) {
         try {
             const { key, version } = DataManager.CACHE_CONFIG;
             await chrome.storage.local.set({
@@ -218,7 +221,7 @@ export class DataManager extends BaseManager {
             this.log(LogLevel.DEBUG, '💾 Cache updated');
         } catch (error) {
             this.handleError(error, ErrorType.CACHE, ErrorSeverity.LOW, {
-                method: '_updateCache'
+                method: '#updateCache'
             });
         }
     }
@@ -228,18 +231,18 @@ export class DataManager extends BaseManager {
      * @private
      * @returns {Promise<Object|null>}
      */
-    async _fetchData() {
+    async #fetchData() {
         try {
             // W trybie development/offline zwracamy testowe dane
             if (!navigator.onLine || this._environment.isDevelopment) {
-                return this._getTestData();
+                return this.#getTestData();
             }
 
             const response = await fetch('https://api.darwina.pl/orders', {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': await this._getAuthToken()
+                    'Authorization': await this.#getAuthToken()
                 }
             });
 
@@ -250,7 +253,7 @@ export class DataManager extends BaseManager {
             return await response.json();
         } catch (error) {
             this.handleError(error, ErrorType.API, ErrorSeverity.MEDIUM, {
-                method: '_fetchData'
+                method: '#fetchData'
             });
             return null;
         }
@@ -261,13 +264,13 @@ export class DataManager extends BaseManager {
      * @private
      * @returns {Promise<string>}
      */
-    async _getAuthToken() {
+    async #getAuthToken() {
         try {
             const { token } = await chrome.storage.local.get('token');
             return token || '';
         } catch (error) {
             this.handleError(error, ErrorType.AUTH, ErrorSeverity.HIGH, {
-                method: '_getAuthToken'
+                method: '#getAuthToken'
             });
             return '';
         }
@@ -279,7 +282,7 @@ export class DataManager extends BaseManager {
      * @param {Object} data - Data to validate
      * @returns {boolean}
      */
-    _validateData(data) {
+    #validateData(data) {
         try {
             if (!data || typeof data !== 'object') return false;
             if (!Array.isArray(data.orders)) return false;
@@ -293,7 +296,7 @@ export class DataManager extends BaseManager {
             ));
         } catch (error) {
             this.handleError(error, ErrorType.VALIDATION, ErrorSeverity.LOW, {
-                method: '_validateData'
+                method: '#validateData'
             });
             return false;
         }
@@ -305,21 +308,21 @@ export class DataManager extends BaseManager {
      * @param {Object} data - Data to update
      * @returns {Promise<void>}
      */
-    async _updateData(data) {
+    async #updateData(data) {
         try {
             // Calculate order counts
             const counts = this._calculateOrderCounts(data.orders);
 
             // Update status manager
-            await this._statusManager.updateOrderCounts(counts);
+            await this.#statusManager.updateOrderCounts(counts);
 
             // Update last update time
-            this._lastUpdate = Date.now();
+            this.#lastUpdate = Date.now();
 
             this.log(LogLevel.DEBUG, '📊 Order counts updated', { counts });
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: '_updateData'
+                method: '#updateData'
             });
         }
     }
@@ -340,7 +343,7 @@ export class DataManager extends BaseManager {
         };
 
         orders.forEach(order => {
-            const status = this._statusManager.constructor.mapStatus(order.status);
+            const status = this.#statusManager.constructor.mapStatus(order.status);
             if (status in counts) {
                 counts[status]++;
             }
@@ -354,7 +357,7 @@ export class DataManager extends BaseManager {
      * @private
      * @returns {Object}
      */
-    _getTestData() {
+    #getTestData() {
         return {
             orders: [
                 { id: '1', status: 'submitted' },
@@ -371,7 +374,7 @@ export class DataManager extends BaseManager {
      * @returns {number|null}
      */
     getLastUpdate() {
-        return this._lastUpdate;
+        return this.#lastUpdate;
     }
 
     /**
@@ -380,14 +383,14 @@ export class DataManager extends BaseManager {
      */
     async dispose() {
         try {
-            if (this._refreshTimer) {
-                clearInterval(this._refreshTimer);
-                this._refreshTimer = null;
+            if (this.#refreshTimer) {
+                clearInterval(this.#refreshTimer);
+                this.#refreshTimer = null;
             }
 
-            this._isRefreshing = false;
-            this._lastUpdate = null;
-            this._statusManager = null;
+            this.#isRefreshing = false;
+            this.#lastUpdate = null;
+            this.#statusManager = null;
 
             await super.dispose();
         } catch (error) {

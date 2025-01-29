@@ -38,17 +38,40 @@ import {
 import { OrderService } from './services/api/OrderService.js';
 import { i18n } from './services/i18n.js';
 import { stores } from './services/stores.js';
+import { STATUS_MAP } from './services/core/StatusManager.js';
 
 // Import constants from configuration
 import { INTERVALS } from './config/intervals.js';
-import { STATUS_MAP } from './services/core/StatusManager.js';
 import { API_CONFIG, getDarwinaCredentials, sendLogToPopup } from './config/api.js';
 
 // Initialize static fields
 BaseManager.initLogger = new InitLogger();
 
-// Initialize services
+// Initialize service instances
 let orderService = null;
+
+// Add at the top with imports
+const CACHE_SCHEMA = {
+    data: {
+        '1': 'number',
+        '2': 'number',
+        '3': 'number',
+        'READY': 'number',
+        'OVERDUE': 'number'
+    },
+    timestamp: 'number',
+    metadata: {
+        store: 'string',
+        forceRefresh: 'boolean',
+        total: 'number',
+        originalFormat: 'object'
+    }
+};
+
+// Dodaj stałą dla TTL cache'u (5 minut)
+const CACHE_TTL = 5 * 60 * 1000;
+// Dodaj stałą dla interwału odświeżania (1 minuta)
+const REFRESH_INTERVAL = 60 * 1000;
 
 /**
  * Initialize the application
@@ -61,7 +84,6 @@ async function initialize() {
         
         // Initialize language support first
         await i18n.init();
-        await languageManager.initialize();
         
         // Initialize all managers
         const success = await initializationManager.initialize('startup');
@@ -109,10 +131,17 @@ async function initialize() {
         
         // Load initial data
         await loadAndUpdateData();
+
+        // Update UI with current language
+        const currentLang = languageManager.getCurrentLanguage();
+        document.querySelectorAll('#language-switcher .flag-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.lang === currentLang);
+        });
         
         console.log('✅ Application initialized successfully');
     } catch (error) {
         console.error('[ERROR] ❌ Initialization failed:', error);
+        errorHandler.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
         throw error;
     }
 }
@@ -157,22 +186,25 @@ async function setupEventListeners() {
         });
 
         // Refresh button
-        document.getElementById('refresh-button')?.addEventListener('click', async () => {
+        document.getElementById('refresh-store-data')?.addEventListener('click', async () => {
             try {
-                console.log('[DEBUG] 🔄 Refresh button clicked - starting data refresh');
+                console.log('[DEBUG] 🔄 Refresh button clicked - clearing cache and refreshing data');
                 
                 // Show loading state
-                const refreshButton = document.getElementById('refresh-button');
+                const refreshButton = document.getElementById('refresh-store-data');
                 refreshButton.classList.add('loading');
                 refreshButton.disabled = true;
 
-                // Log the action
-                eventManager.emit('refreshData', {
-                    action: 'manual_refresh',
-                    timestamp: new Date().toISOString(),
-                    source: 'refresh_button'
-                });
-
+                // Clear all caches first
+                await orderService.clearAllCaches();
+                
+                // Force refresh data without modified_from limitation
+                const store = await getSelectedStore();
+                const params = {};
+                if (store?.id !== 'ALL' && store?.deliveryId) {
+                    params.delivery_id = store.deliveryId;
+                }
+                
                 // Force refresh data
                 await loadAndUpdateData(true);
 
@@ -180,7 +212,7 @@ async function setupEventListeners() {
                 refreshButton.classList.remove('loading');
                 refreshButton.disabled = false;
                 
-                console.log('[DEBUG] ✅ Data refresh completed');
+                console.log('[DEBUG] ✅ Cache cleared and data refreshed');
             } catch (error) {
                 console.error('[ERROR] ❌ Refresh failed:', error);
                 errorHandler?.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
@@ -189,7 +221,7 @@ async function setupEventListeners() {
                 });
                 
                 // Reset button state even on error
-                const refreshButton = document.getElementById('refresh-button');
+                const refreshButton = document.getElementById('refresh-store-data');
                 if (refreshButton) {
                     refreshButton.classList.remove('loading');
                     refreshButton.disabled = false;
@@ -198,40 +230,19 @@ async function setupEventListeners() {
         });
 
         // Store selector
-        document.getElementById('store-select')?.addEventListener('change', async (event) => {
-            try {
-                const oldStore = await getSelectedStore();
-                const newStore = event.target.value;
-                
-                console.log('[DEBUG] 🏪 Store change initiated:', JSON.stringify({
-                    from: oldStore.id,
-                    to: newStore,
-                    timestamp: new Date().toISOString()
-                }, null, 2));
-
-                // Show loading state
-                progressManager.show(i18n.translate('orders.counters.updating'));
-                
-                // Change store
-                await storeManager.changeStore(newStore);
-                
-                // Force refresh data
-                await loadAndUpdateData(true);
-                
-                // Show success message
-                progressManager.setSuccess(i18n.translate('logs.storeChanged', { store: newStore }));
-                
-                console.log('[DEBUG] ✅ Store changed successfully');
-            } catch (error) {
-                console.error('[ERROR] ❌ Store change failed:', error);
-                progressManager.setError(i18n.translate('errors.unknown'));
-                
-                errorHandler?.handleError(error, ErrorType.UI, ErrorSeverity.WARNING, {
-                    method: 'storeSelect',
-                    context: 'changeStore'
-                });
-            }
-        });
+        const storeSelect = document.getElementById('store-select');
+        if (storeSelect) {
+            storeSelect.addEventListener('change', async () => {
+                try {
+                    progressManager.show(i18n.translate('stores.changing'));
+                    await loadAndUpdateData(true);
+                    progressManager.setSuccess(i18n.translate('stores.changed'));
+                } catch (error) {
+                    progressManager.setError(error.message || i18n.translate('errors.unknown'));
+                    errorHandler.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM);
+                }
+            });
+        }
 
         // Theme toggle
         document.getElementById('theme-toggle')?.addEventListener('change', (event) => {
@@ -267,7 +278,15 @@ async function setupEventListeners() {
 }
 
 // Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', initialize);
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        await initialize();
+        setupAutoRefresh();
+    } catch (error) {
+        console.error('Initialization failed:', error);
+        errorHandler.handleError(error);
+    }
+});
 
 // Message Handling Functions
 function showMessage(type, key) {
@@ -294,166 +313,49 @@ async function resizeWindow(height) {
 // Load and update data
 async function loadAndUpdateData(forceRefresh = false) {
     try {
-        // Show loading state in counters
-        document.querySelectorAll('.lead-count').forEach(counter => {
-            counter.textContent = '...';
-            counter.classList.remove('count-error', 'count-zero', 'count-changed');
-        });
+        updateLoadingState(true);
+        const store = await getSelectedStore();
+        let data;
 
-        // Check if orderService is initialized
-        if (!orderService) {
-            throw new Error('OrderService not initialized');
-        }
-
-        // Get current timestamp
-        const now = Date.now();
-
-        // Try to get data from cache first
-        const cached = await chrome.storage.local.get(['orderCounts', 'lastUpdate']);
-        const lastUpdate = cached.lastUpdate || 0;
-        const hasCachedData = cached.orderCounts?.data && typeof cached.orderCounts.data === 'object';
-
-        let currentCounts = null;
-
-        // If we have cached data, use it immediately
-        if (hasCachedData) {
-            currentCounts = cached.orderCounts.data;
-            console.log('[DEBUG] 📦 Using cached data:', JSON.stringify({
-                data: currentCounts,
-                timestamp: new Date(cached.orderCounts.timestamp).toISOString(),
-                age: Math.floor((now - cached.orderCounts.timestamp) / 1000) + 's',
-                metadata: cached.orderCounts.metadata
-            }, null, 2));
+        if (!forceRefresh) {
+            const cached = await chrome.storage.local.get([`orderCounts_${store.id}`, 'lastUpdate']);
+            data = cached[`orderCounts_${store.id}`];
+            const lastUpdate = cached.lastUpdate;
             
-            // Update UI with cached data
-            await updateCounters(currentCounts, currentCounts);
+            // Sprawdź czy cache jest ważny (nie starszy niż CACHE_TTL)
+            const isCacheValid = lastUpdate && (Date.now() - lastUpdate < CACHE_TTL);
+            
+            if (data && validateCacheData(data) && isCacheValid) {
+                debugManager.log('📦 Using cached data', LogLevel.INFO);
+                await updateCounters(data);
+                updateLoadingState(false);
+                return;
+            }
+            debugManager.log('🔄 Cache invalid or expired, fetching fresh data', LogLevel.INFO);
         }
 
-        // Check if we need to fetch new data
-        const shouldFetchNewData = forceRefresh || !hasCachedData || (now - lastUpdate >= 300000);
+        debugManager.log('🔄 Fetching fresh data from API', LogLevel.INFO);
+        const response = await orderService.fetchOrders(store.id);
         
-        if (shouldFetchNewData) {
-            // Show progress only if we're fetching new data
-            progressManager.show(i18n.translate('orders.counters.updating'));
-
-            // Get selected store
-            const store = await getSelectedStore();
+        if (response && response.counts && validateCacheData(response.counts)) {
+            debugManager.log('📦 API Response:', LogLevel.DEBUG, response);
+            debugManager.log('📊 Extracted counts:', LogLevel.DEBUG, response.counts);
             
-            // Prepare request parameters
-            const params = {};
-            if (store.id !== 'ALL' && store.deliveryId) {
-                params.delivery_id = store.deliveryId;
-            }
+            // Zapisz do cache'u z timestampem
+            await chrome.storage.local.set({
+                [`orderCounts_${store.id}`]: response.counts,
+                lastUpdate: Date.now()
+            });
             
-            // Only include modified_from if we have valid cached data and it's not a force refresh
-            if (hasCachedData && !forceRefresh) {
-                params.modified_from = new Date(lastUpdate).toISOString();
-            }
-
-            // Log request details
-            console.log('[DEBUG] 🔄 Fetching orders:', JSON.stringify({
-                store,
-                params,
-                lastUpdate: lastUpdate ? new Date(lastUpdate).toISOString() : null,
-                forceRefresh
-            }, null, 2));
-
-            // Fetch orders from API
-            const response = await orderService.fetchOrders(store.id, params);
-            
-            // Log raw response
-            console.log('[DEBUG] 📥 Raw API response:', JSON.stringify(response, null, 2));
-
-            // Validate response
-            if (!response || !response.orders) {
-                throw new Error('Invalid API response format');
-            }
-
-            // Use pre-calculated counts from API if available, otherwise calculate them
-            const newCounts = response.counts || calculateOrderCounts(response.orders);
-
-            // Log processed counts
-            console.log('[DEBUG] 📊 Processed counts:', JSON.stringify({
-                apiCounts: response.counts,
-                calculatedCounts: newCounts,
-                metadata: response.metadata
-            }, null, 2));
-
-            // Update UI with new counts, comparing with previous counts
-            await updateCounters(newCounts, currentCounts || {});
-
-            // Show success message
-            progressManager.setSuccess(i18n.translate('orders.counters.updated'));
-
-            // Cache the data and update timestamp
-            const cacheData = {
-                'orderCounts': {
-                    data: newCounts,
-                    timestamp: now,
-                    storeId: store.id,
-                    metadata: response.metadata,
-                    orders: response.orders
-                },
-                'lastUpdate': now
-            };
-
-            await chrome.storage.local.set(cacheData);
-            currentCounts = newCounts;
-
-            // Log cache update
-            console.log('[DEBUG] 💾 Updated cache with new data:', JSON.stringify({
-                counts: newCounts,
-                metadata: response.metadata,
-                timestamp: new Date(now).toISOString(),
-                storeId: store.id,
-                ordersCount: response.orders.length
-            }, null, 2));
+            await updateCounters(response.counts);
+        } else {
+            throw new Error('Invalid data format received from API');
         }
-
-        return currentCounts;
     } catch (error) {
-        // Log error details
-        console.error('[ERROR] ❌ Failed to load data:', {
-            message: error.message || 'Unknown error',
-            stack: error.stack,
-            error: JSON.stringify(error, Object.getOwnPropertyNames(error))
-        });
-
-        // Show error message using the correct method
-        progressManager.setError(
-            error.message || i18n.translate('errors.unknown')
-        );
-
-        // Handle error with error handler
-        errorHandler.handleError(error, ErrorType.DATA, ErrorSeverity.HIGH, {
-            method: 'loadAndUpdateData',
-            context: 'fetchOrders'
-        });
-
-        // Try to load cached data
-        try {
-            const cached = await chrome.storage.local.get('orderCounts');
-            if (cached.orderCounts?.data && typeof cached.orderCounts.data === 'object') {
-                console.log('[DEBUG] 📦 Using cached data as fallback:', JSON.stringify({
-                    data: cached.orderCounts.data,
-                    timestamp: new Date(cached.orderCounts.timestamp).toISOString(),
-                    metadata: cached.orderCounts.metadata
-                }, null, 2));
-                await updateCounters(cached.orderCounts.data, cached.orderCounts.data);
-                return cached.orderCounts.data;
-            } else {
-                console.warn('[WARNING] ⚠️ No valid cached data available');
-                // Show error in counters
-                document.querySelectorAll('.lead-count').forEach(counter => {
-                    counter.textContent = '-';
-                    counter.classList.add('count-error');
-                });
-                return null;
-            }
-        } catch (cacheError) {
-            console.error('[ERROR] ❌ Failed to load cached data:', JSON.stringify(cacheError, Object.getOwnPropertyNames(cacheError)));
-            return null;
-        }
+        debugManager.log('❌ Failed to load data:', LogLevel.ERROR, error);
+        handleCounterError(error);
+    } finally {
+        updateLoadingState(false);
     }
 }
 
@@ -524,6 +426,7 @@ function calculateOrderCounts(orders) {
 }
 
 function updateLoadingState(isLoading) {
+    // Aktualizuj przycisk odświeżania
     const refreshButton = document.getElementById('refresh-store-data');
     if (refreshButton) {
         refreshButton.disabled = isLoading;
@@ -531,177 +434,94 @@ function updateLoadingState(isLoading) {
             '<span class="spinner-border spinner-border-sm"></span>' : 
             '<i class="fas fa-sync-alt"></i>';
     }
+
+    // Aktualizuj select sklepu
+    const storeSelect = document.getElementById('store-select');
+    if (storeSelect) {
+        storeSelect.disabled = isLoading;
+    }
 }
 
-// Update counters in UI with proper translations
-async function updateCounters(counts, oldCounts = {}) {
+// Counter update function (using imported STATUS_MAP)
+async function updateCounters(counts) {
     try {
-        // Map status codes to element IDs and their translations
-        const statusMap = {
-            '1': { 
-                id: 'count-1', 
-                translation: 'leadStatuses.submitted',
-                elementStatus: 'submitted',
-                tooltip: 'tooltips.leadStatuses.submitted',
-                indicator: 'newOrders',
-                icon: '📤',
-                notify: true  // Notify on changes for new orders
-            },
-            '2': { 
-                id: 'count-2', 
-                translation: 'leadStatuses.confirmed',
-                elementStatus: 'confirmed',
-                tooltip: 'tooltips.leadStatuses.confirmed',
-                indicator: 'confirmedOrders',
-                icon: '✅',
-                notify: true  // Notify on changes for confirmed orders
-            },
-            '3': { 
-                id: 'count-3', 
-                translation: 'leadStatuses.accepted',
-                elementStatus: 'accepted',
-                tooltip: 'tooltips.leadStatuses.accepted',
-                indicator: 'acceptedOrders',
-                icon: '📦'
-            },
-            'READY': { 
-                id: 'count-ready', 
-                translation: 'leadStatuses.ready',
-                elementStatus: 'ready',
-                tooltip: 'tooltips.leadStatuses.ready',
-                indicator: 'readyOrders',
-                icon: '📬'
-            },
-            'OVERDUE': { 
-                id: 'count-overdue', 
-                translation: 'leadStatuses.overdue',
-                elementStatus: 'overdue',
-                tooltip: 'tooltips.leadStatuses.overdue',
-                indicator: 'overdueOrders',
-                icon: '⏳'
+        debugManager.log('📊 Aktualizuję liczniki zamówień...', LogLevel.INFO);
+
+        // Initialize all counters to 0 first
+        const statusValues = Object.values(STATUS_MAP);
+        statusValues.forEach(status => {
+            const statusElement = document.querySelector(`.lead-status[data-status="${status.toLowerCase()}"]`);
+            const counter = statusElement?.querySelector('.lead-count');
+            if (counter) {
+                counter.textContent = '0';
+                counter.classList.add('count-zero');
+                counter.classList.remove('count-error', 'count-updated');
             }
-        };
+        });
 
-        // Log counts before update
-        console.log('[DEBUG] 📊 Updating counters:', JSON.stringify({
-            newCounts: counts,
-            oldCounts: oldCounts,
-            changes: Object.entries(counts).reduce((acc, [status, count]) => {
-                acc[status] = {
-                    from: oldCounts[status] || 0,
-                    to: count,
-                    diff: count - (oldCounts[status] || 0)
-                };
-                return acc;
-            }, {})
-        }, null, 2));
-
-        // Update each counter
-        for (const [status, count] of Object.entries(counts)) {
-            const statusInfo = statusMap[status];
-            if (!statusInfo) {
-                console.warn(`[WARNING] ⚠️ Unknown status: ${status}`);
-                continue;
-            }
-
-            const countElement = document.getElementById(statusInfo.id);
-            if (countElement) {
-                const oldCount = oldCounts[status] || 0;
-                const hasChanged = count !== oldCount;
-                
-                // Update counter value
-                countElement.textContent = count;
-                countElement.classList.toggle('count-zero', count === 0);
-                
-                // Add change animation if value changed
-                if (hasChanged) {
-                    countElement.classList.remove('count-changed');
-                    // Force reflow
-                    void countElement.offsetWidth;
-                    countElement.classList.add('count-changed');
-                    setTimeout(() => countElement.classList.remove('count-changed'), 1000);
-                }
-
-                // Show notification for significant changes in status 1 or 2
-                if (statusInfo.notify && count > oldCount) {
-                    await notificationManager.showStatusNotification(
-                        statusInfo.elementStatus,
-                        oldCount,
-                        count
-                    );
-                }
-
-                // Update tooltip
-                countElement.title = i18n.translate(statusInfo.tooltip);
-            } else {
-                console.warn(`[WARNING] ⚠️ Counter element not found: ${statusInfo.id}`);
-            }
-
-            // Update status indicator
-            const indicator = document.querySelector(`.status-indicator.${statusInfo.indicator}`);
-            if (indicator) {
-                indicator.classList.toggle('active', count > 0);
-            }
-
-            // Update parent status element
-            const statusElement = document.querySelector(`.lead-status[data-status="${statusInfo.elementStatus}"]`);
-            if (statusElement) {
-                statusElement.classList.toggle('has-items', count > 0);
-                
-                // Update status label with translation and icon
-                const labelElement = statusElement.querySelector('.status-label');
-                if (labelElement) {
-                    labelElement.textContent = `${statusInfo.icon} ${i18n.translate(statusInfo.translation)}`;
-                    labelElement.title = i18n.translate(statusInfo.tooltip);
-                }
-            }
+        // Add overdue status handling
+        const overdueElement = document.querySelector('.lead-status[data-status="overdue"]');
+        const overdueCounter = overdueElement?.querySelector('.lead-count');
+        if (overdueCounter) {
+            overdueCounter.textContent = '0';
+            overdueCounter.classList.add('count-zero');
+            overdueCounter.classList.remove('count-error', 'count-updated');
         }
 
-        // Update total count
-        const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
-        const totalElement = document.getElementById('total-count');
-        if (totalElement) {
-            const oldTotal = Object.values(oldCounts).reduce((sum, count) => sum + count, 0);
-            const hasChanged = total !== oldTotal;
-
-            totalElement.textContent = total;
-            totalElement.classList.toggle('count-zero', total === 0);
+        // Update counters with actual values
+        Object.entries(counts).forEach(([status, count]) => {
+            // Find the status key by value in STATUS_MAP
+            const statusKey = Object.entries(STATUS_MAP).find(([key, val]) => val === status)?.[0] || status.toLowerCase();
+            const statusElement = document.querySelector(`.lead-status[data-status="${statusKey}"]`);
+            const counter = statusElement?.querySelector('.lead-count');
             
-            // Add change animation if total changed
-            if (hasChanged) {
-                totalElement.classList.remove('count-changed');
-                // Force reflow
-                void totalElement.offsetWidth;
-                totalElement.classList.add('count-changed');
-                setTimeout(() => totalElement.classList.remove('count-changed'), 1000);
+            if (counter) {
+                const numericCount = parseInt(count, 10);
+                if (isNaN(numericCount)) {
+                    debugManager.log(`⚠️ Nieprawidłowa wartość dla statusu ${statusKey}`, LogLevel.ERROR);
+                    counter.textContent = '0';
+                    counter.classList.add('count-error');
+                    return;
+                }
+
+                counter.textContent = numericCount.toString();
+                counter.classList.toggle('count-zero', numericCount === 0);
+                counter.classList.remove('count-error');
+                counter.classList.add('count-updated');
+                setTimeout(() => counter.classList.remove('count-updated'), 1000);
             }
-        }
+        });
 
-        // Log final state
-        console.log('[DEBUG] ✅ Counters updated successfully:', JSON.stringify({
-            total,
-            counts,
-            indicators: Object.entries(statusMap).reduce((acc, [status, info]) => {
-                acc[info.indicator] = counts[status] > 0;
-                return acc;
-            }, {})
-        }, null, 2));
-
+        debugManager.log('✅ Liczniki zaktualizowane pomyślnie', LogLevel.INFO);
     } catch (error) {
-        console.error('[ERROR] ❌ Failed to update counters:', error);
+        debugManager.log(`❌ Błąd aktualizacji liczników: ${error.message}`, LogLevel.ERROR);
+        throw error;
+    }
+}
+
+// Function to show loader in counter
+function showLoader(counter) {
+    counter.innerHTML = `
+        <div class="loading-dots">
+            <div class="loading-dots--dot"></div>
+            <div class="loading-dots--dot"></div>
+            <div class="loading-dots--dot"></div>
+        </div>
+    `;
+    counter.classList.add('loading');
+    counter.classList.remove('count-error', 'count-zero', 'count-updated');
+}
+
+// Function to handle counter errors
+function handleCounterError(error) {
+    console.error('Counter error:', error);
+    debugManager.log('❌ Błąd liczników', LogLevel.ERROR, error);
+
         document.querySelectorAll('.lead-count').forEach(counter => {
             counter.textContent = '-';
             counter.classList.add('count-error');
-        });
-        
-        errorHandler.handleError(error, ErrorType.UI, ErrorSeverity.HIGH, {
-            method: 'updateCounters',
-            context: {
-                counts,
-                oldCounts
-            }
-        });
-    }
+        counter.classList.remove('loading', 'count-zero', 'count-updated');
+    });
 }
 
 // Update status indicators based on counts
@@ -800,18 +620,9 @@ async function getSelectedStore() {
         const store = stores.find(s => s.id === storeId);
         
         // Log selected store
-        console.log('[DEBUG] 🏪 Selected store:', JSON.stringify({
-            id: storeId,
-            name: selectedOption.text,
-            deliveryId: store?.deliveryId,
-            index: storeSelect.selectedIndex,
-            config: store ? {
-                id: store.id,
-                name: store.name,
-                deliveryId: store.deliveryId,
-                drwn: store.drwn
-            } : null
-        }, null, 2));
+        console.groupCollapsed('[DEBUG] 🏪 Selected store');
+        console.dir(store, { depth: null, colors: true });
+        console.groupEnd();
 
         return {
             id: storeId || 'ALL',
@@ -823,4 +634,70 @@ async function getSelectedStore() {
         return { id: 'ALL', name: i18n.translate('allStores') };
     }
 }
+
+// Add cache validation helper
+function validateCacheData(data) {
+    if (!data || typeof data !== 'object') {
+        return false;
+    }
+    
+    // Sprawdź tylko wymagane pola dla liczników
+    const requiredFields = ['1', '2', '3', 'READY', 'OVERDUE'];
+    return requiredFields.every(field => 
+        typeof data[field] === 'number' || 
+        (typeof data[field] === 'string' && !isNaN(parseInt(data[field], 10)))
+    );
+}
+
+// Update language switching
+let languageChangeTimeout = null;
+function handleLanguageChange(language) {
+    if (languageChangeTimeout) {
+        clearTimeout(languageChangeTimeout);
+    }
+    
+    languageChangeTimeout = setTimeout(async () => {
+        try {
+            await i18n.changeLanguage(language);
+            eventManager.emit('interface_updated');
+            eventManager.emit('language_changed');
+            debugManager.log(`🌍 Language changed to: ${language}`, LogLevel.INFO);
+        } catch (error) {
+            debugManager.log(`❌ Failed to change language: ${error.message}`, LogLevel.ERROR);
+        }
+    }, 300); // Debounce language changes
+}
+
+// Dodaj funkcję setupAutoRefresh
+let refreshInterval = null;
+
+function setupAutoRefresh() {
+    // Wyczyść poprzedni interwał jeśli istnieje
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+    
+    // Ustaw nowy interwał
+    refreshInterval = setInterval(async () => {
+        try {
+            const cached = await chrome.storage.local.get('lastUpdate');
+            const lastUpdate = cached.lastUpdate;
+            
+            // Odśwież dane jeśli cache jest starszy niż CACHE_TTL
+            if (!lastUpdate || (Date.now() - lastUpdate >= CACHE_TTL)) {
+                debugManager.log('🔄 Auto-refresh: Cache expired, fetching new data', LogLevel.INFO);
+                await loadAndUpdateData(true);
+            }
+        } catch (error) {
+            debugManager.log('❌ Auto-refresh failed:', LogLevel.ERROR, error);
+        }
+    }, REFRESH_INTERVAL);
+}
+
+// Dodaj czyszczenie interwału przy zamknięciu
+window.addEventListener('unload', () => {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
 

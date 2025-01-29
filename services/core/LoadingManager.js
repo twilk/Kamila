@@ -1,6 +1,7 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { LogLevel } from './LogLevel.js';
+import { progressManager } from './ProgressManager.js';
 
 const STATUS_TRANSLATIONS = {
     'initializing': 'Inicjalizacja',
@@ -29,53 +30,66 @@ const MANAGER_GROUPS = {
 
 /**
  * @extends {BaseManager}
- * Manages loading screen and progress indicators
+ * Manages initial loading screen and progress indicators during app initialization
  */
-export class LoadingManager extends BaseManager {
+export class InitialLoadingManager extends BaseManager {
     static _instance = null;
 
+    // Private fields
+    #container = null;
+    #progressBar = null;
+    #progressLabel = null;
+    #statusText = null;
+    #loadingTime = null;
+    #startTime = null;
+    #totalSteps = 0;
+    #currentStep = 0;
+    #isVisible = false;
+    #minLoadingTime = 1500; // Minimum loading screen display time
+    #translations = LOADING_TRANSLATIONS;
+    #isLoading = false;
+    #loadingText = '';
+    #loadingProgress = 0;
+    #loadingTotal = 0;
+    #progressSteps = null;
+    #wordsLoader = null;
+    #truckLoader = null;
+
     static getInstance() {
-        if (!LoadingManager._instance) {
-            LoadingManager._instance = new LoadingManager();
+        if (!InitialLoadingManager._instance) {
+            InitialLoadingManager._instance = new InitialLoadingManager();
         }
-        return LoadingManager._instance;
+        return InitialLoadingManager._instance;
     }
 
     constructor() {
-        super('LoadingManager');
-        if (LoadingManager._instance) {
-            throw new Error('Use LoadingManager.getInstance()');
+        super('InitialLoadingManager');
+        if (InitialLoadingManager._instance) {
+            throw new Error('Use InitialLoadingManager.getInstance()');
         }
-
-        this._container = null;
-        this._progressBar = null;
-        this._progressLabel = null;
-        this._statusText = null;
-        this._loadingTime = null;
-        this._startTime = null;
-        this._totalSteps = 0;
-        this._currentStep = 0;
-        this._isVisible = false;
-        this._minLoadingTime = 1500; // Minimum loading screen display time
-        this._translations = LOADING_TRANSLATIONS; // Initialize translations
+        // Add dependency on ProgressManager
+        this.addDependency(progressManager);
     }
 
     /**
      * Initialize loading manager
      * @returns {Promise<void>}
      */
-    async initialize() {
+    async onInitialize() {
         try {
-            await super.initialize();
-            
-            // Wait for DOM to be ready
-            if (document.readyState === 'loading') {
-                await new Promise(resolve => {
-                    document.addEventListener('DOMContentLoaded', resolve);
-                });
-            }
-            
-            await this._createLoadingScreen();
+            // Initialize loading state
+            this.#isLoading = false;
+            this.#loadingText = '';
+            this.#loadingProgress = 0;
+            this.#loadingTotal = 0;
+
+            // Initialize loading UI
+            await this.#createLoadingScreen();
+
+            // Initialize progress manager
+            await progressManager.initialize();
+
+            this.log(LogLevel.SUCCESS, '⚡ Loading manager initialized');
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
@@ -89,7 +103,7 @@ export class LoadingManager extends BaseManager {
      * Create loading screen elements
      * @private
      */
-    async _createLoadingScreen() {
+    async #createLoadingScreen() {
         try {
             const container = document.querySelector('.loading-container');
             if (!container) {
@@ -101,13 +115,13 @@ export class LoadingManager extends BaseManager {
             loaderContainer.className = 'loader-container';
 
             // 1. Create Truck Loader
-            const truckLoader = this._createTruckLoader();
+            const truckLoader = this.#createTruckLoader();
             
             // 2. Create Progress Bar
-            const progressBar = this._createProgressBar();
+            const progressBar = this.#createProgressBar();
             
             // 3. Create Words Loader
-            const wordsLoader = this._createWordsLoader();
+            const wordsLoader = this.#createWordsLoader();
 
             // Add all loaders to container
             loaderContainer.appendChild(truckLoader);
@@ -119,15 +133,15 @@ export class LoadingManager extends BaseManager {
             container.appendChild(loaderContainer);
 
             // Store references
-            this._container = container;
-            this._progressBar = progressBar.querySelector('.load');
-            this._progressLabel = progressBar.querySelector('.loader-text');
-            this._progressSteps = progressBar.querySelector('.progress-steps');
-            this._wordsLoader = wordsLoader;
-            this._truckLoader = truckLoader;
+            this.#container = container;
+            this.#progressBar = progressBar.querySelector('.load');
+            this.#progressLabel = progressBar.querySelector('.loader-text');
+            this.#progressSteps = progressBar.querySelector('.progress-steps');
+            this.#wordsLoader = wordsLoader;
+            this.#truckLoader = truckLoader;
 
             // Initialize progress steps
-            this._createProgressSteps();
+            this.#createProgressSteps();
 
             // Ensure proper classes
             container.classList.remove('d-none', 'fade-out');
@@ -137,7 +151,7 @@ export class LoadingManager extends BaseManager {
             return container;
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.HIGH, {
-                method: '_createLoadingScreen'
+                method: '#createLoadingScreen'
             });
         }
     }
@@ -147,7 +161,7 @@ export class LoadingManager extends BaseManager {
      * @private
      * @returns {HTMLElement}
      */
-    _createTruckLoader() {
+    #createTruckLoader() {
         const truckLoader = document.createElement('div');
         truckLoader.className = 'loaderTruck';
         truckLoader.innerHTML = `
@@ -180,17 +194,20 @@ export class LoadingManager extends BaseManager {
      * Create progress steps indicators
      * @private
      */
-    _createProgressSteps() {
-        if (!this._progressSteps || !this._totalSteps) return;
+    #createProgressSteps() {
+        if (!this.#progressSteps) return;
         
-        this._progressSteps.innerHTML = '';
-        for (let i = 0; i < this._totalSteps; i++) {
+        // Always create at least one step
+        const totalSteps = Math.max(1, this.#totalSteps);
+        
+        this.#progressSteps.innerHTML = '';
+        for (let i = 0; i < totalSteps; i++) {
             const step = document.createElement('div');
             step.className = 'step';
-            if (i < this._currentStep) {
+            if (i < this.#currentStep) {
                 step.classList.add('completed');
             }
-            this._progressSteps.appendChild(step);
+            this.#progressSteps.appendChild(step);
         }
     }
 
@@ -199,12 +216,12 @@ export class LoadingManager extends BaseManager {
      * @private
      * @returns {HTMLElement}
      */
-    _createProgressBar() {
+    #createProgressBar() {
         const progressBar = document.createElement('div');
         progressBar.className = 'loaderBar';
         progressBar.innerHTML = `
             <span class="loader-text">0%</span>
-            <span class="load d-none"></span>
+            <span class="load"></span>
             <div class="progress-steps"></div>
         `;
         return progressBar;
@@ -215,7 +232,7 @@ export class LoadingManager extends BaseManager {
      * @private
      * @returns {HTMLElement}
      */
-    _createWordsLoader() {
+    #createWordsLoader() {
         const wordsLoader = document.createElement('div');
         wordsLoader.className = 'loaderWords';
         wordsLoader.innerHTML = `
@@ -232,32 +249,28 @@ export class LoadingManager extends BaseManager {
      */
     async startLoading(totalSteps) {
         try {
-            this.log(LogLevel.INFO, '🎬 Opening loading screen', {
-                totalSteps,
-                currentStep: 0,
-                startTime: new Date().toISOString()
-            });
-            
-            // Ensure initialization
-            if (!this._initialized) {
-                await this.initialize();
+            if (this.#isVisible) {
+                this.log(LogLevel.WARN, '⚠️ Loading screen already visible');
+                return;
             }
 
-            // Reset state
-            this._totalSteps = totalSteps;
-            this._currentStep = 0;
-            this._startTime = performance.now();
-            this._isVisible = true;
+            this.#isVisible = true;
+            this.#startTime = performance.now();
+            this.#totalSteps = totalSteps;
+            this.#currentStep = 0;
 
-            // Show loading screen
-            if (this._container) {
-                this._container.style.display = 'flex';
-                this._container.style.opacity = '1';
-                this._container.classList.remove('d-none', 'fade-out');
+            // Show loading screen with fade-in animation
+            if (this.#container) {
+                this.#container.classList.remove('hidden', 'fade-out');
+                this.#container.classList.add('fade-in');
+                this.log(LogLevel.INFO, '🎬 Opening loading screen');
+                this.emit('loading:start', { totalSteps });
             }
 
+            // Start progress tracking
+            progressManager.startTask('Inicjalizacja aplikacji', totalSteps);
         } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.HIGH, {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
                 method: 'startLoading',
                 totalSteps
             });
@@ -266,51 +279,51 @@ export class LoadingManager extends BaseManager {
 
     /**
      * Update loading progress
-     * @param {number} step Current step number
-     * @param {string} description Current step description
+     * @param {number} step Current step
+     * @param {string} status Status message
      */
-    updateProgress(step, description) {
-        if (!this._container || !this._isVisible) return;
-        
-        this._currentStep = step;
-        
-        // Calculate progress percentage
-        const progress = Math.min(100, Math.round((step / this._totalSteps) * 100));
-        
-        // Update progress bar and label
-        if (this._progressBar && this._progressLabel) {
-            this._progressBar.style.width = `${progress}%`;
-            this._progressLabel.textContent = `${progress}%`;
-        }
+    async updateProgress(step, status = '') {
+        try {
+            if (!this.#isVisible || !this.#container) return;
 
-        // Update progress steps
-        this._createProgressSteps();
-        
-        // Update words loader text with current manager name
-        if (this._wordsLoader && description) {
-            const managerName = description.includes('Manager') ? 
-                description.split(' ')[0] : // Extract manager name if present
-                description;
-                
-            const words = this._wordsLoader.querySelector('.words');
-            if (words) {
-                // Keep only one word visible
-                words.innerHTML = `
-                    <span class="word">${managerName}</span>
-                `;
+            this.#currentStep = Math.min(step, this.#totalSteps);
+            const percentage = Math.max(0, Math.min(100, (this.#currentStep / Math.max(1, this.#totalSteps)) * 100));
+
+            // Update progress bar
+            if (this.#progressBar) {
+                this.#progressBar.classList.remove('d-none');
+                this.#progressBar.style.width = `${percentage}%`;
+                this.#progressBar.setAttribute('aria-valuenow', percentage);
             }
-        }
-        
-        // Update loading time
-        if (this._startTime) {
-            const currentTime = performance.now() - this._startTime;
-            const timeText = `${currentTime.toFixed(2)}ms`;
-            if (!this._loadingTime) {
-                this._loadingTime = document.createElement('div');
-                this._loadingTime.className = 'loading-time';
-                this._container.appendChild(this._loadingTime);
+
+            // Update status text
+            if (this.#statusText) {
+                this.#statusText.textContent = status;
             }
-            this._loadingTime.textContent = timeText;
+
+            // Update percentage text
+            if (this.#progressLabel) {
+                this.#progressLabel.textContent = `${Math.round(percentage)}%`;
+            }
+
+            // Update progress steps
+            this.#createProgressSteps();
+
+            // Update progress manager
+            progressManager.updateTask(1, status);
+
+            this.emit('loading:progress', { 
+                step, 
+                totalSteps: this.#totalSteps, 
+                percentage, 
+                status 
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: 'updateProgress',
+                step,
+                status
+            });
         }
     }
 
@@ -331,117 +344,110 @@ export class LoadingManager extends BaseManager {
 
     /**
      * Finish loading and hide loading screen
-     * @param {boolean} hasError Whether there was an error during initialization
+     * @param {boolean} isError Whether there was an error during initialization
      */
-    async finishLoading(hasError = false) {
+    async finishLoading(isError = false) {
         try {
-            const duration = this._startTime ? `${(performance.now() - this._startTime).toFixed(2)}ms` : 'unknown';
-            this.log(LogLevel.INFO, '🏁 Starting to close loading screen', {
-                totalSteps: this._totalSteps,
-                completedSteps: this._currentStep,
-                duration,
-                hasError
-            });
-
-            if (!this._container || !this._isVisible) {
-                this.log(LogLevel.WARN, '⚠️ Container already removed or not visible');
+            if (!this.#isVisible) {
+                this.log(LogLevel.WARN, '⚠️ Loading screen already closed');
                 return;
             }
 
-            // 1. Wait for minimum loading time
+            // Calculate remaining minimum time
             const currentTime = performance.now();
-            const elapsedTime = currentTime - this._startTime;
-            if (elapsedTime < this._minLoadingTime) {
-                await new Promise(resolve => setTimeout(resolve, this._minLoadingTime - elapsedTime));
+            const elapsedTime = currentTime - this.#startTime;
+            const remainingTime = Math.max(0, this.#minLoadingTime - elapsedTime);
+
+            if (remainingTime > 0) {
+                this.log(LogLevel.INFO, `⏳ Waiting for minimum loading time: ${remainingTime}ms`);
+                await new Promise(resolve => setTimeout(resolve, remainingTime));
             }
 
-            // 2. If there was no error, wait for all managers to initialize
-            if (!hasError) {
+            // Update final state
+            if (this.#progressBar) {
+                this.#progressBar.style.width = '100%';
+                this.#progressBar.setAttribute('aria-valuenow', 100);
+                this.#progressBar.classList.add(isError ? 'error' : 'success');
+            }
+
+            // Update progress manager
+            if (isError) {
+                progressManager.setError('Błąd inicjalizacji');
+            } else {
+                progressManager.setSuccess('Inicjalizacja zakończona');
+            }
+
+            // Start fade-out animation
+            if (this.#container) {
+                this.#container.classList.remove('fade-in');
+                this.#container.classList.add('fade-out');
+
+                // Wait for animation to complete
                 await new Promise((resolve) => {
-                    const checkInitialization = () => {
-                        if (this._currentStep >= this._totalSteps) {
-                            resolve();
-                        } else {
-                            setTimeout(checkInitialization, 100);
-                        }
+                    const onTransitionEnd = () => {
+                        this.#container.removeEventListener('transitionend', onTransitionEnd);
+                        this.#container.classList.add('hidden');
+                        this.#container.style.display = 'none'; // Force hide
+                        resolve();
                     };
-                    checkInitialization();
+                    
+                    this.#container.addEventListener('transitionend', onTransitionEnd, { once: true });
+                    
+                    // Fallback if animation doesn't complete
+                    setTimeout(() => {
+                        this.#container.removeEventListener('transitionend', onTransitionEnd);
+                        this.#container.classList.add('hidden');
+                        this.#container.style.display = 'none'; // Force hide
+                        resolve();
+                    }, 500);
                 });
+
+                // Reset state
+                this.#cleanup();
+                this.emit('loading:finish', { isError });
+                this.log(LogLevel.SUCCESS, '✨ Loading screen closed successfully');
             }
-
-            // 3. Add fade-out class and wait for animation
-            this._container.classList.add('fade-out');
-            
-            await new Promise(resolve => {
-                const onTransitionEnd = () => {
-                    this._container.style.display = 'none';
-                    this._isVisible = false;
-                    
-                    // Show main application container
-                    const mainContainer = document.querySelector('.container-fluid');
-                    if (mainContainer) {
-                        mainContainer.classList.remove('d-none');
-                        mainContainer.style.opacity = '1';
-                    }
-                    
-                    resolve();
-                };
-                
-                this._container.addEventListener('transitionend', onTransitionEnd, { once: true });
-                
-                // Backup timeout
-                setTimeout(() => {
-                    this._container.removeEventListener('transitionend', onTransitionEnd);
-                    this._container.style.display = 'none';
-                    this._isVisible = false;
-                    
-                    // Show main application container
-                    const mainContainer = document.querySelector('.container-fluid');
-                    if (mainContainer) {
-                        mainContainer.classList.remove('d-none');
-                        mainContainer.style.opacity = '1';
-                    }
-                    
-                    resolve();
-                }, 500);
-            });
-
-            // 4. Clean up
-            this.log(LogLevel.DEBUG, '🧹 Cleaning up references');
-            this._container = null;
-            this._progressBar = null;
-            this._progressLabel = null;
-            this._statusText = null;
-            this._loadingTime = null;
-            this._currentStep = 0;
-            this._totalSteps = 0;
-            this._startTime = null;
-
-            this.log(LogLevel.SUCCESS, '✨ Loading screen closed successfully');
         } catch (error) {
-            this.log(LogLevel.ERROR, '❌ Error during finishLoading', {
-                error: error.message,
-                stack: error.stack
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: 'finishLoading',
+                isError
             });
+            // Force cleanup even on error
+            this.#cleanup();
+            if (this.#container) {
+                this.#container.style.display = 'none';
+                this.#container.classList.add('hidden');
+            }
+        }
+    }
 
-            // Emergency cleanup
-            if (this._container) {
-                this._container.style.display = 'none';
-                this._isVisible = false;
-            }
-            
-            // Show main application container even on error
-            const mainContainer = document.querySelector('.container-fluid');
-            if (mainContainer) {
-                mainContainer.classList.remove('d-none');
-                mainContainer.style.opacity = '1';
-            }
-            
-            this._container = null;
-            this._progressBar = null;
-            this._progressLabel = null;
-            this._statusText = null;
-            this._loadingTime = null;
+    /**
+     * Clean up loading screen state
+     * @private
+     */
+    #cleanup() {
+        this.#isVisible = false;
+        this.#startTime = null;
+        this.#currentStep = 0;
+        this.#totalSteps = 0;
+        
+        if (this.#container) {
+            this.#container.style.opacity = '0';
+            this.#container.style.display = 'none';
+        }
+        
+        if (this.#progressBar) {
+            this.#progressBar.style.width = '0%';
+            this.#progressBar.setAttribute('aria-valuenow', 0);
+            this.#progressBar.classList.remove('success', 'error');
+        }
+        
+        if (this.#statusText) {
+            this.#statusText.textContent = '';
+        }
+        
+        if (this.#progressLabel) {
+            this.#progressLabel.textContent = '0%';
         }
     }
 
@@ -451,15 +457,19 @@ export class LoadingManager extends BaseManager {
      */
     async dispose() {
         try {
-            if (this._container) {
-                this._container.style.display = 'none';
-                this._isVisible = false;
+            if (this.#container) {
+                this.#container.style.display = 'none';
+                this.#isVisible = false;
             }
-            this._container = null;
-            this._progressBar = null;
-            this._progressLabel = null;
-            this._statusText = null;
-            this._loadingTime = null;
+            this.#container = null;
+            this.#progressBar = null;
+            this.#progressLabel = null;
+            this.#statusText = null;
+            this.#loadingTime = null;
+
+            // Hide progress manager
+            progressManager.hide();
+
             await super.dispose();
         } catch (error) {
             this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH, {
@@ -470,4 +480,4 @@ export class LoadingManager extends BaseManager {
 }
 
 // Export singleton instance
-export const loadingManager = LoadingManager.getInstance(); 
+export const loadingManager = InitialLoadingManager.getInstance(); 

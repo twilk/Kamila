@@ -8,13 +8,13 @@ export { EventManager, eventManager } from './core/EventManager.js';
 export { ConnectionManager, connectionManager } from './core/ConnectionManager.js';
 export { UIManager, uiManager } from './core/UIManager.js';
 export { ErrorType, ErrorSeverity } from './core/ErrorTypes.js';
-export { LoadingManager, loadingManager } from './core/LoadingManager.js';
+export { InitialLoadingManager, loadingManager } from './core/LoadingManager.js';
 export { LogLevel } from './core/LogLevel.js';
 export { InitializationManager, initializationManager } from './core/InitializationManager.js';
 export { DataManager, dataManager } from './core/DataManager.js';
 export { StatusManager, statusManager } from './core/StatusManager.js';
 export { MenuManager, menuManager } from './core/MenuManager.js';
-export { ProgressManager, progressManager } from './core/ProgressManager.js';
+export { OperationProgressManager, progressManager } from './core/ProgressManager.js';
 export { UpdateManager, updateManager } from './core/UpdateManager.js';
 export { NotificationManager, notificationManager } from './core/NotificationManager.js';
 export { LanguageManager, languageManager } from './core/LanguageManager.js';
@@ -28,10 +28,16 @@ export { MessageManager, messageManager } from './core/MessageManager.js';
 export { StoreManager, storeManager } from './core/StoreManager.js';
 export { InterfaceManager, interfaceManager } from './core/InterfaceManager.js';
 
-// API services
+// API Services
+export { API } from './api/api.js';
 export { OrderService } from './api/OrderService.js';
 export { UserCardService } from './api/userCard.js';
-export { API } from './api/api.js';
+
+// Legacy API (to be removed in 4.0.0)
+export { OrderService as DarwinaOrderService } from './api/drwn.js';
+
+// New TypeScript API
+export * from './api/index.js';
 
 // Storage and configuration
 export { StorageManager, storageManager } from './storage.js';

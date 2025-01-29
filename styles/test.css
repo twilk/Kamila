@@ -117,11 +117,11 @@
 }
 
 /* Dark theme support */
-.dark-theme .radio-group-label {
+[data-theme="dark"] .radio-group-label {
     color: var(--bs-gray-400);
 }
 
-.dark-theme .custom-radio-group .radio-input {
+[data-theme="dark"] .custom-radio-group .radio-input {
     background-image: linear-gradient(#ffffff 33%, #414751 58%, #837b52, #c5baa1, #c3adaa);
     box-shadow: 0.1em 0 0 #2726267f inset,
         -0.1em 0 0 #27262600 inset,
@@ -132,11 +132,11 @@
         -0.1em -0.2em 0 #ffffff7f inset;
 }
 
-.dark-theme .custom-radio-group .radio-input:checked {
+[data-theme="dark"] .custom-radio-group .radio-input:checked {
     background-image: linear-gradient(#ffffff 33%, #414751 58%, #827a7b, #c0b6ac, #c3adaa);
 }
 
-.dark-theme .custom-radio-group .radio-input:checked + span {
+[data-theme="dark"] .custom-radio-group .radio-input:checked + span {
     color: var(--bs-info);
 }
 
@@ -201,20 +201,20 @@
 }
 
 /* Dark theme support */
-.dark-theme #test-details {
+[data-theme="dark"] #test-details {
     scrollbar-color: #495057 #343a40;
 }
 
-.dark-theme #test-details::-webkit-scrollbar-track {
+[data-theme="dark"] #test-details::-webkit-scrollbar-track {
     background: #343a40;
 }
 
-.dark-theme #test-details::-webkit-scrollbar-thumb {
+[data-theme="dark"] #test-details::-webkit-scrollbar-thumb {
     background-color: #495057;
     border: 2px solid #343a40;
 }
 
-.dark-theme #test-details::-webkit-scrollbar-thumb:hover {
+[data-theme="dark"] #test-details::-webkit-scrollbar-thumb:hover {
     background-color: #6c757d;
 }
 
@@ -305,4 +305,4 @@ html[data-theme="dark"] .debug-panel {
 html[data-theme="dark"] #debug-logs {
     background: var(--bs-gray-900);
     border-color: var(--bs-gray-700);
-} 
+}

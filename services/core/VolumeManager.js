@@ -1,39 +1,53 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { LogLevel } from './LogLevel.js';
 
 /**
  * @extends {BaseManager}
  * Manages sound volume and mute state
  */
 export class VolumeManager extends BaseManager {
-    static _instance = null;
+    /** @private */
+    static #instance = null;
 
+    /** @private */
+    #volume = 100;
+
+    /** @private */
+    #isMuted = false;
+
+    /**
+     * Get singleton instance
+     * @returns {VolumeManager}
+     */
     static getInstance() {
-        if (!VolumeManager._instance) {
-            VolumeManager._instance = new VolumeManager();
+        if (!VolumeManager.#instance) {
+            VolumeManager.#instance = new VolumeManager();
         }
-        return VolumeManager._instance;
+        return VolumeManager.#instance;
     }
 
     constructor() {
         super('VolumeManager');
-        if (VolumeManager._instance) {
+        if (VolumeManager.#instance) {
             throw new Error('Use VolumeManager.getInstance()');
         }
-        VolumeManager._instance = this;
-        this._volume = 100;
-        this._isMuted = false;
+        VolumeManager.#instance = this;
     }
 
     /**
      * Initialize volume manager
      * @returns {Promise<boolean>}
      */
-    async initialize() {
+    async onInitialize() {
         try {
-            await super.initialize();
-            this._setupEventListeners();
-            await this._loadSettings();
+            // Load volume settings
+            await this.#loadSettings();
+
+            // Set up event listeners
+            this.#setupEventListeners();
+
+            this.log(LogLevel.SUCCESS, '🔊 Volume manager initialized');
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
@@ -47,7 +61,7 @@ export class VolumeManager extends BaseManager {
      * Set up volume control event listeners
      * @private
      */
-    _setupEventListeners() {
+    #setupEventListeners() {
         const volumeButton = document.getElementById('volume-button');
         const volumeSlider = document.getElementById('volume-slider');
 
@@ -64,46 +78,52 @@ export class VolumeManager extends BaseManager {
      * Load volume settings from storage
      * @private
      */
-    async _loadSettings() {
+    async #loadSettings() {
         try {
             const settings = await chrome.storage.local.get(['volume', 'muted']);
-            this._volume = settings.volume ?? 100;
-            this._isMuted = settings.muted ?? false;
-            this._updateUI();
+            this.#volume = settings.volume ?? 100;
+            this.#isMuted = settings.muted ?? false;
+            this.#updateUI();
         } catch (error) {
             this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
-                method: '_loadSettings'
+                method: '#loadSettings'
             });
         }
     }
 
     /**
-     * Update volume UI elements
+     * Update UI elements with current volume state
      * @private
      */
-    _updateUI() {
-        const volumeButton = document.getElementById('volume-button');
-        const volumeSlider = document.getElementById('volume-slider');
+    #updateUI() {
+        try {
+            const volumeButton = document.getElementById('volume-button');
+            const volumeSlider = document.getElementById('volume-slider');
 
-        if (volumeButton) {
-            volumeButton.classList.toggle('muted', this._isMuted);
-        }
+            if (volumeButton) {
+                volumeButton.classList.toggle('muted', this.#isMuted);
+            }
 
-        if (volumeSlider) {
-            volumeSlider.value = this._volume;
+            if (volumeSlider) {
+                volumeSlider.value = this.#volume;
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: '#updateUI'
+            });
         }
     }
 
     /**
      * Set volume level
-     * @param {number} value Volume level (0-100)
+     * @param {number} value - Volume level (0-100)
      */
     setVolume(value) {
         try {
-            this._volume = Math.max(0, Math.min(100, value));
-            this._isMuted = this._volume === 0;
-            this._updateUI();
-            chrome.storage.local.set({ volume: this._volume, muted: this._isMuted });
+            this.#volume = Math.max(0, Math.min(100, value));
+            this.#isMuted = this.#volume === 0;
+            this.#updateUI();
+            chrome.storage.local.set({ volume: this.#volume, muted: this.#isMuted });
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
                 method: 'setVolume',
@@ -117,9 +137,9 @@ export class VolumeManager extends BaseManager {
      */
     toggleMute() {
         try {
-            this._isMuted = !this._isMuted;
-            this._updateUI();
-            chrome.storage.local.set({ muted: this._isMuted });
+            this.#isMuted = !this.#isMuted;
+            this.#updateUI();
+            chrome.storage.local.set({ muted: this.#isMuted });
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
                 method: 'toggleMute'
@@ -128,19 +148,20 @@ export class VolumeManager extends BaseManager {
     }
 
     /**
-     * Get current volume level
-     * @returns {number} Volume level (0-100)
+     * Get current effective volume (0 if muted)
+     * @returns {number} Current volume level
      */
     getVolume() {
-        return this._isMuted ? 0 : this._volume;
+        return this.#isMuted ? 0 : this.#volume;
     }
 
     /**
-     * Cleanup and dispose
+     * Clean up resources
      * @returns {Promise<void>}
      */
     async dispose() {
         try {
+            // Clean up event listeners if needed
             const volumeButton = document.getElementById('volume-button');
             const volumeSlider = document.getElementById('volume-slider');
 
@@ -152,9 +173,12 @@ export class VolumeManager extends BaseManager {
                 volumeSlider.removeEventListener('input', this.setVolume);
             }
 
+            // Reset instance
+            VolumeManager.#instance = null;
+
             await super.dispose();
         } catch (error) {
-            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH, {
+            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.MEDIUM, {
                 method: 'dispose'
             });
         }

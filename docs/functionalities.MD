@@ -37,7 +37,7 @@
 ### 1. Core Services
 - **Initialization Chain**:
   1. Core Services (InitLogger, MetricsManager, etc.)
-  2. Base Managers (LoadingManager, ProgressManager, etc.)
+  2. Base Managers (InitialLoadingManager, OperationProgressManager, etc.)
   3. Feature Managers (DataManager, StatusManager, etc.)
   4. UI Components
   5. Status and Counter Initialization

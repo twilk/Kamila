@@ -37,14 +37,13 @@ export class DebugManager extends BaseManager {
      * Initialize the debug manager
      * @returns {Promise<boolean>}
      */
-    async initialize() {
+    async onInitialize() {
         try {
             this._startTime = performance.now();
             this.log(LogLevel.INFO, '🚀 Starting debug manager initialization');
 
             // Initialize debug manager
             this.log(LogLevel.INFO, '🔧 Starting debug manager initialization');
-            await super.initialize();
 
             // Ensure debug panel exists
             this.log(LogLevel.INFO, '🎯 Ensuring debug panel exists');
@@ -64,7 +63,7 @@ export class DebugManager extends BaseManager {
             this.log(LogLevel.SUCCESS, '✅ Debug manager initialized', {
                 debugEnabled: this.debugEnabled,
                 hasDebugPanel: !!this.debugPanel,
-                logHistorySize: this.logHistory.length
+                duration: `${duration}ms`
             });
 
             return true;

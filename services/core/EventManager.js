@@ -7,7 +7,7 @@ import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
  * Manages event delegation and handling
  */
 export class EventManager extends BaseManager {
-    static _instance = null;
+    static #instance = null;
     #delegatedEvents = new Map();
     #eventMetrics = new Map();
     #debounceTimers = new Map();
@@ -16,11 +16,11 @@ export class EventManager extends BaseManager {
     #customEventHandlers = new Map();
 
     constructor() {
-        if (EventManager._instance) {
-            throw new Error('Use EventManager.getInstance()');
+        if (EventManager.#instance) {
+            return EventManager.#instance;
         }
         super('EventManager');
-        EventManager._instance = this;
+        EventManager.#instance = this;
         this.#boundHandleEvent = this.#handleEvent.bind(this);
     }
 
@@ -29,36 +29,30 @@ export class EventManager extends BaseManager {
      * @returns {EventManager}
      */
     static getInstance() {
-        if (!EventManager._instance) {
-            EventManager._instance = new EventManager();
+        if (!EventManager.#instance) {
+            EventManager.#instance = new EventManager();
         }
-        return EventManager._instance;
+        return EventManager.#instance;
     }
 
     /**
      * Initialize event manager
      * @returns {Promise<boolean>}
      */
-    async initialize() {
+    async onInitialize() {
         try {
-            if (this.isInitialized()) {
-                this.log(LogLevel.WARNING, '⚠️ EventManager already initialized');
-                return true;
-            }
-
-            await super.initialize();
-
             // Setup event delegation
             document.addEventListener('click', this.#boundHandleEvent, true);
             document.addEventListener('input', this.#boundHandleEvent, true);
             document.addEventListener('change', this.#boundHandleEvent, true);
             document.addEventListener('submit', this.#boundHandleEvent, true);
 
-            this._setInitialized(true);
             this.log(LogLevel.SUCCESS, '✅ Event manager initialized');
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
+                method: 'initialize'
+            });
             return false;
         }
     }
@@ -309,7 +303,6 @@ export class EventManager extends BaseManager {
             this.#customEventHandlers.clear();
 
             // Reset state
-            this._setInitialized(false);
             this.#boundHandleEvent = null;
 
             await super.dispose();

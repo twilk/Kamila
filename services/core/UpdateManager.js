@@ -63,12 +63,12 @@ export class UpdateManager extends BaseManager {
             const eventManager = this.getDependency('EventManager');
             const notificationManager = this.getDependency('NotificationManager');
             
-            if (!eventManager?.isInitialized()) {
-                throw new Error('EventManager must be initialized');
+            if (!eventManager?.isReady()) {
+                throw new Error('EventManager must be ready');
             }
 
-            if (!notificationManager?.isInitialized()) {
-                throw new Error('NotificationManager must be initialized');
+            if (!notificationManager?.isReady()) {
+                throw new Error('NotificationManager must be ready');
             }
 
             // Setup update handler
@@ -98,9 +98,8 @@ export class UpdateManager extends BaseManager {
      * @private
      */
     #startUpdateCheck() {
-        // Disabled in current version
         if (environment.isDevelopment || environment.isProduction) {
-            this.log(LogLevel.INFO, '🔄 Update check interval disabled in current version');
+            this.log(LogLevel.INFO, '🔄 Update check interval disabled in development/production mode');
             return;
         }
 
@@ -108,6 +107,7 @@ export class UpdateManager extends BaseManager {
             clearInterval(this.#updateCheckTimer);
         }
 
+        this.log(LogLevel.INFO, `🔄 Starting update check interval (${this.#updateCheckInterval}ms)`);
         this.#updateCheckTimer = setInterval(() => {
             this.checkForUpdates().catch(error => {
                 this.handleError(error, ErrorType.UPDATE, ErrorSeverity.LOW, {
@@ -122,24 +122,34 @@ export class UpdateManager extends BaseManager {
      * @returns {Promise<void>}
      */
     async checkForUpdates() {
-        try {
-            // Disabled in current version
-            if (environment.isDevelopment || environment.isProduction) {
-                this.log(LogLevel.INFO, '🔄 Update checks disabled in current version');
-                return;
-            }
+        if (environment.isDevelopment || environment.isProduction) {
+            this.log(LogLevel.DEBUG, '🔄 Update checks disabled in development/production mode');
+            return;
+        }
 
+        try {
             const now = Date.now();
-            if (now - this.#lastCheck < 60000) { // Prevent checking more often than once per minute
+            if (now - this.#lastCheck < 60000) {
+                this.log(LogLevel.DEBUG, '🔄 Skipping update check - too soon since last check');
                 return;
             }
             this.#lastCheck = now;
 
+            this.log(LogLevel.INFO, '🔄 Checking for updates...');
             const manifest = chrome.runtime.getManifest();
             const response = await fetch('https://darwina.pl/api/version');
             const { version } = await response.json();
 
+            this.log(LogLevel.INFO, '🔄 Version check:', {
+                current: manifest.version,
+                latest: version
+            });
+
             if (version && version !== manifest.version) {
+                this.log(LogLevel.INFO, '🔄 New version available!', {
+                    current: manifest.version,
+                    latest: version
+                });
                 eventManager.emit('update-available', { version });
             }
         } catch (error) {

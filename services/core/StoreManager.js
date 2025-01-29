@@ -38,7 +38,7 @@ export class StoreManager extends BaseManager {
     /** @type {StoreCacheConfig} */
     static CACHE_CONFIG = {
         key: 'store_data',
-        expiration: 24 * 60 * 60 * 1000, // 24 godziny
+        expiration: 24 * 60 * 60 * 1000, // 24 hours
         version: '1.0'
     };
 
@@ -54,71 +54,99 @@ export class StoreManager extends BaseManager {
         this._uiManager = null;
         this._dataManager = null;
         this._isLoading = false;
+        this._initialized = false;
+        this._initPromise = null;
     }
 
     /**
-     * Initialize store manager
+     * Initialize store manager with optimized loading
      * @returns {Promise<boolean>}
      */
-    async initialize() {
-        try {
-            await super.initialize();
+    async onInitialize() {
+        if (this._initialized) return true;
+        if (this._initPromise) return this._initPromise;
 
-            // Get manager instances
-            this._uiManager = uiManager;
-            this._dataManager = dataManager;
+        this._initPromise = (async () => {
+            try {
+                this._isLoading = true;
+                
+                // Get manager instances (moved before store loading)
+                this._uiManager = uiManager;
+                this._dataManager = dataManager;
 
-            // Load stores and setup UI
-            await this._loadStores();
-            this._setupStoreSelector();
+                // Load stores and last store in parallel
+                const [storesLoaded, lastStoreLoaded] = await Promise.all([
+                    this._loadStores(),
+                    this._loadLastStore()
+                ]);
 
-            // Load last selected store
-            await this._loadLastStore();
+                if (!storesLoaded) {
+                    throw new Error('Failed to load stores');
+                }
 
-            this.log(LogLevel.SUCCESS, '✨ Store manager initialized');
-            sendLogToPopup('Store manager initialized', 'success');
-            return true;
-        } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initialize'
-            });
-            sendLogToPopup('Failed to initialize store manager', 'error', error.message);
-            return false;
-        }
+                // Setup UI only after successful data load
+                this._setupStoreSelector();
+
+                this._initialized = true;
+                this.log(LogLevel.SUCCESS, '🏪 Store manager initialized');
+                sendLogToPopup('Store manager initialized', 'success');
+                return true;
+            } catch (error) {
+                this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
+                    method: 'initialize'
+                });
+                sendLogToPopup('Failed to initialize store manager', 'error', error.message);
+                return false;
+            } finally {
+                this._isLoading = false;
+                this._initPromise = null;
+            }
+        })();
+
+        return this._initPromise;
     }
 
     /**
-     * Load stores from API or cache
+     * Load stores with optimized caching
      * @private
-     * @returns {Promise<void>}
+     * @returns {Promise<boolean>}
      */
     async _loadStores() {
         try {
-            this._isLoading = true;
-            sendLogToPopup('Loading stores...', 'info');
-
-            // Initialize stores from the static configuration
+            // Initialize stores from static configuration first
             this._stores.clear();
             stores.forEach(store => {
-                if (store && store.id) {
+                if (store?.id) {
                     this._stores.set(store.id, store);
                 }
             });
 
-            // Update cache
-            await this._updateCache(Array.from(this._stores.entries()));
+            // Try loading from cache in parallel with initialization
+            const cachedData = await this._loadFromCache();
+            if (cachedData) {
+                cachedData.forEach(([id, store]) => {
+                    if (store?.id) {
+                        this._stores.set(id, store);
+                    }
+                });
+            }
+
+            // Update cache only if needed
+            if (!cachedData) {
+                await this._updateCache(Array.from(this._stores.entries()));
+            }
 
             this.log(LogLevel.DEBUG, '🏪 Stores loaded', {
-                count: this._stores.size
+                count: this._stores.size,
+                fromCache: !!cachedData
             });
-            sendLogToPopup(`Loaded ${this._stores.size} stores`, 'success');
+            
+            return true;
         } catch (error) {
             this.handleError(error, ErrorType.DATA, ErrorSeverity.MEDIUM, {
                 method: '_loadStores'
             });
-            sendLogToPopup('Failed to load stores', 'error', error.message);
-        } finally {
-            this._isLoading = false;
+            return false;
         }
     }
 
@@ -177,50 +205,61 @@ export class StoreManager extends BaseManager {
     }
 
     /**
-     * Setup store selector in UI
+     * Setup store selector with optimized DOM operations
      * @private
      */
     _setupStoreSelector() {
         try {
+            // Create document fragment for better performance
+            const fragment = document.createDocumentFragment();
+            
+            // Add "All stores" option
+            const allStores = stores.find(s => s.id === 'ALL');
+            if (allStores) {
+                const option = document.createElement('option');
+                option.value = allStores.id;
+                option.textContent = allStores.name;
+                option.selected = !this._currentStore;
+                fragment.appendChild(option);
+            }
+
+            // Add remaining stores in batch
+            const sortedStores = Array.from(this._stores.values())
+                .filter(store => store.id !== 'ALL')
+                .sort((a, b) => a.name.localeCompare(b.name));
+
+            sortedStores.forEach(store => {
+                const option = document.createElement('option');
+                option.value = store.id;
+                option.textContent = `${store.name} - ${store.address || ''}`;
+                option.selected = this._currentStore?.id === store.id;
+                fragment.appendChild(option);
+            });
+
+            // Update DOM once
             this._uiManager.safeUpdateElement('#store-select', select => {
                 select.innerHTML = '';
-
-                // Add "All stores" option
-                const allStores = stores.find(s => s.id === 'ALL');
-                if (allStores) {
-                    const option = document.createElement('option');
-                    option.value = allStores.id;
-                    option.textContent = allStores.name;
-                    option.selected = !this._currentStore;
-                    select.appendChild(option);
-                }
-
-                // Add remaining stores
-                Array.from(this._stores.values())
-                    .filter(store => store.id !== 'ALL')
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .forEach(store => {
-                        const option = document.createElement('option');
-                        option.value = store.id;
-                        option.textContent = `${store.name} - ${store.address || ''}`;
-                        option.selected = this._currentStore?.id === store.id;
-                        select.appendChild(option);
-                    });
+                select.appendChild(fragment);
+                select.disabled = this._isLoading || this._stores.size === 0;
 
                 // Add change handler
-                select.addEventListener('change', async (event) => {
+                const existingHandler = select._storeChangeHandler;
+                if (existingHandler) {
+                    select.removeEventListener('change', existingHandler);
+                }
+
+                const handler = async (event) => {
                     const newStoreId = event.target.value;
                     await this.changeStore(newStoreId);
-                });
+                };
 
-                // Update disabled state
-                select.disabled = this._isLoading || this._stores.size === 0;
+                select._storeChangeHandler = handler;
+                select.addEventListener('change', handler);
             });
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
                 method: '_setupStoreSelector'
             });
-            sendLogToPopup('Failed to setup store selector', 'error', error.message);
         }
     }
 

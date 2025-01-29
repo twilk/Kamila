@@ -10,6 +10,8 @@ export class MessageManager extends BaseManager {
     static _instance = null;
     #messageElements = new Map();
     #activeMessages = new Set();
+    #messageQueue = [];
+    #isProcessing = false;
 
     constructor() {
         if (MessageManager._instance) {
@@ -34,25 +36,21 @@ export class MessageManager extends BaseManager {
      * Initialize message manager
      * @returns {Promise<boolean>}
      */
-    async initialize() {
+    async onInitialize() {
         try {
-            if (this.isInitialized()) {
-                return true;
-            }
+            // Initialize message queue
+            this.#messageQueue = [];
+            this.#isProcessing = false;
 
-            await super.initialize();
-
-            // Initialize message elements
-            this.#initializeMessageElements();
-
-            // Setup event listeners
+            // Set up event listeners
             this.#setupEventListeners();
 
-            this._setInitialized(true);
-            this.log(LogLevel.SUCCESS, '✅ Message manager initialized');
+            this.log(LogLevel.SUCCESS, '💬 Message manager initialized');
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
+                method: 'initialize'
+            });
             return false;
         }
     }
