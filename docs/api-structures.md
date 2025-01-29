@@ -6,7 +6,7 @@
 ```javascript
 /**
  * @typedef {Object} ApiResponse
- * @property {Order[]} data - Lista zamówień
+ * @property {Order[]} orders - Lista zamówień
  * @property {Object} metadata - Metadane odpowiedzi
  * @property {number} metadata.page_count - Liczba stron
  * @property {number} metadata.total - Całkowita liczba zamówień
@@ -41,7 +41,7 @@
 
 // Przykład odpowiedzi z API
 const exampleApiResponse = {
-    data: [
+    orders: [
         {
             order_id: 123,
             status_id: "1",
@@ -150,70 +150,146 @@ const ORDER_STATUSES = {
     ACCEPTED: '3',      // Przyjęte do realizacji
     READY_FOR_PICKUP: '5' // Gotowe do odbioru
 };
-```
 
-### 2.2 Status Display Names
-```javascript
 /**
  * Nazwy statusów do wyświetlenia
  * @constant {Object}
  */
 const ORDER_STATUS_NAMES = {
-    '1': 'Nowe',
-    '2': 'Potwierdzone telefonicznie przez sklep',
-    '3': 'Przyjęte do realizacji',
-    '5': 'Gotowe do odbioru'
+    [ORDER_STATUSES.NEW]: 'Nowe',
+    [ORDER_STATUSES.CONFIRMED]: 'Potwierdzone telefonicznie przez sklep',
+    [ORDER_STATUSES.ACCEPTED]: 'Przyjęte do realizacji',
+    [ORDER_STATUSES.READY_FOR_PICKUP]: 'Gotowe do odbioru'
+};
+
+/**
+ * Klucze liczników statusów
+ * @constant {Object}
+ */
+const COUNTER_KEYS = {
+    NEW: '1',
+    CONFIRMED: '2',
+    ACCEPTED: '3',
+    READY: 'READY',
+    OVERDUE: 'OVERDUE'
 };
 ```
 
-## 3. Cache Structure
+## 3. Cache System
 
-### 3.1 Order Cache
+### 3.1 Cache Schema
 ```javascript
 /**
- * @typedef {Object} OrderCache
- * @property {Object} counts - Liczniki zamówień
- * @property {number} counts.1 - Liczba nowych
- * @property {number} counts.2 - Liczba potwierdzonych
- * @property {number} counts.3 - Liczba przyjętych
- * @property {number} counts.READY - Liczba gotowych
- * @property {number} counts.OVERDUE - Liczba przeterminowanych
+ * @typedef {Object} CacheSchema
+ * @property {Object} counts - Liczniki zamówień dla różnych statusów
+ * @property {number} counts.1 - Liczba nowych zamówień
+ * @property {number} counts.2 - Liczba potwierdzonych zamówień
+ * @property {number} counts.3 - Liczba przyjętych zamówień
+ * @property {number} counts.READY - Liczba zamówień gotowych do odbioru
+ * @property {number} counts.OVERDUE - Liczba przeterminowanych zamówień
  * @property {number} timestamp - Timestamp ostatniej aktualizacji
  * @property {string} storeId - ID sklepu
  * @property {Object} metadata - Metadane cache
+ * @property {string} metadata.store - Nazwa sklepu
+ * @property {number} metadata.total - Całkowita liczba zamówień
+ * @property {number} metadata.processedAt - Timestamp przetworzenia
+ * @property {boolean} metadata.forceRefresh - Czy wymusić odświeżenie
+ * @property {Object} metadata.originalFormat - Oryginalna struktura danych
  */
 
-// Przykład struktury cache
-const exampleCache = {
+const CACHE_SCHEMA = {
     counts: {
-        '1': 5,
-        '2': 3,
-        '3': 2,
-        'READY': 4,
-        'OVERDUE': 1
+        [COUNTER_KEYS.NEW]: 'number',
+        [COUNTER_KEYS.CONFIRMED]: 'number',
+        [COUNTER_KEYS.ACCEPTED]: 'number',
+        [COUNTER_KEYS.READY]: 'number',
+        [COUNTER_KEYS.OVERDUE]: 'number'
     },
-    timestamp: Date.now(),
-    storeId: 'FIL',
+    timestamp: 'number',
+    storeId: 'string',
     metadata: {
-        store: 'Filtry',
-        total: 15,
-        processedAt: Date.now(),
-        forceRefresh: false,
-        originalFormat: {}
+        store: 'string',
+        total: 'number',
+        processedAt: 'number',
+        forceRefresh: 'boolean',
+        originalFormat: 'object'
     }
 };
 ```
 
-### 3.2 Cache Keys
+### 3.2 Cache Configuration
 ```javascript
 /**
- * Klucze używane w cache
+ * Konfiguracja timeoutów cache
  * @constant {Object}
  */
-const CACHE_KEYS = {
-    ORDER_COUNTS: 'orderCounts',
-    LAST_UPDATE: 'lastUpdate',
-    STORE_PREFIX: 'store_'
+const CACHE_CONFIG = {
+    // Główny timeout cache
+    CACHE_TIMEOUT: 5 * 60 * 1000, // 5 minut
+    
+    // Timeout świeżości danych
+    DATA_FRESHNESS_TIMEOUT: 5 * 60 * 1000, // 5 minut
+    
+    // Timeout przy zmianie sklepu
+    STORE_CHANGE_TIMEOUT: 30 * 60 * 1000, // 30 minut
+    
+    // Klucze cache
+    KEYS: {
+        ORDER_COUNTS: 'orderCounts',
+        LAST_UPDATE: 'lastUpdate',
+        STORE_PREFIX: 'store_'
+    }
+};
+
+/**
+ * Warunki wymuszające odświeżenie cache
+ * @constant {Object}
+ */
+const FORCE_REFRESH_CONDITIONS = {
+    MANUAL_REQUEST: 'manual',    // Ręczne żądanie odświeżenia
+    CACHE_EXPIRED: 'expired',    // Cache wygasł
+    STORE_CHANGED: 'store_changed', // Zmiana sklepu
+    ERROR_RECOVERY: 'error'      // Odzyskiwanie po błędzie
+};
+```
+
+### 3.3 Cache Operations
+```javascript
+/**
+ * Przykład operacji na cache
+ */
+const CacheOperations = {
+    /**
+     * Sprawdź ważność cache
+     * @param {string} storeId - ID sklepu
+     * @returns {Promise<boolean>}
+     */
+    async isCacheValid(storeId) {
+        const cacheKey = `${CACHE_CONFIG.KEYS.STORE_PREFIX}${storeId}`;
+        const cache = await chrome.storage.local.get(cacheKey);
+        
+        if (!cache[cacheKey]) return false;
+        
+        const { timestamp } = cache[cacheKey];
+        const age = Date.now() - timestamp;
+        
+        return age < CACHE_CONFIG.CACHE_TIMEOUT;
+    },
+
+    /**
+     * Zapisz dane do cache
+     * @param {string} storeId - ID sklepu
+     * @param {Object} data - Dane do zapisania
+     */
+    async saveToCache(storeId, data) {
+        const cacheKey = `${CACHE_CONFIG.KEYS.STORE_PREFIX}${storeId}`;
+        await chrome.storage.local.set({
+            [cacheKey]: {
+                ...data,
+                timestamp: Date.now()
+            }
+        });
+    }
 };
 ```
 
@@ -431,4 +507,397 @@ const ValidationRules = {
                order.items?.every(item => item.price >= 0);
     }
 };
-``` 
+```
+
+## 3. Error Handling
+
+### 3.1 Error Types and Severity
+```javascript
+/**
+ * Typy błędów
+ * @enum {string}
+ */
+const ErrorType = {
+    API: 'api_error',        // Błędy komunikacji z API
+    AUTH: 'auth_error',      // Błędy autoryzacji
+    CACHE: 'cache_error',    // Błędy cache
+    DATA: 'data_error',      // Błędy danych
+    STORAGE: 'storage_error', // Błędy storage
+    UI: 'ui_error',          // Błędy interfejsu
+    INITIALIZATION: 'init_error', // Błędy inicjalizacji
+    DISPOSAL: 'disposal_error'    // Błędy czyszczenia
+};
+
+/**
+ * Poziomy ważności błędów
+ * @enum {string}
+ */
+const ErrorSeverity = {
+    LOW: 'low',       // Niski priorytet
+    MEDIUM: 'medium', // Średni priorytet
+    HIGH: 'high'      // Wysoki priorytet
+};
+
+/**
+ * Struktura błędu
+ * @typedef {Object} ExtendedError
+ * @property {string} code - Kod błędu
+ * @property {string} message - Komunikat błędu
+ * @property {ErrorType} type - Typ błędu
+ * @property {ErrorSeverity} severity - Ważność błędu
+ * @property {Object} [context] - Kontekst błędu
+ * @property {number} timestamp - Timestamp wystąpienia
+ * @property {string} [stackTrace] - Stack trace błędu
+ */
+```
+
+### 3.2 Error Handling Example
+```javascript
+/**
+ * Przykład obsługi błędów
+ */
+class ErrorHandler {
+    /**
+     * Obsłuż błąd
+     * @param {Error} error - Obiekt błędu
+     * @param {ErrorType} type - Typ błędu
+     * @param {ErrorSeverity} severity - Ważność błędu
+     * @param {Object} context - Kontekst błędu
+     */
+    static handleError(error, type, severity, context) {
+        const extendedError = {
+            code: `${type}_${Date.now()}`,
+            message: error.message,
+            type,
+            severity,
+            context,
+            timestamp: Date.now(),
+            stackTrace: error.stack
+        };
+
+        // Log błędu
+        console.error('[ERROR]', extendedError);
+
+        // Wysłanie do systemu monitoringu
+        if (severity === ErrorSeverity.HIGH) {
+            this.reportToMonitoring(extendedError);
+        }
+
+        // Powiadomienie użytkownika
+        if (severity !== ErrorSeverity.LOW) {
+            this.notifyUser(extendedError);
+        }
+    }
+}
+```
+
+## 4. Notification System
+
+### 4.1 Notification Configuration
+```javascript
+/**
+ * Konfiguracja limitów powiadomień
+ * @constant {Object}
+ */
+const NOTIFICATION_LIMITS = {
+    PER_MINUTE: 10,    // Maksymalna liczba powiadomień na minutę
+    PER_HOUR: 30,      // Maksymalna liczba powiadomień na godzinę
+    PER_DAY: 100,      // Maksymalna liczba powiadomień na dzień
+    COOLDOWN_MS: 3000  // Cooldown między powiadomieniami (3 sekundy)
+};
+
+/**
+ * Format powiadomienia
+ * @typedef {Object} NotificationData
+ * @property {string} type - Typ powiadomienia
+ * @property {string} title - Tytuł powiadomienia
+ * @property {string} message - Treść powiadomienia
+ * @property {Object} [data] - Dodatkowe dane
+ * @property {boolean} [requireInteraction] - Czy wymaga interakcji
+ * @property {boolean} [silent] - Czy wyciszone
+ */
+```
+
+### 4.2 Notification Manager
+```javascript
+/**
+ * Manager powiadomień
+ */
+class NotificationManager {
+    constructor() {
+        this.notificationHistory = [];
+        this.lastNotificationTime = 0;
+    }
+
+    /**
+     * Sprawdź czy można pokazać powiadomienie
+     * @returns {Promise<boolean>}
+     */
+    async canShowNotification() {
+        const now = Date.now();
+        
+        // Usuń stare wpisy (starsze niż 24h)
+        this.notificationHistory = this.notificationHistory.filter(
+            time => now - time < 24 * 60 * 60 * 1000
+        );
+
+        // Sprawdź cooldown
+        if (now - this.lastNotificationTime < NOTIFICATION_LIMITS.COOLDOWN_MS) {
+            return false;
+        }
+
+        // Sprawdź limity
+        const lastMinute = this.notificationHistory.filter(
+            time => now - time < 60 * 1000
+        ).length;
+        if (lastMinute >= NOTIFICATION_LIMITS.PER_MINUTE) return false;
+
+        const lastHour = this.notificationHistory.filter(
+            time => now - time < 60 * 60 * 1000
+        ).length;
+        if (lastHour >= NOTIFICATION_LIMITS.PER_HOUR) return false;
+
+        if (this.notificationHistory.length >= NOTIFICATION_LIMITS.PER_DAY) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Śledź wyświetlone powiadomienie
+     */
+    async trackNotification() {
+        const now = Date.now();
+        this.notificationHistory.push(now);
+        this.lastNotificationTime = now;
+        
+        // Zapisz historię do storage
+        await chrome.storage.local.set({
+            notifications: {
+                history: this.notificationHistory,
+                lastTime: this.lastNotificationTime
+            }
+        });
+    }
+
+    /**
+     * Pobierz statystyki powiadomień
+     */
+    getStats() {
+        const now = Date.now();
+        return {
+            lastMinute: this.notificationHistory.filter(
+                time => now - time < 60 * 1000
+            ).length,
+            lastHour: this.notificationHistory.filter(
+                time => now - time < 60 * 60 * 1000
+            ).length,
+            lastDay: this.notificationHistory.length,
+            timeSinceLastNotification: now - this.lastNotificationTime
+        };
+    }
+}
+```
+
+### 4.3 Example Notification
+```javascript
+/**
+ * Przykład tworzenia powiadomienia
+ */
+async function createOrderNotification(order, status) {
+    const notificationManager = new NotificationManager();
+    
+    // Sprawdź limity
+    if (!await notificationManager.canShowNotification()) {
+        return;
+    }
+
+    // Utwórz powiadomienie
+    chrome.notifications.create(`order-${order.order_id}`, {
+        type: 'basic',
+        iconUrl: 'icon128.png',
+        title: 'Nowe zamówienie',
+        message: `Zamówienie #${order.order_id} - ${status}`,
+        buttons: [
+            {
+                title: 'Zobacz szczegóły'
+            }
+        ],
+        requireInteraction: true,
+        silent: false
+    });
+
+    // Śledź powiadomienie
+    await notificationManager.trackNotification();
+}
+
+## 5. Alarm System and Data Refresh
+
+### 5.1 Alarm Configuration
+```javascript
+/**
+ * Konfiguracja interwałów
+ * @constant {Object}
+ */
+const DEFAULT_INTERVALS = {
+    fullRefresh: 5,      // Pełne odświeżenie co 5 minut
+    dataFreshness: 15,   // Sprawdzanie świeżości co 15 minut
+    backgroundCheck: 5    // Sprawdzanie w tle co 5 minut
+};
+
+/**
+ * Typy alarmów
+ * @constant {Object}
+ */
+const ALARM_TYPES = {
+    FETCH_DATA: 'fetchData',           // Pobieranie danych
+    CHECK_ORDERS: 'checkOrders',       // Sprawdzanie zamówień
+    CHECK_NEW_ORDERS: 'checkNewOrders' // Sprawdzanie nowych zamówień
+};
+```
+
+### 5.2 Alarm Management
+```javascript
+/**
+ * Zarządzanie alarmami
+ */
+async function updateAlarms(intervals) {
+    // Usuń istniejące alarmy
+    await chrome.alarms.clear(ALARM_TYPES.FETCH_DATA);
+    await chrome.alarms.clear(ALARM_TYPES.CHECK_ORDERS);
+    await chrome.alarms.clear(ALARM_TYPES.CHECK_NEW_ORDERS);
+    
+    // Utwórz nowe alarmy
+    chrome.alarms.create(ALARM_TYPES.FETCH_DATA, {
+        periodInMinutes: intervals.fullRefresh
+    });
+    
+    chrome.alarms.create(ALARM_TYPES.CHECK_ORDERS, {
+        periodInMinutes: intervals.dataFreshness
+    });
+    
+    chrome.alarms.create(ALARM_TYPES.CHECK_NEW_ORDERS, {
+        periodInMinutes: intervals.backgroundCheck
+    });
+}
+```
+
+### 5.3 Data Refresh Process
+```javascript
+/**
+ * Proces odświeżania danych
+ */
+class DataRefreshProcess {
+    /**
+     * Pełne odświeżenie danych
+     * @param {string} storeId - ID sklepu
+     */
+    async fullRefresh(storeId) {
+        try {
+            // 1. Pobierz dane z API
+            const orders = await this.fetchAllOrders(storeId);
+            
+            // 2. Przetwórz dane
+            const processedData = this.processOrders(orders);
+            
+            // 3. Zaktualizuj cache
+            await this.updateCache(storeId, processedData);
+            
+            // 4. Zaktualizuj UI
+            this.updateUI(processedData);
+            
+            // 5. Zaplanuj następne odświeżenie
+            this.scheduleNextRefresh();
+        } catch (error) {
+            ErrorHandler.handleError(error, ErrorType.DATA, ErrorSeverity.HIGH, {
+                method: 'fullRefresh',
+                storeId
+            });
+        }
+    }
+
+    /**
+     * Sprawdzanie nowych zamówień
+     * @param {string} storeId - ID sklepu
+     */
+    async checkNewOrders(storeId) {
+        try {
+            // 1. Pobierz timestamp ostatniej aktualizacji
+            const lastUpdate = await this.getLastUpdateTimestamp();
+            
+            // 2. Pobierz nowe zamówienia
+            const newOrders = await this.fetchModifiedOrders(storeId, lastUpdate);
+            
+            // 3. Jeśli są nowe zamówienia
+            if (newOrders.length > 0) {
+                // 4. Zaktualizuj dane
+                await this.processAndUpdateOrders(newOrders);
+                
+                // 5. Pokaż powiadomienia
+                await this.showNotifications(newOrders);
+            }
+        } catch (error) {
+            ErrorHandler.handleError(error, ErrorType.DATA, ErrorSeverity.MEDIUM, {
+                method: 'checkNewOrders',
+                storeId
+            });
+        }
+    }
+
+    /**
+     * Sprawdzanie świeżości danych
+     * @param {string} storeId - ID sklepu
+     */
+    async checkDataFreshness(storeId) {
+        try {
+            // 1. Sprawdź cache
+            const cache = await this.getCacheData(storeId);
+            
+            // 2. Sprawdź czy dane są aktualne
+            const isFresh = this.isDataFresh(cache);
+            
+            // 3. Jeśli dane nie są aktualne
+            if (!isFresh) {
+                // 4. Wykonaj pełne odświeżenie
+                await this.fullRefresh(storeId);
+            }
+        } catch (error) {
+            ErrorHandler.handleError(error, ErrorType.DATA, ErrorSeverity.LOW, {
+                method: 'checkDataFreshness',
+                storeId
+            });
+        }
+    }
+}
+```
+
+### 5.4 Alarm Handlers
+```javascript
+/**
+ * Obsługa alarmów
+ */
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+    try {
+        const refreshProcess = new DataRefreshProcess();
+        const currentStore = await storeManager.getCurrentStore();
+        
+        switch (alarm.name) {
+            case ALARM_TYPES.FETCH_DATA:
+                await refreshProcess.fullRefresh(currentStore?.id);
+                break;
+                
+            case ALARM_TYPES.CHECK_ORDERS:
+                await refreshProcess.checkDataFreshness(currentStore?.id);
+                break;
+                
+            case ALARM_TYPES.CHECK_NEW_ORDERS:
+                await refreshProcess.checkNewOrders(currentStore?.id);
+                break;
+        }
+    } catch (error) {
+        ErrorHandler.handleError(error, ErrorType.ALARM, ErrorSeverity.HIGH, {
+            alarmName: alarm.name
+        });
+    }
+}); 
