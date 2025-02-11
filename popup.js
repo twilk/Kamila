@@ -1,48 +1,45 @@
-// Import all managers and services from central point
+// Import base classes
+import { BaseManager } from './services/core/BaseManager.js';
+import { InitLogger } from './services/core/InitLogger.js';
+import { MenuManager } from './services/core/MenuManager.js';
+import { CacheManager } from './services/core/CacheManager.js';
+
+// Import all necessary services from central point
 import {
-    // Core services
-    InitLogger,
-    BaseManager,
+    managers,
     errorHandler,
-    initializationManager,
-    LogLevel,
-    ErrorType,
-    ErrorSeverity,
-    
-    // Core managers
-    eventManager,
+    menuManager,
     loadingManager,
-    connectionManager,
-    cacheManager,
+    dataManager,
     uiManager,
     debugManager,
     themeManager,
-    progressManager,
-    menuManager,
-    interfaceManager,
-    
-    // Feature managers
-    dataManager,
-    storeManager,
+    operationProgressManager,
     statusManager,
-    userManager,
-    languageManager,
-    updateManager,
-    refreshManager,
-    rankingManager,
-    settingsManager,
-    messageManager,
-    notificationManager
+    apiManager,
+    OrderService,
+    i18n,
+    stores,
+    EventType,
+    ErrorType,
+    ErrorSeverity,
+    initializationManager,
+    UserCardService
 } from './services/index.js';
-
-import { OrderService } from './services/api/OrderService.js';
-import { i18n } from './services/i18n.js';
-import { stores } from './services/stores.js';
-import { STATUS_MAP } from './services/core/StatusManager.js';
 
 // Import constants from configuration
 import { INTERVALS } from './config/intervals.js';
 import { API_CONFIG, getDarwinaCredentials, sendLogToPopup } from './config/api.js';
+import { STATUS_MAP } from './services/core/StatusManager.js';
+
+// Add EVENTS constant
+const EVENTS = {
+    TAB_CHANGED: 'menu:tabChanged',
+    TAB_SHOW: 'menu:tabShow',
+    MENU_READY: 'menu:ready',
+    STORE_CHANGED: 'menu:storeChanged',
+    DATA_UPDATED: 'menu:dataUpdated'
+};
 
 // Initialize static fields
 BaseManager.initLogger = new InitLogger();
@@ -73,76 +70,60 @@ const CACHE_TTL = 5 * 60 * 1000;
 // Dodaj stałą dla interwału odświeżania (1 minuta)
 const REFRESH_INTERVAL = 60 * 1000;
 
-/**
- * Initialize the application
- * @returns {Promise<void>}
- */
-async function initialize() {
+// Dodaj na początku pliku
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000;
+
+async function initializeWithRetry(attempt = 1) {
     try {
-        // Initialize base functionality
-        BaseManager.initLogger = new InitLogger();
+        console.log('[DEBUG] 🚀 Starting initialization (attempt ' + attempt + '/' + MAX_RETRIES + ')');
         
-        // Initialize language support first
-        await i18n.init();
-        
-        // Initialize all managers
-        const success = await initializationManager.initialize('startup');
-        if (!success) {
-            throw new Error('Initialization manager failed to initialize');
+        // Verify managers are available
+        if (!managers || !managers.initializationManager) {
+            throw new Error('Required managers not available: ' + 
+                (!managers ? 'managers object missing' : 'initializationManager missing'));
         }
 
-        // Initialize store manager first
-        await storeManager.initialize();
-        console.log('[DEBUG] 🏪 Store manager initialized');
-
-        // Initialize interface manager
-        await interfaceManager.initialize();
-        console.log('[DEBUG] 🖥️ Interface manager initialized');
-
+        // Initialize managers through initialization manager
+        await managers.initializationManager.initialize();
+        
         // Initialize OrderService
-        const credentials = await getDarwinaCredentials();
-        if (!credentials) {
-            throw new Error('Failed to get DARWINA credentials');
-        }
-
-        console.log('[DEBUG] 🔑 Got credentials, initializing OrderService');
-        orderService = new OrderService(credentials);
-
-        try {
-            await orderService.initialize();
-            console.log('[DEBUG] ✅ OrderService initialized successfully');
-        } catch (error) {
-            console.error('[ERROR] ❌ OrderService initialization failed:', error);
-            errorHandler.handleError(error, ErrorType.SERVICE, ErrorSeverity.HIGH, {
-                method: 'initialize',
-                context: 'OrderService'
-            });
-            throw error;
-        }
-
-        // Verify all required managers are initialized
-        await verifyManagerInitialization();
+        orderService = new OrderService();
+        await orderService.initialize();
         
-        // Set up event listeners
+        // Setup UI and events
         await setupEventListeners();
-        
-        // Update UI with current language
-        await i18n.updateInterface();
-        
-        // Load initial data
-        await loadAndUpdateData();
+        setupAutoRefresh();
 
-        // Update UI with current language
-        const currentLang = languageManager.getCurrentLanguage();
-        document.querySelectorAll('#language-switcher .flag-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.lang === currentLang);
-        });
+        console.log('[DEBUG] ✅ Initialization complete');
         
-        console.log('✅ Application initialized successfully');
     } catch (error) {
-        console.error('[ERROR] ❌ Initialization failed:', error);
-        errorHandler.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+        console.error(`[ERROR] ❌ Initialization failed (attempt ${attempt}/${MAX_RETRIES}):`, error);
+        
+        if (attempt < MAX_RETRIES) {
+            console.log(`[INFO] 🔄 Retrying in ${RETRY_DELAY}ms...`);
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+            return initializeWithRetry(attempt + 1);
+        }
         throw error;
+    }
+}
+
+async function checkBackgroundConnection() {
+    try {
+        const response = await chrome.runtime.sendMessage({ type: 'PING' });
+        return response?.status === 'OK';
+    } catch {
+        return false;
+    }
+}
+
+async function getCredentials() {
+    try {
+        const response = await chrome.runtime.sendMessage({ type: 'GET_CREDENTIALS' });
+        return response?.credentials;
+    } catch {
+        return null;
     }
 }
 
@@ -179,13 +160,20 @@ async function verifyManagerInitialization() {
  */
 async function setupEventListeners() {
     try {
-        // Initialize Bootstrap tabs
-        const tabElements = document.querySelectorAll('[data-bs-toggle="tab"]');
-        tabElements.forEach(tab => {
-            new bootstrap.Tab(tab);
-        });
+        // Wait for UI and Theme managers to be ready first
+        await Promise.all([
+            uiManager.waitForReady(),
+            themeManager.waitForReady()
+        ]);
 
-        // Refresh button
+        // Then wait for menu manager
+        await menuManager.waitForReady();
+        
+        // Initialize user selector
+        const userCardService = new UserCardService();
+        await userCardService.initializeUserSelector();
+        
+        // Now setup other event listeners
         document.getElementById('refresh-store-data')?.addEventListener('click', async () => {
             try {
                 console.log('[DEBUG] 🔄 Refresh button clicked - clearing cache and refreshing data');
@@ -197,13 +185,6 @@ async function setupEventListeners() {
 
                 // Clear all caches first
                 await orderService.clearAllCaches();
-                
-                // Force refresh data without modified_from limitation
-                const store = await getSelectedStore();
-                const params = {};
-                if (store?.id !== 'ALL' && store?.deliveryId) {
-                    params.delivery_id = store.deliveryId;
-                }
                 
                 // Force refresh data
                 await loadAndUpdateData(true);
@@ -228,21 +209,6 @@ async function setupEventListeners() {
                 }
             }
         });
-
-        // Store selector
-        const storeSelect = document.getElementById('store-select');
-        if (storeSelect) {
-            storeSelect.addEventListener('change', async () => {
-                try {
-                    progressManager.show(i18n.translate('stores.changing'));
-                    await loadAndUpdateData(true);
-                    progressManager.setSuccess(i18n.translate('stores.changed'));
-                } catch (error) {
-                    progressManager.setError(error.message || i18n.translate('errors.unknown'));
-                    errorHandler.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM);
-                }
-            });
-        }
 
         // Theme toggle
         document.getElementById('theme-toggle')?.addEventListener('change', (event) => {
@@ -270,18 +236,17 @@ async function setupEventListeners() {
             }
         });
     } catch (error) {
-        errorHandler?.handleError(error, ErrorType.UI, ErrorSeverity.HIGH, {
+        console.error('[ERROR] ❌ Failed to setup event listeners:', error);
+        errorHandler?.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
             method: 'setupEventListeners'
         });
-        throw error;
     }
 }
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        await initialize();
-        setupAutoRefresh();
+        await initializeWithRetry();
     } catch (error) {
         console.error('Initialization failed:', error);
         errorHandler.handleError(error);
@@ -313,48 +278,40 @@ async function resizeWindow(height) {
 // Load and update data
 async function loadAndUpdateData(forceRefresh = false) {
     try {
+        if (loadAndUpdateData.isRunning) {
+            console.log('[DEBUG] 🔄 Update already in progress, skipping');
+            return;
+        }
+        
+        loadAndUpdateData.isRunning = true;
         updateLoadingState(true);
+
         const store = await getSelectedStore();
-        let data;
+        const menuManager = MenuManager.getInstance();
+        await menuManager.waitForReady();
 
         if (!forceRefresh) {
             const cached = await chrome.storage.local.get([`orderCounts_${store.id}`, 'lastUpdate']);
-            data = cached[`orderCounts_${store.id}`];
+            const data = cached[`orderCounts_${store.id}`];
             const lastUpdate = cached.lastUpdate;
             
-            // Sprawdź czy cache jest ważny (nie starszy niż CACHE_TTL)
-            const isCacheValid = lastUpdate && (Date.now() - lastUpdate < CACHE_TTL);
-            
-            if (data && validateCacheData(data) && isCacheValid) {
-                debugManager.log('📦 Using cached data', LogLevel.INFO);
+            if (data && validateCacheData(data) && lastUpdate && (Date.now() - lastUpdate < CACHE_TTL)) {
                 await updateCounters(data);
-                updateLoadingState(false);
                 return;
             }
-            debugManager.log('🔄 Cache invalid or expired, fetching fresh data', LogLevel.INFO);
         }
 
-        debugManager.log('🔄 Fetching fresh data from API', LogLevel.INFO);
-        const response = await orderService.fetchOrders(store.id);
-        
-        if (response && response.counts && validateCacheData(response.counts)) {
-            debugManager.log('📦 API Response:', LogLevel.DEBUG, response);
-            debugManager.log('📊 Extracted counts:', LogLevel.DEBUG, response.counts);
-            
-            // Zapisz do cache'u z timestampem
-            await chrome.storage.local.set({
-                [`orderCounts_${store.id}`]: response.counts,
-                lastUpdate: Date.now()
-            });
-            
-            await updateCounters(response.counts);
-        } else {
-            throw new Error('Invalid data format received from API');
-        }
+        // Request data update from background
+        chrome.runtime.sendMessage({
+            type: 'REQUEST_DATA_UPDATE',
+            data: { storeId: store.id, forceRefresh }
+        });
+
     } catch (error) {
-        debugManager.log('❌ Failed to load data:', LogLevel.ERROR, error);
+        console.error('[ERROR] ❌ Failed to load data:', error);
         handleCounterError(error);
     } finally {
+        loadAndUpdateData.isRunning = false;
         updateLoadingState(false);
     }
 }
@@ -555,7 +512,7 @@ async function initializeUI() {
         }
 
         // Initialize store selector
-        const storeSelector = document.getElementById('store-selector');
+        const storeSelector = document.getElementById('store-select') || document.getElementById('store-selector');
         if (storeSelector) {
             // Populate store options
             const stores = storeManager.getAllStores();
@@ -571,18 +528,37 @@ async function initializeUI() {
 
             // Add change listener
             storeSelector.addEventListener('change', async (event) => {
-                const newStoreId = event.target.value;
-                console.log('[DEBUG] 🏪 Store changed to:', newStoreId);
-                
-                eventManager.emit('storeChanged', {
-                    action: 'store_change',
-                    oldStore: currentStore.id,
-                    newStore: newStoreId,
-                    timestamp: new Date().toISOString()
-                });
-                
-                await storeManager.changeStore(newStoreId);
-                await loadAndUpdateData(true); // Force refresh on store change
+                try {
+                    const menuManager = MenuManager.getInstance();
+                    await menuManager.waitForReady();
+                    
+                    const newStoreId = event.target.value;
+                    operationProgressManager.show(i18n.translate('stores.changing'));
+                    
+                    // Emit store change event through MenuManager
+                    window.dispatchEvent(new CustomEvent(EVENTS.STORE_CHANGED, {
+                        detail: {
+                            previousStore: storeSelector.dataset.previousValue,
+                            currentStore: newStoreId,
+                            timestamp: new Date().toISOString()
+                        }
+                    }));
+                    
+                    // Update store in managers
+                    await menuManager.setActiveStore(newStoreId);
+                    await storeManager.changeStore(newStoreId);
+                    
+                    // Update data
+                    await loadAndUpdateData(true);
+                    
+                    // Save current value for next change
+                    storeSelector.dataset.previousValue = newStoreId;
+                    
+                    operationProgressManager.setSuccess(i18n.translate('stores.changed'));
+                } catch (error) {
+                    operationProgressManager.setError(error.message || i18n.translate('errors.unknown'));
+                    errorHandler.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM);
+                }
             });
         }
 
@@ -599,6 +575,9 @@ async function initializeUI() {
 // Helper function to get selected store
 async function getSelectedStore() {
     try {
+        const menuManager = MenuManager.getInstance();
+        await menuManager.waitForReady();
+        
         // Get store select element - check both possible IDs
         const storeSelect = document.getElementById('store-select') || document.getElementById('store-selector');
         if (!storeSelect) {
@@ -615,6 +594,9 @@ async function getSelectedStore() {
 
         // Get store ID
         const storeId = selectedOption.value;
+        
+        // Update active store in MenuManager
+        await menuManager.setActiveStore(storeId);
         
         // Find store in configuration
         const store = stores.find(s => s.id === storeId);
@@ -672,25 +654,18 @@ function handleLanguageChange(language) {
 let refreshInterval = null;
 
 function setupAutoRefresh() {
-    // Wyczyść poprzedni interwał jeśli istnieje
     if (refreshInterval) {
         clearInterval(refreshInterval);
     }
     
-    // Ustaw nowy interwał
-    refreshInterval = setInterval(async () => {
-        try {
-            const cached = await chrome.storage.local.get('lastUpdate');
-            const lastUpdate = cached.lastUpdate;
-            
-            // Odśwież dane jeśli cache jest starszy niż CACHE_TTL
-            if (!lastUpdate || (Date.now() - lastUpdate >= CACHE_TTL)) {
-                debugManager.log('🔄 Auto-refresh: Cache expired, fetching new data', LogLevel.INFO);
-                await loadAndUpdateData(true);
-            }
-        } catch (error) {
-            debugManager.log('❌ Auto-refresh failed:', LogLevel.ERROR, error);
-        }
+    refreshInterval = setInterval(() => {
+        const lastUpdate = chrome.storage.local.get('lastUpdate')
+            .then(cached => {
+                if (!cached.lastUpdate || (Date.now() - cached.lastUpdate >= CACHE_TTL)) {
+                    loadAndUpdateData(true);
+                }
+            })
+            .catch(error => console.error('[ERROR] ❌ Auto-refresh check failed:', error));
     }, REFRESH_INTERVAL);
 }
 
@@ -699,5 +674,22 @@ window.addEventListener('unload', () => {
     if (refreshInterval) {
         clearInterval(refreshInterval);
     }
+});
+
+// Add message handling
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    try {
+        if (message.type === 'DATA_UPDATED') {
+            const { counts, storeId } = message.data;
+            if (counts && validateCacheData(counts)) {
+                updateCounters(counts);
+            }
+            sendResponse({ success: true });
+        }
+    } catch (error) {
+        console.error('[ERROR] ❌ Failed to handle message:', error);
+        sendResponse({ success: false, error: error.message });
+    }
+    return true; // Keep the message channel open for async response
 });
 

@@ -7,13 +7,12 @@
         "storage",
         "tabs",
         "scripting",
-        "notifications"
+        "notifications",
+        "alarms"
     ],
     "host_permissions": [
-        // "https://*.darwina.pl/*",
         "https://darwina.pl/api/*",
         "https://api.darwina.pl/v1/*",
-        // "https://darwina.weblucy.com/*",
         "https://docs.google.com/*",
         "https://spreadsheets.google.com/*",
         "https://*.googleapis.com/*",
@@ -53,12 +52,14 @@
             "assets/*",
             "styles/*",
             "styles/loading.css",
-            "locales/*"
+            "locales/*",
+            "config/credentials.json",
+            "services/*",
+            "services/core/*",
+            "services/api/*"
         ],
         "matches": [
-            // "https://darwina.pl/api/*",
             "https://*.darwina.pl/*"
-            // "https://darwina.weblucy.com/*"
         ]
     }],
     "minimum_chrome_version": "88",

@@ -1,29 +1,29 @@
 import { BaseManager } from './BaseManager.js';
-import { ErrorHandler, errorHandler } from './ErrorHandler.js';
+import { ErrorHandler } from './ErrorHandler.js';
 import { LogLevel } from './LogLevel.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
-import { InitialLoadingManager, loadingManager } from './LoadingManager.js';
-import { eventManager } from './EventManager.js';
-import { connectionManager } from './ConnectionManager.js';
-import { cacheManager } from './CacheManager.js';
-import { uiManager } from './UIManager.js';
-import { debugManager } from './DebugManager.js';
-import { themeManager } from './ThemeManager.js';
-import { progressManager } from './ProgressManager.js';
-import { menuManager } from './MenuManager.js';
-import { languageManager } from './LanguageManager.js';
-import { storeManager } from './StoreManager.js';
-import { interfaceManager } from './InterfaceManager.js';
-import { dataManager } from './DataManager.js';
-import { userManager } from './UserManager.js';
-import { updateManager } from './UpdateManager.js';
-import { refreshManager } from './RefreshManager.js';
-import { rankingManager } from './RankingManager.js';
-import { settingsManager } from './SettingsManager.js';
-import { messageManager } from './MessageManager.js';
-import { notificationManager } from './NotificationManager.js';
-import { volumeManager } from './VolumeManager.js';
-import { managers, registerManagers } from './managers.js';
+import { InitialLoadingManager } from './LoadingManager.js';
+import { EventManager } from './EventManager.js';
+import { ConnectionManager } from './ConnectionManager.js';
+import { CacheManager } from './CacheManager.js';
+import { UIManager } from './UIManager.js';
+import { DebugManager } from './DebugManager.js';
+import { ThemeManager } from './ThemeManager.js';
+import { OperationProgressManager } from './OperationProgressManager.js';
+import { MenuManager } from './MenuManager.js';
+import { LanguageManager } from './LanguageManager.js';
+import { StoreManager } from './StoreManager.js';
+import { InterfaceManager } from './InterfaceManager.js';
+import { DataManager } from './DataManager.js';
+import { UserManager } from './UserManager.js';
+import { UpdateManager } from './UpdateManager.js';
+import { RefreshManager } from './RefreshManager.js';
+import { RankingManager } from './RankingManager.js';
+import { SettingsManager } from './SettingsManager.js';
+import { MessageManager } from './MessageManager.js';
+import { NotificationManager } from './NotificationManager.js';
+import { VolumeManager } from './VolumeManager.js';
+import { StatusManager } from './StatusManager.js';
 
 /**
  * @extends {BaseManager}
@@ -70,12 +70,13 @@ export class InitializationManager extends BaseManager {
                 console.log('[DEBUG] 🚀 Starting initialization...');
 
                 // Ensure ErrorHandler is initialized first
+                const errorHandler = ErrorHandler.getInstance();
                 if (!errorHandler.isReady()) {
                     await errorHandler.initialize();
                 }
 
                 // Initialize InitialLoadingManager first
-                this.#loadingManager = loadingManager;
+                this.#loadingManager = InitialLoadingManager.getInstance();
                 if (!this.#loadingManager.isInitialized()) {
                     await this.#loadingManager.initialize();
                 }
@@ -83,28 +84,28 @@ export class InitializationManager extends BaseManager {
 
                 // Initialize core managers in correct order
                 const managersToInitialize = [
-                    { instance: errorHandler, name: 'Error Handler' },
-                    { instance: eventManager, name: 'Event Manager' },
-                    { instance: connectionManager, name: 'Connection Manager' },
-                    { instance: cacheManager, name: 'Cache Manager' },
-                    { instance: uiManager, name: 'UI Manager' },
-                    { instance: themeManager, name: 'Theme Manager' },
-                    { instance: debugManager, name: 'Debug Manager' },
-                    { instance: volumeManager, name: 'Volume Manager' },
-                    { instance: progressManager, name: 'Progress Manager' },
-                    { instance: menuManager, name: 'Menu Manager' },
-                    { instance: languageManager, name: 'Language Manager' },
-                    { instance: storeManager, name: 'Store Manager' },
-                    { instance: interfaceManager, name: 'Interface Manager' },
-                    { instance: dataManager, name: 'Data Manager' },
-                    { instance: managers.StatusManager, name: 'Status Manager' },
-                    { instance: userManager, name: 'User Manager' },
-                    { instance: notificationManager, name: 'Notification Manager' },
-                    { instance: updateManager, name: 'Update Manager' },
-                    { instance: refreshManager, name: 'Refresh Manager' },
-                    { instance: rankingManager, name: 'Ranking Manager' },
-                    { instance: settingsManager, name: 'Settings Manager' },
-                    { instance: messageManager, name: 'Message Manager' }
+                    { instance: ErrorHandler.getInstance(), name: 'Error Handler' },
+                    { instance: EventManager.getInstance(), name: 'Event Manager' },
+                    { instance: ConnectionManager.getInstance(), name: 'Connection Manager' },
+                    { instance: CacheManager.getInstance(), name: 'Cache Manager' },
+                    { instance: UIManager.getInstance(), name: 'UI Manager' },
+                    { instance: ThemeManager.getInstance(), name: 'Theme Manager' },
+                    { instance: DebugManager.getInstance(), name: 'Debug Manager' },
+                    { instance: VolumeManager.getInstance(), name: 'Volume Manager' },
+                    { instance: OperationProgressManager.getInstance(), name: 'Operation Progress Manager' },
+                    { instance: StoreManager.getInstance(), name: 'Store Manager' },
+                    { instance: MenuManager.getInstance(), name: 'Menu Manager' },
+                    { instance: LanguageManager.getInstance(), name: 'Language Manager' },
+                    { instance: InterfaceManager.getInstance(), name: 'Interface Manager' },
+                    { instance: DataManager.getInstance(), name: 'Data Manager' },
+                    { instance: StatusManager.getInstance(), name: 'Status Manager' },
+                    { instance: UserManager.getInstance(), name: 'User Manager' },
+                    { instance: NotificationManager.getInstance(), name: 'Notification Manager' },
+                    { instance: UpdateManager.getInstance(), name: 'Update Manager' },
+                    { instance: RefreshManager.getInstance(), name: 'Refresh Manager' },
+                    { instance: RankingManager.getInstance(), name: 'Ranking Manager' },
+                    { instance: SettingsManager.getInstance(), name: 'Settings Manager' },
+                    { instance: MessageManager.getInstance(), name: 'Message Manager' }
                 ];
 
                 // Initialize each manager
@@ -144,6 +145,7 @@ export class InitializationManager extends BaseManager {
                 return true;
             } catch (error) {
                 console.error('[ERROR] ❌ Initialization failed:', error);
+                const errorHandler = ErrorHandler.getInstance();
                 if (errorHandler.isReady()) {
                     errorHandler.handleError(error);
                 }
@@ -182,6 +184,7 @@ export class InitializationManager extends BaseManager {
             await super.dispose();
             return true;
         } catch (error) {
+            const errorHandler = ErrorHandler.getInstance();
             if (errorHandler.isReady()) {
                 errorHandler.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH);
             }
@@ -190,5 +193,5 @@ export class InitializationManager extends BaseManager {
     }
 }
 
-// Export singleton instance
+// Export only the instance
 export const initializationManager = InitializationManager.getInstance();

@@ -1,5 +1,4 @@
-import { LogLevel } from './LogLevel.js';
-import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { EventType, ErrorType, ErrorSeverity, LogLevel } from './EventType.js';
 import { BaseManager } from './BaseManager.js';
 
 /**

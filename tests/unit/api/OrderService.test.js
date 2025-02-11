@@ -1,14 +1,14 @@
+import { APIManager } from '../../../services/api/index.js';
 import { OrderService } from '../../../services/api/OrderService.js';
-import { API } from '../../../services/api/api.js';
-
-jest.mock('../../../services/api/api.js');
+import { ErrorType, ErrorSeverity } from '../../../services/core/ErrorTypes.js';
 
 describe('OrderService', () => {
     let orderService;
+    let apiManager;
 
     beforeEach(() => {
+        apiManager = APIManager.getInstance();
         orderService = new OrderService();
-        jest.clearAllMocks();
     });
 
     describe('Order Operations', () => {
@@ -18,16 +18,16 @@ describe('OrderService', () => {
                 { id: 2, status: 'completed' }
             ];
 
-            API.get.mockResolvedValueOnce({ data: mockOrders });
+            apiManager.get.mockResolvedValueOnce({ data: mockOrders });
 
             const result = await orderService.getOrders();
             expect(result).toEqual(mockOrders);
-            expect(API.get).toHaveBeenCalledWith('/orders');
+            expect(apiManager.get).toHaveBeenCalledWith('/orders');
         });
 
         test('should handle fetch orders error', async () => {
             const error = new Error('Network error');
-            API.get.mockRejectedValueOnce(error);
+            apiManager.get.mockRejectedValueOnce(error);
 
             await expect(orderService.getOrders())
                 .rejects
@@ -40,10 +40,10 @@ describe('OrderService', () => {
             const orderId = 1;
             const newStatus = 'completed';
             
-            API.patch.mockResolvedValueOnce({ success: true });
+            apiManager.patch.mockResolvedValueOnce({ success: true });
 
             await orderService.updateOrderStatus(orderId, newStatus);
-            expect(API.patch).toHaveBeenCalledWith(`/orders/${orderId}/status`, { status: newStatus });
+            expect(apiManager.patch).toHaveBeenCalledWith(`/orders/${orderId}/status`, { status: newStatus });
         });
     });
 }); 

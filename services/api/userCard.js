@@ -1,7 +1,9 @@
-import { API } from './api.js';
+import { APIManager } from './index.js';
 import { ErrorType, ErrorSeverity } from '../core/ErrorTypes.js';
 
-export class UserCardService extends API {
+const apiManager = APIManager.getInstance();
+
+export class UserCardService extends APIManager {
     constructor() {
         super();
         this.setBaseUrl('https://darwina.pl/api');
@@ -45,7 +47,7 @@ export class UserCardService extends API {
         if (!data || typeof data !== 'object') {
             throw new Error('Invalid user card data format', {
                 type: ErrorType.DATA_ERROR,
-                severity: ErrorSeverity.HIGH
+                severity: ErrorType.HIGH
             });
         }
         return {

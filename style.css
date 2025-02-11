@@ -2108,12 +2108,19 @@ body.debug-enabled .tab-content {
 
 /* Settings Section */
 .settings-section {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 0.5rem;
     background: var(--bg-light);
-    border-radius: var(--radius-lg);
-    padding: 1.25rem;
-    margin-bottom: 1rem;
-    border: 1px solid var(--border-light);
-    transition: all var(--transition-fast);
+    border-radius: var(--radius-md);
+}
+
+.settings-section:last-child {
+    border-bottom: none;
+}
+
+.settings-section:not(:first-child) {
+    margin-top: 0.5rem;
 }
 
 [data-theme="dark"] .settings-section {
@@ -2913,12 +2920,14 @@ body.debug-enabled .tab-content {
 /* Menu Styles */
 .menu {
     display: flex;
+    max-width: 540px;
     gap: 12px;
     padding: 12px;
     background: #ffffff;
     border-radius: 24px;
-    align-items: center;
+    align-items: left;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+
     margin: 8px;
     position: relative;
     justify-content: center;
@@ -3010,4 +3019,117 @@ body.debug-enabled .tab-content {
 [data-theme="dark"] .menu .link:hover .link-icon i,
 [data-theme="dark"] .menu .link.active .link-icon i {
     color: var(--bs-primary);
+}
+
+/* Settings styles */
+.settings-section {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 0.5rem;
+    background: var(--bg-light);
+    border-radius: var(--radius-md);
+}
+
+.settings-section:last-child {
+    border-bottom: none;
+}
+
+.settings-section:not(:first-child) {
+    margin-top: 0.5rem;
+}
+
+#user-select.form-select-sm {
+    height: 31px;
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+}
+
+.control-bar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 0;
+}
+
+/* Radio Groups */
+.radio-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.radio-group-label {
+    font-size: 0.9em;
+    color: var(--text-secondary);
+}
+
+.custom-radio-group {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.radio-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.radio-label:hover {
+    background: var(--hover-light);
+}
+
+.radio-input {
+    margin: 0;
+}
+
+/* Dark theme adjustments */
+[data-theme="dark"] .settings-section {
+    background: var(--bg-dark);
+    border-color: var(--border-dark);
+}
+
+[data-theme="dark"] .radio-label:hover {
+    background: var(--hover-dark);
+}
+
+[data-theme="dark"] .radio-group-label {
+    color: var(--text-dark);
+}
+
+/* Sound URL settings */
+.sound-url-settings {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding: 0.5rem;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+}
+
+.sound-url-settings input {
+    flex: 1;
+}
+
+.sound-url-settings .btn-minimal {
+    padding: 0.25rem 0.5rem;
+}
+
+/* Fix for nested sections */
+#settings .settings-section {
+    display: block !important;
+    opacity: 1 !important;
+    visibility: visible !important;
 }

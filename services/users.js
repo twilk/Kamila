@@ -1,5 +1,5 @@
 // Lista aktywnych pracowników z ich ID
-const ACTIVE_USERS = [
+export const ACTIVE_USERS = [
     { fullName: "Jurij Martiuk", memberId: "84", isManager: false },
     { fullName: "Patryk Danielik", memberId: "83", isManager: false },
     { fullName: "Mikita Shtyhel", memberId: "82", isManager: false },
@@ -51,41 +51,74 @@ const ACTIVE_USERS = [
     { fullName: "ZPK", memberId: "2", isManager: true }
 ];
 
-// Funkcja generująca plik JSON dla użytkownika
-function generateUserJson(user) {
+/**
+ * Generuje podstawowe dane użytkownika
+ */
+export function generateUserJson(user) {
     return {
         status: "Aktywny",
         fullName: user.fullName,
         isManager: user.isManager,
-        memberId: user.memberId
+        memberId: user.memberId,
+        lastLoginTime: new Date().toISOString(),
+        notificationShown: false
     };
 }
 
-// Funkcja zapisująca pliki JSON
-async function generateAllUserFiles() {
-    for (const user of ACTIVE_USERS) {
-        const userData = generateUserJson(user);
-        const fileName = `users/${user.memberId}.json`;
-        
-        // Tutaj logika zapisu pliku
-        console.log(`Generating ${fileName}:`, userData);
-    }
-}
-
-export { ACTIVE_USERS, generateUserJson, generateAllUserFiles };
-
+/**
+ * Pobiera użytkownika po ID
+ */
 export async function getUserByMemberId(memberId) {
     try {
         // Spróbuj załadować z pliku
         const response = await fetch(chrome.runtime.getURL(`users/${memberId}.json`));
         if (!response.ok) {
-            throw new Error(`User file not found for member ID: ${memberId}`);
+            // Jeśli nie ma pliku, wygeneruj nowe dane
+            const user = ACTIVE_USERS.find(u => u.memberId === memberId);
+            if (!user) {
+                throw new Error(`Nie znaleziono użytkownika o ID: ${memberId}`);
+            }
+            return generateUserJson(user);
         }
 
-        const userData = await response.json();
-        return userData;
+        return await response.json();
     } catch (error) {
         console.error('Error loading user data:', error);
         return null;
+    }
+}
+
+/**
+ * Zapisuje plik JSON dla użytkownika
+ */
+export async function saveUserFile(userData) {
+    try {
+        const fileName = `${userData.memberId}.json`;
+        const fileContent = JSON.stringify(userData, null, 2);
+        const blob = new Blob([fileContent], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+
+        await chrome.downloads.download({
+            url: url,
+            filename: `users/${fileName}`,
+            saveAs: false,
+            conflictAction: 'overwrite'
+        });
+
+        URL.revokeObjectURL(url);
+        return true;
+    } catch (error) {
+        console.error('Error saving user file:', error);
+        return false;
+    }
+}
+
+/**
+ * Generuje pliki dla wszystkich użytkowników
+ */
+export async function generateAllUserFiles() {
+    for (const user of ACTIVE_USERS) {
+        const userData = generateUserJson(user);
+        await saveUserFile(userData);
     }
 } 

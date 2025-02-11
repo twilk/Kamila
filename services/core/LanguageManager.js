@@ -2,6 +2,7 @@ import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { LogLevel } from './LogLevel.js';
 import { eventManager } from './EventManager.js';
+import { EventType } from './EventType.js';
 
 /**
  * @extends {BaseManager}
@@ -44,7 +45,7 @@ export class LanguageManager extends BaseManager {
             await this.#loadLanguagePreference();
             await this.#loadTranslations();
             this.#setupEventListeners();
-            await this.#updateUI();
+            await this.updateUI();
             
             this.log(LogLevel.SUCCESS, '✅ Language manager initialized');
             return true;
@@ -63,7 +64,13 @@ export class LanguageManager extends BaseManager {
     async #loadLanguagePreference() {
         try {
             const { language } = await chrome.storage.local.get('language');
-            if (language && this.#supportedLanguages.includes(language)) {
+            
+            // If no language in storage or unsupported, set default
+            if (!language || !this.#supportedLanguages.includes(language)) {
+                this.#currentLanguage = 'polish';
+                await chrome.storage.local.set({ language: this.#currentLanguage });
+                this.log(LogLevel.INFO, `Set default language: ${this.#currentLanguage}`);
+            } else {
                 this.#currentLanguage = language;
                 this.log(LogLevel.DEBUG, `Loaded language preference: ${language}`);
             }
@@ -71,6 +78,8 @@ export class LanguageManager extends BaseManager {
             this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
                 method: '_loadLanguagePreference'
             });
+            // Fallback to default language
+            this.#currentLanguage = 'polish';
         }
     }
 
@@ -80,16 +89,22 @@ export class LanguageManager extends BaseManager {
      */
     async #loadTranslations() {
         try {
-            const response = await fetch(chrome.runtime.getURL(`locales/${this.#currentLanguage}.json`));
+            const url = chrome.runtime.getURL(`locales/${this.#currentLanguage}.json`);
+            const response = await fetch(url);
+            
             if (!response.ok) {
                 throw new Error(`Failed to load translations for ${this.#currentLanguage}`);
             }
+            
             this.#translations = await response.json();
+            this.log(LogLevel.DEBUG, `✅ Loaded translations for ${this.#currentLanguage}`);
         } catch (error) {
             this.handleError(error, ErrorType.RESOURCE, ErrorSeverity.HIGH, {
                 method: '_loadTranslations',
                 language: this.#currentLanguage
             });
+            // Set empty translations to prevent errors
+            this.#translations = {};
         }
     }
 
@@ -99,15 +114,14 @@ export class LanguageManager extends BaseManager {
      */
     #setupEventListeners() {
         if (this.#eventManager) {
-            // Use event delegation for language switching
-            this.#eventManager.delegate('#language-switcher .flag', 'click', async (event) => {
-                await this.#handleLanguageChange(event);
-            });
-
             // Listen for language change events from other parts of the app
-            window.addEventListener('language:change', async (event) => {
-                const { language } = event.detail;
-                await this.setLanguage(language);
+            this.#eventManager.on(EventType.LANGUAGE_CHANGED, async (eventData) => {
+                // Handle both event.detail and direct data format
+                const language = eventData?.detail?.language || eventData?.language;
+                
+                if (language && language !== this.#currentLanguage) {
+                    await this.setLanguage(language);
+                }
             });
 
             this.log(LogLevel.DEBUG, '🌍 Language event listeners set up');
@@ -125,11 +139,6 @@ export class LanguageManager extends BaseManager {
             if (this.#supportedLanguages.includes(newLanguage)) {
                 await this.setLanguage(newLanguage);
                 
-                // Update UI elements
-                document.querySelectorAll('#language-switcher .flag').forEach(flag => {
-                    flag.classList.toggle('active', flag.dataset.lang === newLanguage);
-                });
-                
                 this.log(LogLevel.INFO, `🌍 Language changed to: ${newLanguage}`);
             }
         } catch (error) {
@@ -141,9 +150,8 @@ export class LanguageManager extends BaseManager {
 
     /**
      * Update UI language indicators
-     * @private
      */
-    async #updateUI() {
+    async updateUI() {
         try {
             // Update all translatable elements
             document.querySelectorAll('[data-i18n]').forEach(element => {
@@ -162,9 +170,19 @@ export class LanguageManager extends BaseManager {
                 const key = element.dataset.i18nPlaceholder;
                 element.placeholder = this.translate(key);
             });
+
+            // Emit language changed event with proper format
+            if (this.#eventManager) {
+                this.#eventManager.emit(EventType.LANGUAGE_CHANGED, {
+                    detail: {
+                        language: this.#currentLanguage,
+                        timestamp: new Date().toISOString()
+                    }
+                });
+            }
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: '_updateUI'
+                method: 'updateUI'
             });
         }
     }
@@ -182,7 +200,7 @@ export class LanguageManager extends BaseManager {
             this.#currentLanguage = language;
             await chrome.storage.local.set({ language });
             await this.#loadTranslations();
-            await this.#updateUI();
+            await this.updateUI();
 
         } catch (error) {
             this.handleError(error, ErrorType.LANGUAGE, ErrorSeverity.MEDIUM, {

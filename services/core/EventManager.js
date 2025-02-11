@@ -1,6 +1,5 @@
 import { BaseManager } from './BaseManager.js';
-import { LogLevel } from './LogLevel.js';
-import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { EventType, ErrorType, ErrorSeverity, LogLevel } from './EventType.js';
 
 /**
  * @extends {BaseManager}

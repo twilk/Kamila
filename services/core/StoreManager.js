@@ -5,6 +5,8 @@ import { uiManager } from './UIManager.js';
 import { dataManager } from './DataManager.js';
 import { stores, validateStore, filterStoresByDeliveryMethod } from '../../services/stores.js';
 import { API_CONFIG, sendLogToPopup } from '../../config/api.js';
+import { cacheManager } from './CacheManager.js';
+import { updateUrlParameters } from '../../utils/url.js';
 
 /**
  * @typedef {Object} Store
@@ -290,6 +292,10 @@ export class StoreManager extends BaseManager {
         try {
             // Validate store using the imported function
             const store = validateStore(storeId);
+            const previousStore = this._currentStore;
+            
+            // Clear cache before changing store
+            await cacheManager.clearAll();
             
             // Update current store
             this._currentStore = store;
@@ -302,12 +308,32 @@ export class StoreManager extends BaseManager {
             // Save to storage
             await chrome.storage.local.set({ lastStore: storeId });
 
-            // Trigger store change event
+            // Update URL parameters
+            updateUrlParameters({
+                store: storeId,
+                delivery_id: store.id === 'ALL' ? undefined : store.deliveryId
+            });
+
+            // Trigger store change event with more context
             window.dispatchEvent(new CustomEvent('store:change', {
-                detail: { storeId }
+                detail: {
+                    previousStore,
+                    currentStore: store,
+                    timestamp: new Date().toISOString()
+                }
             }));
 
-            this.log(LogLevel.DEBUG, '🔄 Store changed', { store });
+            // Refresh data for new store
+            if (this._dataManager) {
+                await this._dataManager.refreshData(true);
+            }
+
+            this.log(LogLevel.DEBUG, '🔄 Store changed', { 
+                from: previousStore?.id || 'none',
+                to: store.id,
+                deliveryId: store.deliveryId
+            });
+            
             sendLogToPopup(`Changed store to: ${store.name}`, 'success');
             return true;
         } catch (error) {

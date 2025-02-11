@@ -23,10 +23,11 @@
 - [x] DataManager
 - [x] StatusManager
 - [x] MessageManager
+- [x] LoadingManager
+- [x] OperationProgressManager
 
 ### Feature Managers
 - [x] MenuManager
-- [x] ProgressManager
 - [x] UpdateManager
 - [x] NotificationManager
 - [x] LanguageManager
@@ -67,13 +68,16 @@ graph TD
     DataManager --> BaseManager
     StatusManager --> BaseManager
     MessageManager --> BaseManager
+    LoadingManager --> BaseManager
+    OperationProgressManager --> BaseManager
+    DebugManager --> BaseManager
 ```
 
 ### Feature Layer
 ```mermaid
 graph TD
     MenuManager --> BaseManager
-    ProgressManager --> BaseManager
+    OperationProgressManager --> BaseManager
     UpdateManager --> BaseManager
     NotificationManager --> BaseManager
     LanguageManager --> BaseManager
@@ -111,10 +115,12 @@ graph TD
    - CacheManager (depends on ErrorHandler, ConnectionManager)
    - UIManager (depends on ErrorHandler, EventManager)
    - DebugManager (depends on ErrorHandler, UIManager)
+   - LoadingManager (depends on ErrorHandler, EventManager)
+   - OperationProgressManager (depends on UIManager, EventManager)
 
 2. Base Managers
    - ThemeManager (depends on UIManager, EventManager)
-   - ProgressManager (depends on UIManager, EventManager)
+   - UpdateManager (depends on UIManager, EventManager)
    - NotificationManager (depends on UIManager, EventManager)
    - SettingsManager (depends on UIManager, EventManager)
 

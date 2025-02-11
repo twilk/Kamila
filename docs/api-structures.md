@@ -706,7 +706,7 @@ class NotificationManager {
  * Przykład tworzenia powiadomienia
  */
 async function createOrderNotification(order, status) {
-    const notificationManager = new NotificationManager();
+    const notificationManager = NotificationManager.getInstance();
     
     // Sprawdź limity
     if (!await notificationManager.canShowNotification()) {

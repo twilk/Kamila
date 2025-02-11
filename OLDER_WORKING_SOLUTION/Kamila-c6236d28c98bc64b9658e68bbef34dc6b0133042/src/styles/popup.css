@@ -1,0 +1,76 @@
+.nav-tabs {
+  display: flex;
+  border-bottom: 1px solid #dee2e6;
+  margin-bottom: 1rem;
+}
+
+.nav-link {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: none;
+  color: #495057;
+  cursor: pointer;
+}
+
+.nav-link.active {
+  color: #007bff;
+  border-bottom: 2px solid #007bff;
+}
+
+#mm-tab {
+  padding: 1rem;
+}
+
+#drwn-container {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.mm-sections {
+  display: flex;
+  gap: 20px;
+  margin-top: 1rem;
+}
+
+.mm-section {
+  flex: 1;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 1rem;
+}
+
+.mm-section h3 {
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #007bff;
+}
+
+.task-item {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem;
+  border-bottom: 1px solid #eee;
+  gap: 10px;
+}
+
+.task-item:last-child {
+  border-bottom: none;
+}
+
+.task-checkbox {
+  width: 18px;
+  height: 18px;
+}
+
+.task-details {
+  flex: 1;
+}
+
+.task-code {
+  font-weight: bold;
+}
+
+.task-store {
+  color: #666;
+  font-size: 0.9em;
+} 

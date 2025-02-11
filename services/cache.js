@@ -1,4 +1,4 @@
-import { storageManager } from './storage.js';
+import { storageManager } from './core/StorageManager.js';
 
 export class CacheService {
     static async isAvailable() {

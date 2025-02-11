@@ -1,6 +1,6 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
-import { storageManager } from '../storage.js';
+import { storageManager } from './StorageManager.js';
 
 export class SettingsManager extends BaseManager {
     static _instance = null;

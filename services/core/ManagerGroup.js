@@ -80,7 +80,7 @@ export class ManagerGroup {
             const managerNames = Array.from(this.#managers.keys());
             if (managerNames.some(name => ['errorhandler', 'eventmanager', 'loadingmanager', 'connectionmanager', 'cachemanager', 'uimanager', 'debugmanager'].includes(name.toLowerCase()))) {
                 return 'Core Services';
-            } else if (managerNames.some(name => ['thememanager', 'progressmanager', 'menumanager', 'volumemanager', 'notificationmanager'].includes(name.toLowerCase()))) {
+            } else if (managerNames.some(name => ['thememanager', 'operationprogressmanager', 'menumanager', 'volumemanager', 'notificationmanager'].includes(name.toLowerCase()))) {
                 return 'Base Managers';
             } else if (managerNames.some(name => ['datamanager', 'storemanager', 'statusmanager', 'usermanager', 'languagemanager', 'updatemanager', 'refreshmanager', 'rankingmanager'].includes(name.toLowerCase()))) {
                 return 'Feature Managers';

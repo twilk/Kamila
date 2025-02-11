@@ -1,5 +1,5 @@
 import { BaseManager } from './BaseManager.js';
-import { ErrorType, ErrorSeverity, LogLevel } from '../index.js';
+import { ErrorType, ErrorSeverity, LogLevel } from './EventType.js';
 import { uiManager } from './UIManager.js';
 import { eventManager } from './EventManager.js';
 import { environment } from './environment.js';

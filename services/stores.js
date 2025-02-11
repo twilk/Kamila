@@ -37,150 +37,407 @@ export const isPickupDelivery = (deliveryMethod) => {
     return deliveryMethod === DELIVERY_METHODS.PICKUP;
 };
 
-// Funkcja przetwarzająca zamówienie
+/**
+ * Process order with store-specific logic
+ * @param {Object} order - Order to process
+ * @returns {Object} Processed order
+ * @throws {Error} If store validation fails
+ */
 export const processOrder = (order) => {
-    const store = stores.find(s => s.id === order.store_id);
-    if (!store) return order;
+    if (!order) {
+        throw new Error('Order is required');
+    }
 
+    // Validate store
+    const store = validateStore(order.store_id);
+
+    // Handle ALL stores case
+    if (store.id === 'ALL') {
+        throw new Error('Cannot process order with ALL stores selection');
+    }
+
+    // Process based on delivery method
     if (isPickupDelivery(order.delivery_method)) {
-        // Dla odbioru osobistego używamy client_comment
-        order.client_comment = `Punkt odbioru: ${store.address}`;
+        // For pickup delivery, set pickup location in comment
+        order.client_comment = order.client_comment || '';
+        if (!order.client_comment.includes(store.address)) {
+            order.client_comment = order.client_comment
+                ? `${order.client_comment}\nPunkt odbioru: ${store.address}`
+                : `Punkt odbioru: ${store.address}`;
+        }
         order.delivery_id = DELIVERY_IDS.PICKUP;
     } else {
-        // Dla innych metod używamy deliveryId ze sklepu
+        // For other delivery methods, use store's delivery ID
+        if (!store.deliveryId) {
+            throw new Error(`Store ${store.id} does not have a delivery ID configured`);
+        }
         order.delivery_id = store.deliveryId;
-        // Czyścimy client_comment jeśli był wcześniej ustawiony
-        order.client_comment = '';
+        
+        // Clear pickup-related comments if present
+        if (order.client_comment && order.client_comment.includes('Punkt odbioru:')) {
+            order.client_comment = order.client_comment
+                .split('\n')
+                .filter(line => !line.includes('Punkt odbioru:'))
+                .join('\n')
+                .trim();
+        }
     }
     
     return order;
 };
 
 // Funkcja filtrująca sklepy dla wybranej metody dostawy
-export const filterStoresByDeliveryMethod = (deliveryMethod) => {
+export const filterStoresByDeliveryMethod = (deliveryMethod, includeAll = true) => {
+    // Start with all stores
+    let filteredStores = [...stores];
+
+    // Handle ALL stores option
+    if (!includeAll) {
+        filteredStores = filteredStores.filter(store => store.id !== 'ALL');
+    }
+
+    // If no delivery method specified, return current list
+    if (!deliveryMethod) {
+        return filteredStores;
+    }
+
+    // Filter based on delivery method
     if (isPickupDelivery(deliveryMethod)) {
-        // Dla odbioru osobistego zwracamy wszystkie sklepy oprócz ALL
-        return stores.filter(store => store.id !== 'ALL');
+        // For pickup delivery, include stores with address
+        return filteredStores.filter(store => 
+            store.id === 'ALL' || // Keep ALL if includeAll is true
+            (store.address && (!store.deliveryId || store.deliveryId === DELIVERY_IDS.PICKUP))
+        );
     } else {
-        // Dla innych metod zwracamy tylko sklepy z odpowiednim deliveryId
-        return stores.filter(store => 
-            store.id !== 'ALL' && 
-            store.deliveryId && 
-            store.deliveryId !== DELIVERY_IDS.PICKUP
+        // For other delivery methods, include stores with valid delivery ID
+        return filteredStores.filter(store =>
+            store.id === 'ALL' || // Keep ALL if includeAll is true
+            (store.deliveryId && store.deliveryId !== DELIVERY_IDS.PICKUP)
         );
     }
 };
 
-// Funkcja sprawdzająca czy zamówienie ma poprawnie ustawiony sklep
+/**
+ * Validate order delivery settings
+ * @param {Object} order - Order to validate
+ * @returns {Object} Validation result with status and message
+ */
 export const validateOrderDelivery = (order) => {
-    const store = stores.find(s => s.id === order.store_id);
-    if (!store) return false;
+    try {
+        if (!order) {
+            return {
+                isValid: false,
+                message: 'Order is required'
+            };
+        }
 
-    if (isPickupDelivery(order.delivery_method)) {
-        return order.client_comment && order.delivery_id === DELIVERY_IDS.PICKUP;
-    } else {
-        return order.delivery_id === store.deliveryId;
+        // Validate store
+        const store = validateStore(order.store_id);
+
+        // Cannot use ALL stores for orders
+        if (store.id === 'ALL') {
+            return {
+                isValid: false,
+                message: 'Cannot process order with ALL stores selection'
+            };
+        }
+
+        // Validate based on delivery method
+        if (isPickupDelivery(order.delivery_method)) {
+            // For pickup delivery, require comment with pickup location
+            const hasPickupLocation = order.client_comment && 
+                order.client_comment.includes(`Punkt odbioru: ${store.address}`);
+            
+            if (!hasPickupLocation) {
+                return {
+                    isValid: false,
+                    message: 'Missing pickup location in order comment'
+                };
+            }
+
+            if (order.delivery_id !== DELIVERY_IDS.PICKUP) {
+                return {
+                    isValid: false,
+                    message: 'Invalid delivery ID for pickup order'
+                };
+            }
+        } else {
+            // For other delivery methods, validate delivery ID
+            if (!store.deliveryId) {
+                return {
+                    isValid: false,
+                    message: `Store ${store.id} does not have a delivery ID configured`
+                };
+            }
+
+            if (order.delivery_id !== store.deliveryId) {
+                return {
+                    isValid: false,
+                    message: `Invalid delivery ID: expected ${store.deliveryId}, got ${order.delivery_id}`
+                };
+            }
+        }
+
+        return {
+            isValid: true,
+            message: 'Order delivery settings are valid'
+        };
+    } catch (error) {
+        return {
+            isValid: false,
+            message: error.message
+        };
     }
 };
 
-// Funkcja sprawdzająca poprawność sklepu
+/**
+ * Validate store ID and return store object
+ * @param {string} storeId - Store ID to validate
+ * @returns {Store} Validated store object
+ * @throws {Error} If store is invalid
+ */
 export const validateStore = (storeId) => {
+    // Validate input
+    if (!storeId || typeof storeId !== 'string') {
+        throw new Error(`Invalid store ID: ${storeId} (${typeof storeId})`);
+    }
+
+    // Handle ALL stores case
+    if (storeId === 'ALL') {
+        return stores[0]; // First store is always ALL
+    }
+
+    // Find store in configuration
     const store = stores.find(s => s.id === storeId);
     if (!store) {
-        throw new Error(`Invalid store ID: ${storeId}`);
+        throw new Error(`Store not found: ${storeId}`);
     }
+
+    // Validate required fields
+    if (!store.name) {
+        throw new Error(`Store ${storeId} is missing required name field`);
+    }
+
+    if (!store.address && storeId !== 'ALL') {
+        throw new Error(`Store ${storeId} is missing required address field`);
+    }
+
+    // Validate delivery ID if present
+    if (store.deliveryId !== null && store.deliveryId !== undefined) {
+        if (typeof store.deliveryId !== 'number' || store.deliveryId <= 0) {
+            throw new Error(`Invalid delivery ID for store ${storeId}: ${store.deliveryId}`);
+        }
+    }
+
     return store;
 };
 
-// Funkcja pobierająca dane sklepu z obsługą błędów
+/**
+ * Get store data with error handling
+ * @param {string} storeId - Store ID to get data for
+ * @param {Object} [errorHandler] - Optional error handler
+ * @returns {Promise<Object|null>} Store data or null if error
+ */
 export const getStoreData = async (storeId, errorHandler) => {
     try {
+        // Validate store
         const store = validateStore(storeId);
-        return {
+
+        // Build store data object
+        const storeData = {
             id: store.id,
             name: store.name,
-            address: store.address,
-            deliveryId: store.deliveryId,
-            drwn: store.drwn
+            address: store.address || null,
+            deliveryId: store.deliveryId || null,
+            drwn: store.drwn || null,
+            isAll: store.id === 'ALL',
+            hasDelivery: !!store.deliveryId && store.deliveryId !== DELIVERY_IDS.PICKUP,
+            hasPickup: !!store.address,
+            timestamp: Date.now()
         };
+
+        // Validate required fields
+        if (!storeData.id || !storeData.name) {
+            throw new Error(`Store ${storeId} is missing required fields`);
+        }
+
+        // Log store data in debug mode
+        if (process.env.NODE_ENV === 'development') {
+            console.debug('[DEBUG] 🏪 Store data:', storeData);
+        }
+
+        return storeData;
     } catch (error) {
+        // Handle error with provided handler or default to console
         if (errorHandler) {
             errorHandler.handleError(error, ErrorType.DATA, ErrorSeverity.ERROR, {
                 method: 'getStoreData',
-                storeId
+                storeId,
+                timestamp: Date.now()
+            });
+        } else {
+            console.error('[ERROR] ❌ Failed to get store data:', {
+                storeId,
+                error: error.message,
+                stack: error.stack
             });
         }
         return null;
     }
 };
 
-// Funkcja sprawdzająca dostępność sklepu dla API
-export const isStoreAvailableForApi = async (storeId) => {
+/**
+ * Check if store is available for API operations
+ * @param {string} storeId - Store ID to check
+ * @param {Object} [options] - Optional settings
+ * @param {boolean} [options.checkApi=true] - Whether to check API status
+ * @param {number} [options.timeout=5000] - API check timeout in ms
+ * @returns {Promise<Object>} Availability status with details
+ */
+export const isStoreAvailableForApi = async (storeId, options = {}) => {
+    const {
+        checkApi = true,
+        timeout = 5000
+    } = options;
+
     try {
-        // Sprawdź czy storeId jest poprawny
+        // Validate input
         if (!storeId || typeof storeId !== 'string') {
-            console.error('[ERROR] ❌ Nieprawidłowy storeId:', { storeId, type: typeof storeId });
-            return false;
+            return {
+                available: false,
+                message: `Invalid store ID: ${storeId} (${typeof storeId})`,
+                details: { storeId, type: typeof storeId }
+            };
         }
 
-        // Pobierz store z walidacją
-        const store = validateStore(storeId);
+        // Get store data
+        const store = await getStoreData(storeId);
         if (!store) {
-            console.error('[ERROR] ❌ Sklep nie istnieje:', { storeId });
-            return false;
+            return {
+                available: false,
+                message: 'Store not found',
+                details: { storeId }
+            };
         }
 
-        // Sprawdź konfigurację API
+        // Check if store has API configuration
         if (!store.drwn) {
-            console.error('[ERROR] ❌ Sklep nie ma skonfigurowanego API:', { 
+            return {
+                available: false,
+                message: 'Store has no API configuration',
+                details: {
+                    storeId,
+                    store: {
+                        id: store.id,
+                        name: store.name,
+                        hasApi: false
+                    }
+                }
+            };
+        }
+
+        // Check API status if required
+        if (checkApi) {
+            const apiStatus = await checkApiStatus(store.drwn, timeout);
+            if (!apiStatus.available) {
+                return {
+                    available: false,
+                    message: 'Store API is not available',
+                    details: {
+                        storeId,
+                        apiStatus
+                    }
+                };
+            }
+        }
+
+        return {
+            available: true,
+            message: 'Store is available for API operations',
+            details: {
                 storeId,
                 store: {
                     id: store.id,
                     name: store.name,
-                    hasApi: !!store.drwn
+                    hasApi: true,
+                    apiStatus: checkApi ? 'active' : 'not_checked'
                 }
-            });
-            return false;
-        }
-
-        // Sprawdź czy API jest aktywne
-        const isActive = await checkApiStatus(store.drwn);
-        if (!isActive) {
-            console.error('[ERROR] ❌ API sklepu jest nieaktywne:', { storeId });
-            return false;
-        }
-
-        return true;
+            }
+        };
     } catch (error) {
-        console.error('[ERROR] ❌ Błąd podczas sprawdzania dostępności API:', {
-            storeId,
-            error: error.message,
-            stack: error.stack
-        });
-        return false;
+        return {
+            available: false,
+            message: error.message,
+            details: {
+                storeId,
+                error: {
+                    message: error.message,
+                    stack: error.stack
+                }
+            }
+        };
     }
 };
 
-// Funkcja sprawdzająca status API
-async function checkApiStatus(drwnConfig) {
+/**
+ * Check API status with timeout
+ * @private
+ * @param {Object} drwnConfig - API configuration
+ * @param {number} timeout - Timeout in ms
+ * @returns {Promise<Object>} API status
+ */
+async function checkApiStatus(drwnConfig, timeout) {
     try {
-        // Sprawdź podstawową konfigurację
-        if (!drwnConfig || !drwnConfig.url || !drwnConfig.key) {
-            return false;
+        // Validate configuration
+        if (!drwnConfig?.url || !drwnConfig?.key) {
+            return {
+                available: false,
+                message: 'Invalid API configuration',
+                details: { hasUrl: !!drwnConfig?.url, hasKey: !!drwnConfig?.key }
+            };
         }
 
-        // Sprawdź czy API odpowiada
-        const response = await fetch(`${drwnConfig.url}/status`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${drwnConfig.key}`,
-                'Content-Type': 'application/json'
-            }
-        });
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        return response.ok;
+        try {
+            // Check API status
+            const response = await fetch(`${drwnConfig.url}/status`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${drwnConfig.key}`,
+                    'Content-Type': 'application/json'
+                },
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            return {
+                available: response.ok,
+                message: response.ok ? 'API is active' : `API returned status ${response.status}`,
+                details: {
+                    status: response.status,
+                    statusText: response.statusText
+                }
+            };
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+        }
     } catch (error) {
-        console.error('[ERROR] ❌ Błąd podczas sprawdzania statusu API:', error);
-        return false;
+        const isTimeout = error.name === 'AbortError';
+        return {
+            available: false,
+            message: isTimeout ? 'API check timed out' : 'API check failed',
+            details: {
+                error: {
+                    message: error.message,
+                    type: error.name,
+                    isTimeout
+                }
+            }
+        };
     }
 } 

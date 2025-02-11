@@ -1,9 +1,7 @@
 import { BaseManager } from './BaseManager.js';
-import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
-import { LogLevel } from './LogLevel.js';
+import { ErrorType, ErrorSeverity, LogLevel } from './EventType.js';
 import { statusManager } from './StatusManager.js';
 import { eventManager } from './EventManager.js';
-import { eventType as EventType } from './EventTypes.js';
 import { errorHandler } from './ErrorHandler.js';
 
 /**

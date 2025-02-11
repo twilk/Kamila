@@ -5,7 +5,7 @@ import { LanguageManager } from './languageManager.js';
 import { EventManager } from './eventManager.js';
 
 // Inicjalizacja DataManager dla testów
-const dataManager = new DataManager();
+const dataManager = DataManager.getInstance();
 
 // Zastępujemy funkcję processOrders z background.js
 async function processOrders(orders) {
@@ -14,7 +14,12 @@ async function processOrders(orders) {
 
 // Test runner service for integration tests
 export class TestRunner {
+    static #instance = null;
+
     constructor() {
+        if (TestRunner.#instance) {
+            throw new Error('Use TestRunner.getInstance()');
+        }
         console.log('🧪 Initializing TestRunner');
         this.results = {
             passed: 0,
@@ -40,8 +45,8 @@ export class TestRunner {
                     name: 'languageSync',
                     description: 'Language Synchronization',
                     run: async () => {
-                        const eventManager = new EventManager();
-                        const languageManager = new LanguageManager(eventManager);
+                        const eventManager = EventManager.getInstance();
+                        const languageManager = LanguageManager.getInstance();
                         await languageManager.handleLanguageChange({ lang: 'english' });
                         
                         const i18nLang = i18n.getCurrentLanguage();
@@ -71,6 +76,13 @@ export class TestRunner {
 
         // Rejestruj testy podczas inicjalizacji
         this.registerTests();
+    }
+
+    static getInstance() {
+        if (!TestRunner.#instance) {
+            TestRunner.#instance = new TestRunner();
+        }
+        return TestRunner.#instance;
     }
 
     registerTests() {
@@ -310,6 +322,4 @@ export class TestRunner {
 }
 
 // Create singleton instance
-const testRunner = new TestRunner();
-
-export default testRunner; 
+export default TestRunner.getInstance(); 

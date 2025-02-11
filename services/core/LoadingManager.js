@@ -1,7 +1,7 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { LogLevel } from './LogLevel.js';
-import { progressManager } from './ProgressManager.js';
+import { operationProgressManager } from './OperationProgressManager.js';
 
 const STATUS_TRANSLATIONS = {
     'initializing': 'Inicjalizacja',
@@ -67,8 +67,8 @@ export class InitialLoadingManager extends BaseManager {
         if (InitialLoadingManager._instance) {
             throw new Error('Use InitialLoadingManager.getInstance()');
         }
-        // Add dependency on ProgressManager
-        this.addDependency(progressManager);
+        // Add dependency on OperationProgressManager
+        this.addDependency(operationProgressManager);
     }
 
     /**
@@ -87,7 +87,7 @@ export class InitialLoadingManager extends BaseManager {
             await this.#createLoadingScreen();
 
             // Initialize progress manager
-            await progressManager.initialize();
+            await operationProgressManager.initialize();
 
             this.log(LogLevel.SUCCESS, '⚡ Loading manager initialized');
             return true;
@@ -268,7 +268,7 @@ export class InitialLoadingManager extends BaseManager {
             }
 
             // Start progress tracking
-            progressManager.startTask('Inicjalizacja aplikacji', totalSteps);
+            operationProgressManager.startTask('Inicjalizacja aplikacji', totalSteps);
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
                 method: 'startLoading',
@@ -310,7 +310,7 @@ export class InitialLoadingManager extends BaseManager {
             this.#createProgressSteps();
 
             // Update progress manager
-            progressManager.updateTask(1, status);
+            operationProgressManager.updateTask(1, status);
 
             this.emit('loading:progress', { 
                 step, 
@@ -372,9 +372,9 @@ export class InitialLoadingManager extends BaseManager {
 
             // Update progress manager
             if (isError) {
-                progressManager.setError('Błąd inicjalizacji');
+                operationProgressManager.setError('Błąd inicjalizacji');
             } else {
-                progressManager.setSuccess('Inicjalizacja zakończona');
+                operationProgressManager.setSuccess('Inicjalizacja zakończona');
             }
 
             // Start fade-out animation
@@ -468,7 +468,7 @@ export class InitialLoadingManager extends BaseManager {
             this.#loadingTime = null;
 
             // Hide progress manager
-            progressManager.hide();
+            operationProgressManager.hide();
 
             await super.dispose();
         } catch (error) {

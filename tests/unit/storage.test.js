@@ -1,4 +1,4 @@
-import { STORAGE_KEYS, saveToStorage, getFromStorage, removeFromStorage, getStorageInfo, clearStorage } from '../../services/storage.js';
+import { STORAGE_KEYS, storageManager } from '../../services/core/StorageManager.js';
 
 describe('Storage Service', () => {
     beforeEach(async () => {

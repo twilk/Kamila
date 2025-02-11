@@ -1,8 +1,8 @@
-import { saveToStorage, getFromStorage, clearStorage } from '../../services/storage.js';
+import { storageManager } from '../../services/core/StorageManager.js';
 
 describe('Storage Performance Tests', () => {
     beforeEach(async () => {
-        await clearStorage();
+        await storageManager.clear();
     });
 
     describe('Large Objects', () => {
@@ -11,11 +11,11 @@ describe('Storage Performance Tests', () => {
             const data = Array(1024).fill('x'.repeat(1024)); // 1MB = 1024 * 1024 bytes
             
             const start = performance.now();
-            await saveToStorage('large_data', data);
+            await storageManager.save('large_data', data);
             const saveTime = performance.now() - start;
             
             const readStart = performance.now();
-            const retrieved = await getFromStorage('large_data');
+            const retrieved = await storageManager.load('large_data');
             const readTime = performance.now() - readStart;
 
             expect(retrieved).toEqual(data);
@@ -30,7 +30,7 @@ describe('Storage Performance Tests', () => {
             // Save 10 large objects (total ~5MB)
             const start = performance.now();
             for (let i = 0; i < 10; i++) {
-                promises.push(saveToStorage(`large_data_${i}`, data));
+                promises.push(storageManager.save(`large_data_${i}`, data));
             }
 
             await Promise.all(promises);
@@ -45,7 +45,7 @@ describe('Storage Performance Tests', () => {
 
             // Try to save more than 5MB (chrome.storage.local limit)
             for (let i = 0; i < 6; i++) {
-                promises.push(saveToStorage(`overflow_${i}`, data));
+                promises.push(storageManager.save(`overflow_${i}`, data));
             }
 
             await expect(Promise.all(promises)).rejects.toThrow();
@@ -60,8 +60,8 @@ describe('Storage Performance Tests', () => {
             // Perform 100 rapid operations
             for (let i = 0; i < 100; i++) {
                 operations.push(
-                    saveToStorage(`key_${i}`, { data: i })
-                        .then(() => getFromStorage(`key_${i}`))
+                    storageManager.save(`key_${i}`, { data: i })
+                        .then(() => storageManager.load(`key_${i}`))
                 );
             }
 
@@ -77,8 +77,8 @@ describe('Storage Performance Tests', () => {
 
             // Perform 50 concurrent writes and 50 concurrent reads
             for (let i = 0; i < 50; i++) {
-                operations.push(saveToStorage(`concurrent_${i}`, data));
-                operations.push(getFromStorage(`concurrent_${i}`));
+                operations.push(storageManager.save(`concurrent_${i}`, data));
+                operations.push(storageManager.load(`concurrent_${i}`));
             }
 
             const start = performance.now();
@@ -97,7 +97,7 @@ describe('Storage Performance Tests', () => {
 
             // Fill storage up to warning threshold
             for (let i = 0; i < 4; i++) {
-                await saveToStorage(`warning_${i}`, data);
+                await storageManager.save(`warning_${i}`, data);
             }
 
             expect(consoleWarnSpy).toHaveBeenCalledWith(
@@ -110,12 +110,12 @@ describe('Storage Performance Tests', () => {
             
             // Fill storage with some data
             for (let i = 0; i < 8; i++) {
-                await saveToStorage(`cleanup_${i}`, data);
+                await storageManager.save(`cleanup_${i}`, data);
             }
 
             // Clear storage
             const start = performance.now();
-            await clearStorage();
+            await storageManager.clear();
             const clearTime = performance.now() - start;
 
             expect(clearTime).toBeLessThan(1000); // Should clear within 1 second

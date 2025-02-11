@@ -2,7 +2,7 @@ import { BaseManager } from '../core/BaseManager.js';
 import { LogLevel } from '../core/LogLevel.js';
 import { ErrorType, ErrorSeverity } from '../core/ErrorTypes.js';
 import { API_CONFIG } from '../../config/api.js';
-import { StorageManager } from '../storage.js';
+import { StorageManager } from '../core/StorageManager.js';
 import { stores } from '../stores.js';
 
 // Add at the top of the file, after imports
@@ -224,25 +224,31 @@ export class OrderService extends BaseManager {
         let totalPages = 0;
         let totalOrders = 0;
 
+        // Ensure we're using all required statuses
+        const requestParams = {
+            ...params,
+            status_id: '1,2,3,5', // Always use all statuses in one request
+            limit: params.limit || API_DEFAULTS.LIMIT
+        };
+
         this.log(LogLevel.INFO, '📑 Starting pagination fetch', {
             initialFetch: !this.#hasInitialData,
-            params,
+            params: requestParams,
             baseUrl: `${API_CONFIG.DARWINA.BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}`
         });
 
         while (hasMorePages) {
             const url = new URL(`${API_CONFIG.DARWINA.BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}`);
             
-            // Add base parameters
-            Object.entries(params).forEach(([key, value]) => {
+            // Add all parameters including status_id with all statuses
+            Object.entries(requestParams).forEach(([key, value]) => {
                 if (value !== undefined && value !== null) {
                     url.searchParams.append(key, value.toString());
                 }
             });
-            
+
             // Add pagination parameters
             url.searchParams.append('page', currentPage.toString());
-            url.searchParams.append('limit', API_DEFAULTS.LIMIT.toString());
 
             this.log(LogLevel.DEBUG, `📄 Fetching page ${currentPage}`, {
                 url: url.toString(),
@@ -430,14 +436,14 @@ export class OrderService extends BaseManager {
 
                     if (!dateToCheck) {
                         this.log(LogLevel.WARNING, '⚠️ No valid date for READY order', {
-                            id: order.order_id,
+                    id: order.order_id,
                             availableFields: Object.keys(order).filter(k => k.includes('date') || k.includes('_at'))
                         });
                         counts[COUNTER_KEYS.READY]++;
                         readyOrders.push({ id: order.order_id, reason: 'no_date' });
-                        continue;
-                    }
-
+                    continue;
+                }
+                
                     try {
                         const orderDate = new Date(dateToCheck.replace(' ', 'T'));
                         if (isNaN(orderDate.getTime())) {

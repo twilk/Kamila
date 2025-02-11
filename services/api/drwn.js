@@ -4,7 +4,7 @@
  * This file will be removed in version 4.0.0
  */
 
-import { API } from './api.js';
+import { APIManager } from './index.js';
 import { ErrorType, ErrorSeverity } from '../core/ErrorTypes.js';
 import { ErrorHandler } from '../core/ErrorHandler.js';
 
@@ -14,7 +14,10 @@ const API_ENDPOINTS = {
     ORDERS: '/api/orders'
 };
 
-export class OrderService extends API {
+// Zamiana API na APIManager
+const apiManager = APIManager.getInstance();
+
+export class OrderService extends APIManager {
     constructor(credentials) {
         super();
         this._errorHandler = ErrorHandler.getInstance();
@@ -163,8 +166,7 @@ export class OrderService extends API {
                 let pageOrders = result.orders;
                 if (storeConfig?.id !== 'ALL' && storeConfig?.deliveryId) {
                     pageOrders = pageOrders.filter(order => 
-                        order.delivery_id?.toString() === storeConfig.deliveryId.toString() 
-                        // || order.store_id?.toString() === storeConfig.id.toString()
+                        order.delivery_id?.toString() === storeConfig.deliveryId.toString()
                     );
                 }
 

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KAMILA - Asystent DARWINA.PL</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="side-panel">
+        <div class="lead-status" data-status="1" data-bs-toggle="tooltip" title="Zamówienia złożone">
+            <i class="fas fa-inbox"></i>
+            <span id="count-1" class="lead-count">0</span>
+        </div>
+        <div class="lead-status" data-status="2" data-bs-toggle="tooltip" title="Zamówienia potwierdzone">
+            <i class="fas fa-check"></i>
+            <span id="count-2" class="lead-count">0</span>
+        </div>
+        <div class="lead-status" data-status="3" data-bs-toggle="tooltip" title="Zamówienia przyjęte">
+            <i class="fas fa-store"></i>
+            <span id="count-3" class="lead-count">0</span>
+        </div>
+        <div class="lead-status" data-status="READY" data-bs-toggle="tooltip" title="Gotowe do odbioru">
+            <i class="fas fa-box"></i>
+            <span id="count-ready" class="lead-count">0</span>
+        </div>
+        <div class="lead-status" data-status="OVERDUE" data-bs-toggle="tooltip" title="Przeterminowane">
+            <i class="fas fa-hourglass-end"></i>
+            <span id="count-overdue" class="lead-count">0</span>
+        </div>
+        
+        <div class="progress-container hidden">
+            <div class="progress-wrapper">
+                <div class="progress">
+                    <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <div id="progress-status" class="progress-status">Ładowanie...</div>
+                <div id="progress-percentage" class="progress-percentage">0%</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rest of your HTML content -->
+</body>
+</html> 

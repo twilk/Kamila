@@ -4,7 +4,7 @@ import { stores } from './services/stores.js';
 import { UserCardService } from './services/userCard.js';
 import { OrderService } from './services/api/OrderService.js';
 import { STORAGE_KEYS } from './config/storage.js';
-import { storageManager } from './services/storage.js';
+import { storageManager } from './services/core/StorageManager.js';
 import { 
     DEFAULT_INTERVALS,
     INTERVAL_KEYS,
@@ -43,9 +43,83 @@ const NOTIFICATION_LIMITS = {
 
 // System zarządzania powiadomieniami
 class NotificationManager {
+    static #instance = null;
+    
     constructor() {
+        if (NotificationManager.#instance) {
+            throw new Error('Use NotificationManager.getInstance()');
+        }
         this.notificationHistory = [];
         this.lastNotificationTime = 0;
+        
+        // Bezpieczna inicjalizacja alarmów
+        this.initializeAlarms();
+    }
+
+    async initializeAlarms() {
+        // Poczekaj na załadowanie chrome.alarms
+        await new Promise((resolve) => {
+            if (chrome?.alarms) {
+                resolve();
+            } else {
+                setTimeout(() => {
+                    if (chrome?.alarms) {
+                        resolve();
+                    } else {
+                        console.warn('Chrome Alarms API not available after timeout');
+                        resolve(); // Rozwiąż promise mimo błędu
+                    }
+                }, 1000);
+            }
+        });
+
+        // Sprawdź czy API jest dostępne
+        if (!chrome?.alarms) {
+            console.warn('Chrome Alarms API is not available, using fallback');
+            this.initializeFallbackNotifications();
+            return;
+        }
+
+        try {
+            // Najpierw usuń poprzedni listener jeśli istnieje
+            if (chrome.alarms.onAlarm.hasListeners()) {
+                chrome.alarms.onAlarm.removeListener(this.handleAlarm.bind(this));
+            }
+
+            // Dodaj nowy listener
+            chrome.alarms.onAlarm.addListener(this.handleAlarm.bind(this));
+
+            // Utwórz alarm
+            await chrome.alarms.create('checkNotifications', {
+                periodInMinutes: 5 // Co 5 minut
+            });
+
+            console.log('[DEBUG] ✅ Alarms initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize alarms:', error);
+            this.initializeFallbackNotifications();
+        }
+    }
+
+    handleAlarm = async (alarm) => {
+        if (alarm.name === 'checkNotifications') {
+            await this.checkAndNotify();
+        }
+    }
+
+    initializeFallbackNotifications() {
+        console.log('[DEBUG] 🔄 Using fallback notification system');
+        // Fallback using setInterval
+        setInterval(async () => {
+            await this.checkAndNotify();
+        }, 5 * 60 * 1000); // Co 5 minut
+    }
+
+    static getInstance() {
+        if (!NotificationManager.#instance) {
+            NotificationManager.#instance = new NotificationManager();
+        }
+        return NotificationManager.#instance;
     }
 
     async canShowNotification() {
@@ -123,10 +197,52 @@ class NotificationManager {
             timeSinceLastNotification: now - this.lastNotificationTime
         };
     }
+
+    async checkAndNotify() {
+        try {
+            console.log('[DEBUG] 🔍 Sprawdzam nowe powiadomienia...');
+            
+            // Pobierz dane o zamówieniach
+            const orderService = await getOrderService();
+            if (!orderService) {
+                console.warn('[WARN] ⚠️ OrderService nie jest dostępny');
+                return;
+            }
+
+            // Pobierz ostatnio sprawdzony timestamp
+            const { lastCheck } = await chrome.storage.local.get('lastNotificationCheck');
+            const now = Date.now();
+            
+            // Pobierz nowe zamówienia
+            const newOrders = await orderService.fetchNewOrders(lastCheck);
+            
+            // Aktualizuj timestamp ostatniego sprawdzenia
+            await chrome.storage.local.set({ lastNotificationCheck: now });
+
+            if (!newOrders?.length) {
+                console.log('[DEBUG] ℹ️ Brak nowych zamówień do powiadomień');
+                return;
+            }
+
+            console.log(`[DEBUG] 📬 Znaleziono ${newOrders.length} nowych zamówień`);
+
+            // Pokaż powiadomienia dla każdego nowego zamówienia
+            for (const order of newOrders) {
+                await createOrderNotification(order, order.status_name);
+            }
+
+            console.log('[DEBUG] ✅ Zakończono sprawdzanie powiadomień');
+        } catch (error) {
+            console.error('[ERROR] ❌ Błąd podczas sprawdzania powiadomień:', error);
+            ErrorHandler.handleError(error, 'NOTIFICATION_CHECK', {
+                timestamp: new Date().toISOString()
+            });
+        }
+    }
 }
 
 // Inicjalizacja managera powiadomień
-const notificationManager = new NotificationManager();
+const notificationManager = NotificationManager.getInstance();
 notificationManager.initialize().catch(console.error);
 
 // Funkcja do tworzenia powiadomienia o nowym zamówieniu
@@ -203,15 +319,16 @@ async function updateAlarms(intervals) {
 const services = {
     order: null,
     user: null,
-    notification: new NotificationManager()
+    notification: notificationManager
 };
 
 // Core managers
 const managers = {
-    theme: new ThemeManager(),
-    cache: new CacheManager(),
-    ui: new UIManager(),
-    data: new DataManager(),
+    notification: notificationManager,
+    theme: ThemeManager.getInstance(),
+    cache: CacheManager.getInstance(),
+    ui: UIManager.getInstance(),
+    data: DataManager.getInstance(),
     store: storeManager
 };
 
@@ -265,72 +382,80 @@ async function initializeServices() {
     }
 }
 
-// Handle browser startup
-chrome.runtime.onStartup.addListener(async () => {
+// Stałe konfiguracyjne
+const ALARM_NAMES = {
+    CHECK_NOTIFICATIONS: 'checkNotifications',
+    FETCH_DATA: 'fetchData',
+    CHECK_ORDERS: 'checkOrders',
+    CHECK_NEW_ORDERS: 'checkNewOrders'
+};
+
+const ALARM_INTERVALS = {
+    [ALARM_NAMES.CHECK_NOTIFICATIONS]: 5,  // co 5 minut
+    [ALARM_NAMES.FETCH_DATA]: 15,          // co 15 minut
+    [ALARM_NAMES.CHECK_ORDERS]: 5,         // co 5 minut
+    [ALARM_NAMES.CHECK_NEW_ORDERS]: 1      // co minutę
+};
+
+// Główna funkcja inicjalizacji
+async function initialize() {
     try {
-        console.log('[DEBUG] 🚀 Browser started');
+        console.log('[DEBUG] 🚀 Starting extension initialization...');
         
-        // Initialize services
-        await initializeServices();
+        // Najpierw zainicjalizuj usługi
+        const servicesInitialized = await initializeServices();
+        if (!servicesInitialized) {
+            throw new Error('Failed to initialize services');
+        }
         
-        // Initialize managers using InitializationManager
-        await initManager.initializeOnStartup();
+        // Następnie zainicjalizuj alarmy
+        await notificationManager.initializeAlarms();
         
-        // Create alarms
-        await createOrderCheckAlarm();
-        console.log('[DEBUG] ⏰ Order check alarm created');
+        console.log('[DEBUG] ✅ Extension initialized successfully');
+        return true;
     } catch (error) {
-        console.error('[ERROR] ❌ Startup failed:', error);
+        console.error('[ERROR] ❌ Extension initialization failed:', error);
+        return false;
     }
+}
+
+// Nasłuchuj zdarzeń cyklu życia
+chrome.runtime.onInstalled.addListener(() => {
+    console.log('[DEBUG] 📦 Extension installed/updated');
+    initialize().catch(console.error);
 });
 
-// Handle extension installation/update
-chrome.runtime.onInstalled.addListener(async () => {
-    try {
-        console.log('[DEBUG] 🚀 Extension installed/updated');
-        
-        // Initialize services
-        await initializeServices();
-        
-        // Initialize managers using InitializationManager
-        await initManager.initializeOnInstall();
-
-        // Set default preferences
-        await chrome.storage.local.set({
-            useSystemTheme: true,
-            theme: 'light',
-            refreshInterval: DEFAULT_INTERVALS.fullRefresh
-        });
-        console.log('[DEBUG] ⚙️ Default preferences set');
-
-        // Initialize i18n separately as it has special requirements
-        await i18n.init();
-        console.log('[DEBUG] 🌐 i18n system initialized');
-
-    } catch (error) {
-        console.error('[ERROR] ❌ Installation failed:', error);
-    }
+chrome.runtime.onStartup.addListener(() => {
+    console.log('[DEBUG] 🌅 Browser started');
+    initialize().catch(console.error);
 });
 
-// Handle alarms
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-    console.log('[DEBUG] ⏰ Otrzymano alarm:', alarm.name);
-    
+// Handler dla alarmów
+async function handleAlarm(alarm) {
     try {
+        console.log(`[DEBUG] ⏰ Alarm triggered: ${alarm.name}`);
+        
         switch (alarm.name) {
-            case 'checkOrders':
-                console.log('[DEBUG] 📦 Obsługa alarmu checkOrders...');
+            case ALARM_NAMES.CHECK_NOTIFICATIONS:
+                await notificationManager?.checkAndNotify();
+                break;
+            case ALARM_NAMES.FETCH_DATA:
+                await fetchDarwinaData();
+                break;
+            case ALARM_NAMES.CHECK_ORDERS:
                 await checkAndUpdateOrders();
                 break;
-                
-            case 'checkNewOrders':
-                await checkAndUpdateOrders();
+            case ALARM_NAMES.CHECK_NEW_ORDERS:
+                await checkNewOrders();
                 break;
+            default:
+                console.warn(`[WARN] ⚠️ Unknown alarm: ${alarm.name}`);
         }
     } catch (error) {
-        console.error(`[ERROR] ❌ Failed to handle alarm ${alarm.name}:`, error);
+        console.error(`[ERROR] ❌ Error handling alarm ${alarm.name}:`, error);
+        ErrorHandler.handleError(error, 'ALARM_HANDLER', { alarmName: alarm.name });
     }
-});
+}
 
 /**
  * Check and update orders with retry mechanism
@@ -413,30 +538,59 @@ async function getCurrentState() {
     };
 }
 
-// API handling
-async function fetchDarwinaData(store = 'ALL') {
+// Fetch data from Darwina API
+async function fetchDarwinaData(selectedStore = 'ALL') {
     try {
-        const darwinaConfig = await getDarwinaCredentials();
-        if (!darwinaConfig) {
-            throw new Error('Brak konfiguracji API');
+        console.log('[DEBUG] 🔄 Rozpoczynam pobieranie danych...');
+        
+        // Initialize API service
+        const api = await initializeApi();
+        if (!api.success) {
+            throw new Error('Failed to initialize API');
         }
 
+        // Prepare request parameters
+        const params = {
+            status_id: '1,2,3,5', // All statuses in one request
+            limit: 50
+        };
+
+        // Add store filter if needed
+        if (selectedStore !== 'ALL') {
+            const store = stores.find(s => s.id === selectedStore);
+            if (store?.deliveryId) {
+                params.delivery_id = store.deliveryId;
+            }
+        }
+
+        // Get last update time
+        const { lastUpdate } = await chrome.storage.local.get('lastUpdate');
+        if (lastUpdate) {
+            params.modified_from = new Date(lastUpdate).toISOString();
+        }
+
+        // Fetch all orders with pagination
         let allOrders = [];
-        const statusGroups = ['1', '2', '3', '5'];
-        
-        // Fetch orders for each status
-        for (const status of statusGroups) {
-            const params = new URLSearchParams({
-                status_id: status
+        let page = 1;
+        let hasMore = true;
+
+        while (hasMore) {
+            params.page = page;
+            const url = new URL(`${API_CONFIG.DARWINA.BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}`);
+            Object.entries(params).forEach(([key, value]) => {
+                url.searchParams.append(key, value.toString());
             });
 
-            if (store !== 'ALL') {
-                params.append('delivery_id', store);
-            }
+            console.log('[DEBUG] 🔍 Wysyłam zapytanie:', {
+                page,
+                params,
+                url: url.toString()
+            });
 
-            const response = await fetch(`${API_CONFIG.baseUrl}/orders?${params}`, {
+            const response = await fetch(url.toString(), {
                 headers: {
-                    'Authorization': `Bearer ${darwinaConfig.DARWINA_API_KEY}`
+                    'Authorization': `Bearer ${api.token}`,
+                    'Content-Type': 'application/json'
                 }
             });
 
@@ -445,22 +599,37 @@ async function fetchDarwinaData(store = 'ALL') {
             }
 
             const data = await response.json();
-            allOrders = allOrders.concat(data.orders || []);
+            if (!data.data || !Array.isArray(data.data)) {
+                throw new Error('Invalid API response format');
+            }
+
+            allOrders = [...allOrders, ...data.data];
+            
+            // Check if we have more pages
+            const totalPages = data.metadata?.page_count || 1;
+            hasMore = page < totalPages;
+            page++;
         }
 
-        // Process orders and count statuses
+        // Process orders
+        console.log('[DEBUG] 📊 Rozpoczynam analizę', allOrders.length, 'zamówień');
         const counts = processOrders(allOrders);
         
-        // Cache the results
-        await cacheResults(store, { counts, orders: allOrders });
+        // Cache results
+        await cacheResults(selectedStore, {
+            counts,
+            orders: allOrders,
+            timestamp: Date.now()
+        });
 
+        console.log('[DEBUG] ✅ Zakończono analizę wszystkich', allOrders.length, 'zamówień');
         return {
             success: true,
             counts,
             orders: allOrders
         };
     } catch (error) {
-        console.error('Error fetching Darwina data:', error);
+        console.error('[ERROR] ❌ Błąd pobierania danych:', error);
         return {
             success: false,
             error: error.message
@@ -470,28 +639,51 @@ async function fetchDarwinaData(store = 'ALL') {
 
 // Process orders and count statuses
 function processOrders(orders) {
+    // Safety check for input
+    if (!Array.isArray(orders)) {
+        console.error('Invalid input: orders must be an array');
+        return {
+            '1': 0,
+            '2': 0,
+            '3': 0,
+            'READY': 0,
+            'OVERDUE': 0
+        };
+    }
+
+    // Limit the number of orders to process
+    const MAX_ORDERS = 10000;
+    const ordersToProcess = orders.slice(0, MAX_ORDERS);
+    
+    if (orders.length > MAX_ORDERS) {
+        console.warn(`Processing limited to ${MAX_ORDERS} orders out of ${orders.length}`);
+    }
+
     const counts = {
         '1': 0,
         '2': 0,
         '3': 0,
-        'ready': 0,
-        'overdue': 0
+        'READY': 0,
+        'OVERDUE': 0
     };
 
     const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
-    orders.forEach(order => {
+    ordersToProcess.forEach(order => {
+        // Safety check for order object
+        if (!order || typeof order !== 'object') return;
+
         const status = order.status_id?.toString();
         if (!status) return;
 
         if (status === '5') {
             const orderDate = new Date(order.ready_date || order.modified_at || order.created_at);
             if (orderDate < twoWeeksAgo) {
-                counts.overdue++;
+                counts.OVERDUE++;
             } else {
-                counts.ready++;
+                counts.READY++;
             }
-        } else if (status in counts) {
+        } else if (counts.hasOwnProperty(status)) {
             counts[status]++;
         }
     });

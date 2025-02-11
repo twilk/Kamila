@@ -1,5 +1,4 @@
-import { LogLevel } from './LogLevel.js';
-import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { EventType, ErrorType, ErrorSeverity, LogLevel } from './EventType.js';
 import { TimeoutError } from './errors/TimeoutError.js';
 import { getManagerTimeout, getRetryDelay, MAX_RETRY_ATTEMPTS } from '../../config/timeouts.js';
 import { environment } from './environment.js';

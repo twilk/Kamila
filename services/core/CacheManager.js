@@ -1,15 +1,18 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { LogLevel } from './LogLevel.js';
+import { 
+    CacheLimits,
+    EndpointTTL,
+    CachePriorities,
+    CompressionConfig,
+    CleanupConfig
+} from '../../config/cache.js';
 
 /**
  * Cache priority levels
  */
-export const CachePriority = {
-    HIGH: 'high',
-    MEDIUM: 'medium',
-    LOW: 'low'
-};
+export const CachePriority = CachePriorities;
 
 /**
  * Optimized cache manager implementing hierarchical caching
@@ -17,11 +20,13 @@ export const CachePriority = {
 export class CacheManager extends BaseManager {
     static #instance = null;
     #cache = new Map();
+    #endpointSizes = new Map();
     #stats = {
         hits: 0,
         misses: 0,
         compressionRatio: 0,
-        size: 0
+        size: 0,
+        endpointSizes: new Map()
     };
     #defaultTTL = 5 * 60 * 1000; // 5 minutes
 
@@ -38,11 +43,8 @@ export class CacheManager extends BaseManager {
             [CachePriority.LOW]: 5 * 60 * 1000       // 5 minutes
         };
         this._compressionThreshold = 50 * 1024; // 50KB
-        this._maxSize = {
-            [CachePriority.HIGH]: 10 * 1024 * 1024,  // 10MB
-            [CachePriority.MEDIUM]: 5 * 1024 * 1024, // 5MB
-            [CachePriority.LOW]: 2 * 1024 * 1024     // 2MB
-        };
+        this._maxSize = CacheLimits.memory;
+        this._maxEndpointSize = CacheLimits.perEndpoint;
     }
 
     /**
@@ -70,7 +72,8 @@ export class CacheManager extends BaseManager {
                 hits: 0,
                 misses: 0,
                 compressionRatio: 0,
-                size: 0
+                size: 0,
+                endpointSizes: new Map()
             };
 
             // Try to load cached data from storage
@@ -106,22 +109,32 @@ export class CacheManager extends BaseManager {
      * Set cache value
      * @param {string} key Cache key
      * @param {*} value Value to cache
-     * @param {number} [ttl] Time to live in milliseconds
+     * @param {Object} options Cache options
      */
     async set(key, value, options = {}) {
         const priority = options.priority || CachePriority.MEDIUM;
         const ttl = options.ttl || this._timeouts[priority];
+        const endpoint = this._getEndpointFromKey(key);
         const cacheKey = this.getCacheKey(key, options.context);
 
         try {
             this.log(LogLevel.DEBUG, 'Setting cache entry', {
                 key: cacheKey,
                 priority,
-                ttl
+                ttl,
+                endpoint
             });
 
             const size = this._getSize(value);
             const shouldCompress = size > this._compressionThreshold;
+
+            // Check endpoint size limit
+            const endpointLimit = this._maxEndpointSize[endpoint] || this._maxEndpointSize.default;
+            const currentEndpointSize = this.#endpointSizes.get(endpoint) || 0;
+            
+            if (currentEndpointSize + size > endpointLimit) {
+                await this._cleanupEndpoint(endpoint, size);
+            }
 
             const entry = {
                 value: shouldCompress ? await this._compress(value) : value,
@@ -129,10 +142,11 @@ export class CacheManager extends BaseManager {
                 timestamp: Date.now(),
                 ttl,
                 priority,
-                size
+                size,
+                endpoint
             };
 
-            // Check size limits before storing
+            // Check total size limits before storing
             await this._ensureSpace(priority, size);
 
             if (shouldCompress) {
@@ -141,11 +155,17 @@ export class CacheManager extends BaseManager {
                 this.#cache.set(cacheKey, entry);
             }
 
+            // Update endpoint size
+            this.#endpointSizes.set(endpoint, (this.#endpointSizes.get(endpoint) || 0) + size);
+            this.#stats.endpointSizes.set(endpoint, this.#endpointSizes.get(endpoint));
+
             this.log(LogLevel.SUCCESS, 'Cache entry stored', {
                 key: cacheKey,
                 compressed: shouldCompress,
                 size,
-                priority
+                priority,
+                endpoint,
+                endpointSize: this.#endpointSizes.get(endpoint)
             });
 
             await this.#persistCache();
@@ -408,7 +428,8 @@ export class CacheManager extends BaseManager {
                 hits: 0,
                 misses: 0,
                 compressionRatio: 0,
-                size: 0
+                size: 0,
+                endpointSizes: new Map()
             };
             
             await this.#persistCache();
@@ -420,6 +441,59 @@ export class CacheManager extends BaseManager {
             this.handleError(error, ErrorType.DISPOSE, ErrorSeverity.MEDIUM, {
                 method: 'dispose'
             });
+        }
+    }
+
+    /**
+     * Clean up endpoint cache to make space
+     * @private
+     * @param {string} endpoint Endpoint path
+     * @param {number} requiredSize Required size in bytes
+     */
+    async _cleanupEndpoint(endpoint, requiredSize) {
+        const entries = [...this.#cache.entries(), ...this._compressedCache.entries()]
+            .filter(([_, entry]) => entry.endpoint === endpoint)
+            .sort((a, b) => a[1].timestamp - b[1].timestamp);
+
+        let freedSpace = 0;
+        for (const [key, entry] of entries) {
+            if (freedSpace >= requiredSize) break;
+
+            this.#cache.delete(key);
+            this._compressedCache.delete(key);
+            freedSpace += entry.size;
+            
+            this.#endpointSizes.set(endpoint, (this.#endpointSizes.get(endpoint) || 0) - entry.size);
+            this.#stats.endpointSizes.set(endpoint, this.#endpointSizes.get(endpoint));
+        }
+    }
+
+    /**
+     * Get endpoint from cache key
+     * @private
+     * @param {string} key Cache key
+     * @returns {string} Endpoint path
+     */
+    _getEndpointFromKey(key) {
+        const match = key.match(/^api:(\/.+?)(?:[/?]|$)/);
+        return match ? match[1] : 'default';
+    }
+
+    /**
+     * Clears all cached data
+     */
+    clearAll() {
+        try {
+            this.#cache.clear();
+            this._compressedCache.clear();
+            this.#endpointSizes.clear();
+            this.#stats.size = 0;
+            this.#stats.endpointSizes.clear();
+            this.log('Cache cleared successfully', LogLevel.INFO);
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.CACHE_CLEAR_ERROR, ErrorSeverity.MEDIUM);
+            return false;
         }
     }
 }

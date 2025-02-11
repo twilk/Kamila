@@ -1061,6 +1061,7 @@ body {
 
 /* Pole wprowadzania */
 .input {
+  max-width: 550px;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   border: 1px solid var(--status-border);
