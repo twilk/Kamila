@@ -30,6 +30,7 @@ export class DataManager extends BaseManager {
     #refreshTimer = null;
     #isRefreshing = false;
     #lastUpdate = null;
+    #cache = null;
 
     constructor() {
         if (DataManager.#instance) {
@@ -395,6 +396,55 @@ export class DataManager extends BaseManager {
             this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH, {
                 method: 'dispose'
             });
+        }
+    }
+
+    /**
+     * Refresh data with optional configuration
+     * @param {Object} options - Refresh options
+     * @param {boolean} [options.force=false] - Force refresh ignoring cache
+     * @param {string} [options.storeId='ALL'] - Store ID to refresh data for
+     * @returns {Promise<boolean>} Success status
+     */
+    async refreshData(options = {}) {
+        try {
+            if (this.#isRefreshing) {
+                this.log('🔄 Refresh already in progress, skipping', LogLevel.DEBUG);
+                return false;
+            }
+
+            this.#isRefreshing = true;
+            this.log('🔄 Starting data refresh...', LogLevel.INFO);
+
+            // Emit refresh start event
+            eventManager.emit('data:refresh-start');
+
+            // Load and update data
+            const success = await this.loadAndUpdateData(options.force);
+            
+            if (success) {
+                this.#lastUpdate = Date.now();
+                this.log('✅ Data refresh completed successfully', LogLevel.INFO);
+                
+                // Update status manager
+                await statusManager.updateOrderCounts(this._calculateOrderCounts(this.#cache.data));
+                
+                // Emit refresh success event
+                eventManager.emit('data:refresh-success');
+            } else {
+                this.log('❌ Data refresh failed', LogLevel.ERROR);
+                // Emit refresh error event
+                eventManager.emit('data:refresh-error');
+            }
+
+            return success;
+        } catch (error) {
+            this.handleError(error, ErrorType.DATA_REFRESH, ErrorSeverity.HIGH);
+            // Emit refresh error event
+            eventManager.emit('data:refresh-error', error);
+            return false;
+        } finally {
+            this.#isRefreshing = false;
         }
     }
 }

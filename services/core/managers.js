@@ -22,6 +22,8 @@ import { MessageManager } from './MessageManager.js';
 import { OperationProgressManager } from './OperationProgressManager.js';
 import { dependencyValidator } from './DependencyValidator.js';
 import { InterfaceManager } from './InterfaceManager.js';
+import { AlarmManager } from './AlarmManager.js';
+import { CounterManager } from './CounterManager.js';
 
 /**
  * Cache for optimal initialization order
@@ -47,10 +49,12 @@ export function registerManagers() {
     // Core Layer (No UI dependencies)
     dependencyValidator.addDependencies('ErrorHandler', []);
     dependencyValidator.addDependencies('EventManager', ['ErrorHandler']);
+    dependencyValidator.addDependencies('CacheManager', ['ErrorHandler']);
+    // Register CounterManager with dependencies
+    dependencyValidator.register('CounterManager', counterManager, ['CacheManager', 'ErrorHandler']);
     dependencyValidator.addDependencies('InitializationManager', ['ErrorHandler', 'EventManager']);
     dependencyValidator.addDependencies('InitialLoadingManager', ['ErrorHandler', 'EventManager', 'InitializationManager']);
     dependencyValidator.addDependencies('ConnectionManager', ['ErrorHandler', 'EventManager']);
-    dependencyValidator.addDependencies('CacheManager', ['ErrorHandler', 'ConnectionManager']);
     dependencyValidator.addDependencies('UIManager', ['ErrorHandler', 'EventManager']);
     dependencyValidator.addDependencies('OperationProgressManager', ['UIManager', 'EventManager']);
 
@@ -64,7 +68,7 @@ export function registerManagers() {
     dependencyValidator.addDependencies('StoreManager', ['ErrorHandler', 'DataManager', 'UIManager', 'MenuManager']);
     
     // UI Features Layer (After data layer)
-    dependencyValidator.addDependencies('NotificationManager', ['ErrorHandler', 'UIManager', 'EventManager']);
+    dependencyValidator.addDependencies('NotificationManager', ['ErrorHandler', 'AlarmManager', 'EventManager']);
     dependencyValidator.addDependencies('DebugManager', ['ErrorHandler', 'UIManager', 'EventManager']);
     dependencyValidator.addDependencies('VolumeManager', ['ErrorHandler', 'UIManager']);
     
@@ -78,6 +82,9 @@ export function registerManagers() {
     
     // Status Layer (Must be last)
     dependencyValidator.addDependencies('StatusManager', ['ErrorHandler', 'DataManager', 'UIManager', 'StoreManager']);
+
+    // Register AlarmManager with dependencies
+    dependencyValidator.register('AlarmManager', alarmManager, ['ErrorHandler', 'EventManager']);
 
     // Get optimal initialization order
     _cachedOrder = dependencyValidator.getInitializationOrder();
@@ -110,6 +117,8 @@ export const settingsManager = SettingsManager.getInstance();
 export const messageManager = MessageManager.getInstance();
 export const operationProgressManager = OperationProgressManager.getInstance();
 export const interfaceManager = InterfaceManager.getInstance();
+export const alarmManager = AlarmManager.getInstance();
+export const counterManager = CounterManager.getInstance();
 
 // Export managers object with all instances
 export const managers = {
@@ -135,5 +144,7 @@ export const managers = {
     settingsManager,
     messageManager,
     operationProgressManager,
-    interfaceManager
+    interfaceManager,
+    alarmManager,
+    counterManager
 }; 

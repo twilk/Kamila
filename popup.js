@@ -24,7 +24,9 @@ import {
     ErrorType,
     ErrorSeverity,
     initializationManager,
-    UserCardService
+    userCardService,
+    counterManager,
+    messageManager
 } from './services/index.js';
 
 // Import constants from configuration
@@ -41,11 +43,16 @@ const EVENTS = {
     DATA_UPDATED: 'menu:dataUpdated'
 };
 
+// Constants for cache and refresh
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const REFRESH_INTERVAL = 60 * 1000; // 1 minute
+
 // Initialize static fields
 BaseManager.initLogger = new InitLogger();
 
 // Initialize service instances
 let orderService = null;
+let refreshInterval = null;
 
 // Add at the top with imports
 const CACHE_SCHEMA = {
@@ -65,11 +72,6 @@ const CACHE_SCHEMA = {
     }
 };
 
-// Dodaj stałą dla TTL cache'u (5 minut)
-const CACHE_TTL = 5 * 60 * 1000;
-// Dodaj stałą dla interwału odświeżania (1 minuta)
-const REFRESH_INTERVAL = 60 * 1000;
-
 // Dodaj na początku pliku
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000;
@@ -87,8 +89,14 @@ async function initializeWithRetry(attempt = 1) {
         // Initialize managers through initialization manager
         await managers.initializationManager.initialize();
         
-        // Initialize OrderService
-        orderService = new OrderService();
+        // Load credentials first
+        const credentials = await getDarwinaCredentials();
+        if (!credentials?.token) {
+            throw new Error('Failed to load credentials');
+        }
+        
+        // Initialize OrderService with credentials
+        orderService = new OrderService(credentials);
         await orderService.initialize();
         
         // Setup UI and events
@@ -170,7 +178,6 @@ async function setupEventListeners() {
         await menuManager.waitForReady();
         
         // Initialize user selector
-        const userCardService = new UserCardService();
         await userCardService.initializeUserSelector();
         
         // Now setup other event listeners
@@ -275,112 +282,76 @@ async function resizeWindow(height) {
     await uiManager.resizeWindow(height);
 }
 
-// Load and update data
+/**
+ * Load and update data
+ * @param {boolean} forceRefresh - Whether to force a refresh
+ * @returns {Promise<void>}
+ */
 async function loadAndUpdateData(forceRefresh = false) {
     try {
-        if (loadAndUpdateData.isRunning) {
-            console.log('[DEBUG] 🔄 Update already in progress, skipping');
-            return;
-        }
-        
-        loadAndUpdateData.isRunning = true;
         updateLoadingState(true);
-
-        const store = await getSelectedStore();
-        const menuManager = MenuManager.getInstance();
-        await menuManager.waitForReady();
-
-        if (!forceRefresh) {
-            const cached = await chrome.storage.local.get([`orderCounts_${store.id}`, 'lastUpdate']);
-            const data = cached[`orderCounts_${store.id}`];
-            const lastUpdate = cached.lastUpdate;
-            
-            if (data && validateCacheData(data) && lastUpdate && (Date.now() - lastUpdate < CACHE_TTL)) {
-                await updateCounters(data);
-                return;
-            }
+        
+        const selectedStore = await getSelectedStore();
+        counterManager.setCurrentStore(selectedStore);
+        
+        const { counts, timestamp } = await counterManager.getCounters();
+        
+        if (forceRefresh || !counts || Date.now() - timestamp > 5 * 60 * 1000) {
+            await messageManager.sendMessage('background', {
+                type: 'REFRESH_COUNTERS',
+                store: selectedStore
+            });
+        } else {
+            await updateCounters(counts);
         }
-
-        // Request data update from background
-        chrome.runtime.sendMessage({
-            type: 'REQUEST_DATA_UPDATE',
-            data: { storeId: store.id, forceRefresh }
-        });
-
     } catch (error) {
-        console.error('[ERROR] ❌ Failed to load data:', error);
+        errorHandler.handle(error, 'Error loading data');
         handleCounterError(error);
     } finally {
-        loadAndUpdateData.isRunning = false;
         updateLoadingState(false);
     }
 }
 
-// Helper function to calculate order counts
-function calculateOrderCounts(orders) {
-    // Initialize counts
-    const counts = {
-        '1': 0,  // SUBMITTED (Nowe)
-        '2': 0,  // CONFIRMED (Potwierdzone)
-        '3': 0,  // ACCEPTED (Przyjęte)
-        'READY': 0,
-        'OVERDUE': 0
-    };
-
-    // Log initial state
-    console.log('[DEBUG] 📊 Starting count calculation for', orders.length, 'orders');
-
-    // Process each order
-    orders.forEach(order => {
-        // Log order details for debugging
-        console.log('[DEBUG] 📦 Processing order:', {
-            id: order.order_id,
-            status: order.status_id,
-            statusName: order.status_name,
-            date: order.date,
-            orderNumber: order.order_number
+/**
+ * Update counters in UI
+ * @param {Object} counts - Counter values
+ * @returns {Promise<void>}
+ */
+async function updateCounters(counts) {
+    try {
+        // Update counter elements
+        Object.entries(counts).forEach(([status, count]) => {
+            const counter = document.querySelector(`[data-status="${status}"]`);
+            if (counter) {
+                const countElement = counter.querySelector('.count');
+                if (countElement) {
+                    countElement.textContent = count;
+                    counter.classList.toggle('has-items', count > 0);
+                }
+            }
         });
 
-        const status = order.status_id?.toString();
-        if (!status) {
-            console.warn('[WARNING] ⚠️ Order missing status:', order.order_id);
-            return;
-        }
-
-        // For READY status (5), check if it's overdue
-        if (status === '5') {
-            const orderDate = new Date(order.date);
-            const twoWeeksAgo = new Date(Date.now() - 14 * 86400000);
-            
-            if (orderDate < twoWeeksAgo) {
-                counts['OVERDUE']++;
-                console.log(`[DEBUG] ⏳ Order ${order.order_id} (${order.order_number}) marked as OVERDUE (${order.date})`);
-            } else {
-                counts['READY']++;
-                console.log(`[DEBUG] 📬 Order ${order.order_id} (${order.order_number}) marked as READY (${order.date})`);
-            }
-        } else if (['1', '2', '3'].includes(status)) {
-            counts[status]++;
-            console.log(`[DEBUG] 📝 Order ${order.order_id} (${order.order_number}) counted for status ${status} (${order.status_name})`);
-        } else {
-            console.warn(`[WARNING] ⚠️ Unhandled status ${status} for order ${order.order_id} (${order.order_number})`);
-        }
-    });
-
-    // Log final counts with detailed breakdown
-    console.log('[DEBUG] 📊 Final counts:', {
-        calculated: counts,
-        total: Object.values(counts).reduce((a, b) => a + b, 0),
-        statusBreakdown: orders.reduce((acc, order) => {
-            const status = `${order.status_id} (${order.status_name})`;
-            acc[status] = (acc[status] || 0) + 1;
-            return acc;
-        }, {}),
-        orderNumbers: orders.map(o => o.order_number)
-    });
-
-    return counts;
+        // Update status indicators
+        updateStatusIndicators(counts);
+        
+        // Adjust window height
+        await adjustWindowHeight();
+        
+    } catch (error) {
+        errorHandler.handle(error, 'Error updating counters');
+        handleCounterError(error);
+    }
 }
+
+// Event Listeners
+messageManager.addListener('COUNTERS_UPDATED', async (message) => {
+    const { counts, store, timestamp } = message.payload;
+    const selectedStore = await getSelectedStore();
+    
+    if (store === selectedStore) {
+        await updateCounters(counts);
+    }
+});
 
 function updateLoadingState(isLoading) {
     // Aktualizuj przycisk odświeżania
@@ -396,63 +367,6 @@ function updateLoadingState(isLoading) {
     const storeSelect = document.getElementById('store-select');
     if (storeSelect) {
         storeSelect.disabled = isLoading;
-    }
-}
-
-// Counter update function (using imported STATUS_MAP)
-async function updateCounters(counts) {
-    try {
-        debugManager.log('📊 Aktualizuję liczniki zamówień...', LogLevel.INFO);
-
-        // Initialize all counters to 0 first
-        const statusValues = Object.values(STATUS_MAP);
-        statusValues.forEach(status => {
-            const statusElement = document.querySelector(`.lead-status[data-status="${status.toLowerCase()}"]`);
-            const counter = statusElement?.querySelector('.lead-count');
-            if (counter) {
-                counter.textContent = '0';
-                counter.classList.add('count-zero');
-                counter.classList.remove('count-error', 'count-updated');
-            }
-        });
-
-        // Add overdue status handling
-        const overdueElement = document.querySelector('.lead-status[data-status="overdue"]');
-        const overdueCounter = overdueElement?.querySelector('.lead-count');
-        if (overdueCounter) {
-            overdueCounter.textContent = '0';
-            overdueCounter.classList.add('count-zero');
-            overdueCounter.classList.remove('count-error', 'count-updated');
-        }
-
-        // Update counters with actual values
-        Object.entries(counts).forEach(([status, count]) => {
-            // Find the status key by value in STATUS_MAP
-            const statusKey = Object.entries(STATUS_MAP).find(([key, val]) => val === status)?.[0] || status.toLowerCase();
-            const statusElement = document.querySelector(`.lead-status[data-status="${statusKey}"]`);
-            const counter = statusElement?.querySelector('.lead-count');
-            
-            if (counter) {
-                const numericCount = parseInt(count, 10);
-                if (isNaN(numericCount)) {
-                    debugManager.log(`⚠️ Nieprawidłowa wartość dla statusu ${statusKey}`, LogLevel.ERROR);
-                    counter.textContent = '0';
-                    counter.classList.add('count-error');
-                    return;
-                }
-
-                counter.textContent = numericCount.toString();
-                counter.classList.toggle('count-zero', numericCount === 0);
-                counter.classList.remove('count-error');
-                counter.classList.add('count-updated');
-                setTimeout(() => counter.classList.remove('count-updated'), 1000);
-            }
-        });
-
-        debugManager.log('✅ Liczniki zaktualizowane pomyślnie', LogLevel.INFO);
-    } catch (error) {
-        debugManager.log(`❌ Błąd aktualizacji liczników: ${error.message}`, LogLevel.ERROR);
-        throw error;
     }
 }
 
@@ -650,22 +564,22 @@ function handleLanguageChange(language) {
     }, 300); // Debounce language changes
 }
 
-// Dodaj funkcję setupAutoRefresh
-let refreshInterval = null;
-
+// Update setupAutoRefresh function
 function setupAutoRefresh() {
     if (refreshInterval) {
         clearInterval(refreshInterval);
     }
     
-    refreshInterval = setInterval(() => {
-        const lastUpdate = chrome.storage.local.get('lastUpdate')
-            .then(cached => {
-                if (!cached.lastUpdate || (Date.now() - cached.lastUpdate >= CACHE_TTL)) {
-                    loadAndUpdateData(true);
-                }
-            })
-            .catch(error => console.error('[ERROR] ❌ Auto-refresh check failed:', error));
+    refreshInterval = setInterval(async () => {
+        try {
+            const cached = await chrome.storage.local.get('lastUpdate');
+            if (!cached.lastUpdate || (Date.now() - cached.lastUpdate >= CACHE_TTL)) {
+                await loadAndUpdateData(true);
+            }
+        } catch (error) {
+            console.error('[ERROR] ❌ Auto-refresh check failed:', error);
+            errorHandler?.handleError(error, 'AUTO_REFRESH_ERROR');
+        }
     }, REFRESH_INTERVAL);
 }
 

@@ -8,6 +8,11 @@ import {
 } from '../../config/storage.js';
 import { BaseManager } from './BaseManager.js';
 
+// Stałe dla buforowania
+const BUFFER_SIZE = 100;
+const BUFFER_FLUSH_INTERVAL = 1000; // 1 sekunda
+const WRITE_BATCH_SIZE = 20;
+
 // Helper function to get storage info
 async function getStorageInfo() {
     try {
@@ -24,6 +29,9 @@ export class StorageManager extends BaseManager {
     static #instance = null;
     #locks = new Map();
     #pendingOperations = new Map();
+    #writeBuffer = new Map();
+    #flushTimer = null;
+    #batchPromises = new Map();
 
     constructor() {
         super('StorageManager');
@@ -31,6 +39,54 @@ export class StorageManager extends BaseManager {
             return StorageManager.#instance;
         }
         StorageManager.#instance = this;
+        this.#initializeBuffer();
+    }
+
+    /**
+     * Initialize write buffer and flush timer
+     * @private
+     */
+    #initializeBuffer() {
+        this.#flushTimer = setInterval(() => {
+            this.#flushBuffer();
+        }, BUFFER_FLUSH_INTERVAL);
+    }
+
+    /**
+     * Flush write buffer to storage
+     * @private
+     */
+    async #flushBuffer() {
+        if (this.#writeBuffer.size === 0) return;
+
+        try {
+            const entries = Array.from(this.#writeBuffer.entries());
+            const batches = [];
+            
+            // Split into batches
+            for (let i = 0; i < entries.length; i += WRITE_BATCH_SIZE) {
+                const batch = entries.slice(i, i + WRITE_BATCH_SIZE);
+                batches.push(Object.fromEntries(batch));
+            }
+
+            // Process batches
+            for (const batch of batches) {
+                await chrome.storage.local.set(batch);
+            }
+
+            // Clear processed entries
+            entries.forEach(([key]) => this.#writeBuffer.delete(key));
+
+            this.log('✅ Buffer flushed successfully', {
+                entriesCount: entries.length,
+                batchesCount: batches.length
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.HIGH, {
+                method: '#flushBuffer',
+                bufferSize: this.#writeBuffer.size
+            });
+        }
     }
 
     /**
@@ -74,14 +130,33 @@ export class StorageManager extends BaseManager {
     }
 
     /**
-     * Get a value from storage
+     * Get a value from storage with caching
      * @param {string} key Storage key
      * @returns {Promise<any>} Stored value
      */
     async get(key) {
         try {
-            const result = await chrome.storage.local.get(key);
-            return result[key];
+            // Check write buffer first
+            if (this.#writeBuffer.has(key)) {
+                return this.#writeBuffer.get(key);
+            }
+
+            // Check pending operations
+            const pendingOp = this.#pendingOperations.get(key);
+            if (pendingOp) {
+                return pendingOp;
+            }
+
+            const promise = chrome.storage.local.get(key)
+                .then(result => result[key]);
+
+            // Cache the promise
+            this.#pendingOperations.set(key, promise);
+
+            const value = await promise;
+            this.#pendingOperations.delete(key);
+
+            return value;
         } catch (error) {
             this.handleError(error, ErrorType.STORAGE, ErrorSeverity.MEDIUM);
             return null;
@@ -89,7 +164,7 @@ export class StorageManager extends BaseManager {
     }
 
     /**
-     * Set a value in storage
+     * Set a value in storage with buffering
      * @param {string} key Storage key
      * @param {any} value Value to store
      * @returns {Promise<boolean>} Success status
@@ -97,13 +172,59 @@ export class StorageManager extends BaseManager {
     async set(key, value) {
         try {
             await this.#acquireLock(key);
-            await chrome.storage.local.set({ [key]: value });
+
+            // Add to write buffer
+            this.#writeBuffer.set(key, value);
+
+            // Flush if buffer is full
+            if (this.#writeBuffer.size >= BUFFER_SIZE) {
+                await this.#flushBuffer();
+            }
+
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.STORAGE, ErrorSeverity.MEDIUM);
             return false;
         } finally {
             this.#releaseLock(key);
+        }
+    }
+
+    /**
+     * Batch set multiple values
+     * @param {Object} entries Key-value pairs to store
+     * @returns {Promise<boolean>} Success status
+     */
+    async setBatch(entries) {
+        try {
+            const keys = Object.keys(entries);
+            await Promise.all(keys.map(key => this.#acquireLock(key)));
+
+            const batchId = Date.now().toString();
+            const promise = (async () => {
+                try {
+                    // Add all entries to write buffer
+                    Object.entries(entries).forEach(([key, value]) => {
+                        this.#writeBuffer.set(key, value);
+                    });
+
+                    // Flush if buffer is full
+                    if (this.#writeBuffer.size >= BUFFER_SIZE) {
+                        await this.#flushBuffer();
+                    }
+
+                    return true;
+                } finally {
+                    keys.forEach(key => this.#releaseLock(key));
+                    this.#batchPromises.delete(batchId);
+                }
+            })();
+
+            this.#batchPromises.set(batchId, promise);
+            return await promise;
+        } catch (error) {
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.HIGH);
+            return false;
         }
     }
 
@@ -220,6 +341,38 @@ export class StorageManager extends BaseManager {
      */
     #releaseLock(key) {
         this.#locks.delete(key);
+    }
+
+    /**
+     * Dispose storage manager
+     */
+    async dispose() {
+        try {
+            // Clear flush timer
+            if (this.#flushTimer) {
+                clearInterval(this.#flushTimer);
+                this.#flushTimer = null;
+            }
+
+            // Flush remaining buffer
+            await this.#flushBuffer();
+
+            // Wait for pending operations
+            await Promise.all([
+                ...this.#pendingOperations.values(),
+                ...this.#batchPromises.values()
+            ]);
+
+            // Clear maps
+            this.#writeBuffer.clear();
+            this.#pendingOperations.clear();
+            this.#batchPromises.clear();
+            this.#locks.clear();
+
+            await super.dispose();
+        } catch (error) {
+            this.handleError(error, ErrorType.DISPOSE, ErrorSeverity.HIGH);
+        }
     }
 }
 

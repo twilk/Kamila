@@ -13,7 +13,7 @@ import {
 } from './config/intervals.js';
 import testRunner from './services/testRunner.js';
 import { i18n } from './services/i18n.js';
-import { storeManager } from './services/storeManager.js';
+import { storeManager } from './services/core/StoreManager.js';
 import { ThemeManager } from './services/core/ThemeManager.js';
 import { CacheManager } from './services/core/CacheManager.js';
 import { UIManager } from './services/core/UIManager.js';
@@ -21,6 +21,11 @@ import { DataManager } from './services/core/DataManager.js';
 import { InitializationManager } from './services/core/InitializationManager.js';
 import { ErrorHandler } from './services/core/ErrorHandler.js';
 import { LogLevel } from './services/core/LogLevel.js';
+import { alarmManager } from './services/core/managers.js';
+import { messageManager } from './services/core/MessageManager.js';
+import { userCardService } from './services/userCard.js';
+import { operationProgressManager } from './services/core/OperationProgressManager.js';
+import { counterManager } from './services/core/managers.js';
 
 const FETCH_INTERVAL = 5; // minutes
 const CHECK_INTERVAL = 15; // minutes
@@ -397,80 +402,62 @@ const ALARM_INTERVALS = {
     [ALARM_NAMES.CHECK_NEW_ORDERS]: 1      // co minutę
 };
 
-// Główna funkcja inicjalizacji
-async function initialize() {
-    try {
-        console.log('[DEBUG] 🚀 Starting extension initialization...');
-        
-        // Najpierw zainicjalizuj usługi
-        const servicesInitialized = await initializeServices();
-        if (!servicesInitialized) {
-            throw new Error('Failed to initialize services');
+// Stałe dla inicjalizacji alarmów
+const ALARM_CONFIG = {
+    MAX_INIT_ATTEMPTS: 3,
+    INIT_DELAY: 1000,
+    RETRY_DELAY: 2000,
+    DEFAULT_INTERVAL: 5
+};
+
+// Initialize service worker
+let isInitialized = false;
+let initializationPromise = null;
+
+async function initializeServiceWorker() {
+    if (isInitialized) return true;
+    if (initializationPromise) return initializationPromise;
+
+    initializationPromise = (async () => {
+        try {
+            console.log('[DEBUG] 🚀 Starting service worker initialization...');
+            
+            // Initialize alarm system first
+            await alarmManager.initialize();
+            
+            // Initialize all required services
+            await initializeServices();
+            
+            // Subscribe to alarm events
+            alarmManager.on('alarm:triggered', async (event) => {
+                switch (event.name) {
+                    case 'checkNotifications':
+                        await notificationManager?.checkAndNotify();
+                        break;
+                    case 'fetchData':
+                        await fetchDarwinaData();
+                        break;
+                    case 'checkOrders':
+                        await checkAndUpdateOrders();
+                        break;
+                    case 'checkNewOrders':
+                        await checkNewOrders();
+                        break;
+                }
+            });
+            
+            isInitialized = true;
+            console.log('[DEBUG] ✅ Service worker initialized successfully');
+            return true;
+        } catch (error) {
+            console.error('[ERROR] ❌ Service worker initialization failed:', error);
+            isInitialized = false;
+            initializationPromise = null;
+            throw error;
         }
-        
-        // Następnie zainicjalizuj alarmy
-        await notificationManager.initializeAlarms();
-        
-        console.log('[DEBUG] ✅ Extension initialized successfully');
-        return true;
-    } catch (error) {
-        console.error('[ERROR] ❌ Extension initialization failed:', error);
-        return false;
-    }
-}
+    })();
 
-// Nasłuchuj zdarzeń cyklu życia
-chrome.runtime.onInstalled.addListener(() => {
-    console.log('[DEBUG] 📦 Extension installed/updated');
-    initialize().catch(console.error);
-});
-
-chrome.runtime.onStartup.addListener(() => {
-    console.log('[DEBUG] 🌅 Browser started');
-    initialize().catch(console.error);
-});
-
-// Handler dla alarmów
-async function handleAlarm(alarm) {
-    try {
-        console.log(`[DEBUG] ⏰ Alarm triggered: ${alarm.name}`);
-        
-        switch (alarm.name) {
-            case ALARM_NAMES.CHECK_NOTIFICATIONS:
-                await notificationManager?.checkAndNotify();
-                break;
-            case ALARM_NAMES.FETCH_DATA:
-                await fetchDarwinaData();
-                break;
-            case ALARM_NAMES.CHECK_ORDERS:
-                await checkAndUpdateOrders();
-                break;
-            case ALARM_NAMES.CHECK_NEW_ORDERS:
-                await checkNewOrders();
-                break;
-            default:
-                console.warn(`[WARN] ⚠️ Unknown alarm: ${alarm.name}`);
-        }
-    } catch (error) {
-        console.error(`[ERROR] ❌ Error handling alarm ${alarm.name}:`, error);
-        ErrorHandler.handleError(error, 'ALARM_HANDLER', { alarmName: alarm.name });
-    }
-}
-
-/**
- * Check and update orders with retry mechanism
- */
-async function checkAndUpdateOrders(store) {
-    try {
-        const service = await getOrderService();
-        const orders = await service.fetchOrders(store);
-        console.log(`[DEBUG] ✅ Orders updated successfully for store ${store?.id || 'ALL'}`);
-        return orders;
-    } catch (error) {
-        console.error('[ERROR] ❌ Failed to check orders:', error);
-        ErrorHandler.handleError(error, 'Failed to check orders', { store });
-        throw error;
-    }
+    return initializationPromise;
 }
 
 // Connection handling
@@ -478,13 +465,27 @@ let ports = new Set();
 
 chrome.runtime.onConnect.addListener((port) => {
     if (port.name === 'popup') {
+        console.log('[DEBUG] 🔌 New popup connection established');
         ports.add(port);
         
         port.onMessage.addListener(async (message) => {
             try {
+                // Ensure service worker is initialized
+                await initializeServiceWorker();
+
                 // Handle PING message
                 if (message.type === 'PING') {
-                    port.postMessage({ type: 'PONG' });
+                    port.postMessage({ type: 'PONG', status: 'OK' });
+                    return;
+                }
+
+                // Handle GET_CREDENTIALS message
+                if (message.type === 'GET_CREDENTIALS') {
+                    const credentials = await getDarwinaCredentials();
+                    port.postMessage({ 
+                        type: 'CREDENTIALS_RESPONSE',
+                        credentials 
+                    });
                     return;
                 }
 
@@ -498,10 +499,10 @@ chrome.runtime.onConnect.addListener((port) => {
                         });
                         break;
                     default:
-                        console.warn('Unknown message type:', message.type);
+                        console.warn('[WARN] ⚠️ Unknown message type:', message.type);
                 }
             } catch (error) {
-                console.error('Error handling message:', error);
+                console.error('[ERROR] ❌ Error handling message:', error);
                 port.postMessage({
                     type: 'ERROR',
                     error: error.message,
@@ -511,10 +512,45 @@ chrome.runtime.onConnect.addListener((port) => {
         });
 
         port.onDisconnect.addListener(() => {
+            console.log('[DEBUG] 🔌 Popup connection closed');
             ports.delete(port);
         });
     }
 });
+
+// Initialize on install/update
+chrome.runtime.onInstalled.addListener(async () => {
+    console.log('[DEBUG] 📦 Extension installed/updated');
+    await initializeServiceWorker();
+});
+
+// Initialize on startup
+chrome.runtime.onStartup.addListener(async () => {
+    console.log('[DEBUG] 🌅 Browser started');
+    await initializeServiceWorker();
+});
+
+/**
+ * Check and update orders with retry mechanism
+ */
+async function checkAndUpdateOrders(store) {
+    try {
+        const data = await fetchDarwinaData(store);
+        await updateExtensionBadge(data.counts, store);
+        
+        messageManager.broadcast({
+            type: 'COUNTERS_UPDATED',
+            payload: {
+                counts: data.counts,
+                store,
+                timestamp: data.timestamp
+            }
+        });
+    } catch (error) {
+        ErrorHandler.handle(error, 'Error checking and updating orders');
+        throw error;
+    }
+}
 
 // Handle direct messages (for service worker state check)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -538,201 +574,112 @@ async function getCurrentState() {
     };
 }
 
-// Fetch data from Darwina API
+/**
+ * Process orders and update counters
+ * @param {Array} orders - Array of orders to process
+ * @returns {Object} Processed counts
+ */
+async function processOrders(orders) {
+    try {
+        await counterManager.updateCounters(orders);
+        const { counts } = await counterManager.getCounters();
+        return counts;
+    } catch (error) {
+        ErrorHandler.handle(error, 'Error processing orders');
+        throw error;
+    }
+}
+
+/**
+ * Fetch and process Darwina data
+ * @param {string} selectedStore - Selected store ID
+ * @returns {Promise<Object>} Processed data
+ */
 async function fetchDarwinaData(selectedStore = 'ALL') {
     try {
-        console.log('[DEBUG] 🔄 Rozpoczynam pobieranie danych...');
+        counterManager.setCurrentStore(selectedStore);
         
-        // Initialize API service
-        const api = await initializeApi();
-        if (!api.success) {
-            throw new Error('Failed to initialize API');
-        }
-
-        // Prepare request parameters
-        const params = {
-            status_id: '1,2,3,5', // All statuses in one request
-            limit: 50
-        };
-
-        // Add store filter if needed
-        if (selectedStore !== 'ALL') {
-            const store = stores.find(s => s.id === selectedStore);
-            if (store?.deliveryId) {
-                params.delivery_id = store.deliveryId;
-            }
-        }
-
-        // Get last update time
-        const { lastUpdate } = await chrome.storage.local.get('lastUpdate');
-        if (lastUpdate) {
-            params.modified_from = new Date(lastUpdate).toISOString();
-        }
-
-        // Fetch all orders with pagination
-        let allOrders = [];
-        let page = 1;
-        let hasMore = true;
-
-        while (hasMore) {
-            params.page = page;
-            const url = new URL(`${API_CONFIG.DARWINA.BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}`);
-            Object.entries(params).forEach(([key, value]) => {
-                url.searchParams.append(key, value.toString());
-            });
-
-            console.log('[DEBUG] 🔍 Wysyłam zapytanie:', {
-                page,
-                params,
-                url: url.toString()
-            });
-
-            const response = await fetch(url.toString(), {
-                headers: {
-                    'Authorization': `Bearer ${api.token}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error(`API error: ${response.status}`);
-            }
-
-            const data = await response.json();
-            if (!data.data || !Array.isArray(data.data)) {
-                throw new Error('Invalid API response format');
-            }
-
-            allOrders = [...allOrders, ...data.data];
-            
-            // Check if we have more pages
-            const totalPages = data.metadata?.page_count || 1;
-            hasMore = page < totalPages;
-            page++;
-        }
-
-        // Process orders
-        console.log('[DEBUG] 📊 Rozpoczynam analizę', allOrders.length, 'zamówień');
-        const counts = processOrders(allOrders);
+        const orderService = await getOrderService();
+        const orders = await orderService.getOrders(selectedStore);
         
-        // Cache results
-        await cacheResults(selectedStore, {
-            counts,
-            orders: allOrders,
-            timestamp: Date.now()
-        });
-
-        console.log('[DEBUG] ✅ Zakończono analizę wszystkich', allOrders.length, 'zamówień');
+        const counts = await processOrders(orders);
+        
         return {
-            success: true,
             counts,
-            orders: allOrders
+            orders,
+            timestamp: Date.now()
         };
     } catch (error) {
-        console.error('[ERROR] ❌ Błąd pobierania danych:', error);
-        return {
-            success: false,
-            error: error.message
-        };
+        ErrorHandler.handle(error, 'Error fetching Darwina data');
+        throw error;
     }
 }
 
-// Process orders and count statuses
-function processOrders(orders) {
-    // Safety check for input
-    if (!Array.isArray(orders)) {
-        console.error('Invalid input: orders must be an array');
-        return {
-            '1': 0,
-            '2': 0,
-            '3': 0,
-            'READY': 0,
-            'OVERDUE': 0
-        };
+// Initialize managers
+async function initializeManagers() {
+    try {
+        console.log('🔄 Initializing background services...');
+
+        // Initialize core services
+        await Promise.all([
+            messageManager.initialize(),
+            storageManager.initialize(),
+            storeManager.initialize(),
+            operationProgressManager.initialize(),
+            userCardService.initialize()
+        ]);
+
+        // Setup state sync
+        setupStateSync();
+
+        // Setup progress tracking
+        setupProgressTracking();
+
+        console.log('✅ Background services initialized');
+    } catch (error) {
+        console.error('❌ Error initializing background services:', error);
     }
+}
 
-    // Limit the number of orders to process
-    const MAX_ORDERS = 10000;
-    const ordersToProcess = orders.slice(0, MAX_ORDERS);
-    
-    if (orders.length > MAX_ORDERS) {
-        console.warn(`Processing limited to ${MAX_ORDERS} orders out of ${orders.length}`);
-    }
-
-    const counts = {
-        '1': 0,
-        '2': 0,
-        '3': 0,
-        'READY': 0,
-        'OVERDUE': 0
-    };
-
-    const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-
-    ordersToProcess.forEach(order => {
-        // Safety check for order object
-        if (!order || typeof order !== 'object') return;
-
-        const status = order.status_id?.toString();
-        if (!status) return;
-
-        if (status === '5') {
-            const orderDate = new Date(order.ready_date || order.modified_at || order.created_at);
-            if (orderDate < twoWeeksAgo) {
-                counts.OVERDUE++;
-            } else {
-                counts.READY++;
-            }
-        } else if (counts.hasOwnProperty(status)) {
-            counts[status]++;
-        }
+/**
+ * Setup state synchronization with popup
+ */
+function setupStateSync() {
+    // Listen for store changes
+    storeManager.addEventListener('storeChanged', async (event) => {
+        const { store } = event.detail;
+        await messageManager.sendToPopup('STATE_UPDATE', { store });
     });
 
-    return counts;
-}
-
-// Cache results
-async function cacheResults(store, data) {
-    const cacheKey = `darwina_cache_${store}`;
-    await chrome.storage.local.set({
-        [cacheKey]: {
-            data,
-            timestamp: Date.now()
-        }
+    // Listen for user changes
+    userCardService.addEventListener('userChanged', async (event) => {
+        const { user } = event.detail;
+        await messageManager.sendToPopup('STATE_UPDATE', { user });
     });
 }
 
-// Message handling
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    const handleAsyncMessage = async (handler) => {
-        try {
-            const response = await handler();
-            sendResponse(response);
-        } catch (error) {
-            console.error('Error in message handler:', error);
-            sendResponse({ success: false, error: error.message });
-        }
-    };
-
-    if (message.type === 'FETCH_DARWINA_DATA') {
-        handleAsyncMessage(async () => {
-            return await fetchDarwinaData(message.selectedStore);
+/**
+ * Setup progress tracking
+ */
+function setupProgressTracking() {
+    // Listen for progress updates
+    operationProgressManager.addEventListener('progressUpdate', async (event) => {
+        const { operation, current, total, status } = event.detail;
+        await messageManager.sendToPopup('PROGRESS_UPDATE', { 
+            operation, 
+            current, 
+            total, 
+            status 
         });
-        return true;
-    }
+    });
 
-    if (message.type === 'CHECK_ORDERS_NOW') {
-        handleAsyncMessage(async () => {
-            const data = await fetchDarwinaData(message.selectedStore);
-            if (data.success) {
-                await chrome.storage.local.set({
-                    lastUpdate: Date.now(),
-                    leadCounts: data.counts
-                });
-            }
-            return data;
-        });
-        return true;
-    }
-});
+    // Listen for operation errors
+    operationProgressManager.addEventListener('operationError', async (event) => {
+        const { error } = event.detail;
+        await messageManager.sendToPopup('ERROR', error);
+    });
+}
+
+// Initialize when extension loads
+initializeManagers();
   

@@ -41,6 +41,7 @@ export class MenuManager extends BaseManager {
     #uiManager = null;
     #tabInstances = null;
     #storeData = new Map();
+    #tabs = [];
 
     constructor() {
         if (MenuManager._instance) {
@@ -190,7 +191,9 @@ export class MenuManager extends BaseManager {
             await chrome.storage.local.set({ activeTab: this.#activeTab });
             this.log(LogLevel.DEBUG, `💾 Saved active tab: ${this.#activeTab}`);
         } catch (error) {
-            this.log(LogLevel.WARNING, `⚠️ Failed to save tab state: ${error.message}`);
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
+                method: '#saveTabState'
+            });
         }
     }
 
@@ -234,148 +237,71 @@ export class MenuManager extends BaseManager {
                 await this.#waitForBootstrap();
             }
 
-            // Initialize menu tabs
-            const tabElements = document.querySelectorAll(SELECTORS.TAB);
-            if (!tabElements.length) {
-                this.log(LogLevel.WARNING, '⚠️ No tab elements found');
-                return true;
-            }
-
-            this.log(LogLevel.INFO, `📌 Found ${tabElements.length} tab elements`);
-
-            // Store tab instances
-            this.#tabInstances = new Map();
-
-            // Initialize Bootstrap tabs and add ARIA attributes
-            tabElements.forEach((tab, index) => {
-                try {
-                    // Remove any existing instance
-                    const existingInstance = bootstrap.Tab.getInstance(tab);
-                    if (existingInstance) {
-                        existingInstance.dispose();
-                    }
-
-                    // Create new instance
-                    const instance = new bootstrap.Tab(tab);
-                    this.#tabInstances.set(tab, instance);
-
-                    // Set ARIA attributes
-                    const targetId = tab.getAttribute('href')?.substring(1);
-                    tab.setAttribute('role', 'tab');
-                    tab.setAttribute('aria-selected', tab.classList.contains('active'));
-                    tab.setAttribute('aria-controls', targetId);
-                    tab.setAttribute('tabindex', tab.classList.contains('active') ? '0' : '-1');
-
-                    // Find corresponding panel and add ARIA attributes
-                    const panel = document.getElementById(targetId);
-                    if (panel) {
-                        panel.setAttribute('role', 'tabpanel');
-                        panel.setAttribute('aria-labelledby', tab.id || `tab-${index}`);
-                        if (!tab.id) tab.id = `tab-${index}`;
-                    }
-                } catch (error) {
-                    this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
-                        method: 'initializeMenuItems',
-                        tab: tab
-                    });
-                }
-            });
-
-            // Add keyboard navigation container
-            const menuContainer = document.querySelector('.menu');
-            if (menuContainer) {
-                menuContainer.setAttribute('role', 'tablist');
-                menuContainer.setAttribute('aria-label', 'Main menu');
-            }
-
-            // Register event handlers
-            this.#registerTabEventHandlers();
-
-            // Set initial active tab
-            const activeTab = document.querySelector(SELECTORS.ACTIVE_TAB);
-            if (activeTab) {
-                this.#activeTab = activeTab.getAttribute('href');
-                const tabPane = document.querySelector(this.#activeTab);
-                if (tabPane) {
-                    tabPane.classList.add('show', 'active');
-                }
-            }
-
-            // Initialize user selector
+            // Initialize user selector first
             await this.#initializeUserSelector();
+
+            // Initialize menu tabs
+            await this.#initializeTabs();
+
+            // Setup store-related event listeners
+            this.#setupStoreEventListeners();
 
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initializeMenuItems'
+                method: 'initializeMenuItems',
+                details: error.message
             });
             return false;
         }
     }
 
     /**
-     * Register tab event handlers
+     * Initialize tab functionality
      * @private
      */
-    #registerTabEventHandlers() {
-        // Remove any existing event listeners
-        document.removeEventListener('show.bs.tab', this._handleTabShow);
-        document.removeEventListener('shown.bs.tab', this._handleTabShown);
-
-        // Add Bootstrap tab event listeners with proper binding
-        document.addEventListener('show.bs.tab', this._handleTabShow.bind(this));
-        document.addEventListener('shown.bs.tab', this._handleTabShown.bind(this));
-
-        // Add click handlers
-        const tabs = document.querySelectorAll(SELECTORS.TAB);
-        tabs.forEach(tab => {
-            tab.addEventListener('click', this.#handleTabClick.bind(this));
-            tab.addEventListener('keydown', this.#handleTabKeydown.bind(this));
-        });
-    }
-
-    /**
-     * Handle tab click event
-     * @private
-     */
-    #handleTabClick(event) {
+    async #initializeTabs() {
         try {
-            event.preventDefault();
-            const tab = event.currentTarget;
-            
-            // Let Bootstrap handle the tab switching
-            const bsTab = new bootstrap.Tab(tab);
-            bsTab.show();
-            
-            // Update our state
-            this.#activeTab = tab.getAttribute('href');
-            this.#saveTabState();
+            // Find all tab elements
+            const tabElements = document.querySelectorAll(SELECTORS.TAB);
+            this.log(LogLevel.INFO, `📌 Found ${tabElements.length} tab elements`);
+
+            // Initialize Bootstrap tabs
+            this.#tabs = Array.from(tabElements).map(element => {
+                // Create new tab instance
+                const tab = bootstrap.Tab.getOrCreateInstance(element);
+                
+                // Create a wrapper function that maintains the correct context
+                const showTab = (event) => {
+                    if (event) {
+                        event.preventDefault();
+                    }
+                    tab.show.call(element);
+                };
+                
+                // Add click handler
+                element.addEventListener('click', showTab);
+
+                // Add Bootstrap tab events
+                element.addEventListener('show.bs.tab', this._handleTabShow.bind(this));
+                element.addEventListener('shown.bs.tab', this._handleTabShown.bind(this));
+
+                return {
+                    element,
+                    instance: tab,
+                    show: showTab
+                };
+            });
+
+            // Restore active tab after initialization
+            await this.#restoreActiveTab();
+
+            this.log(LogLevel.SUCCESS, '✅ Tabs initialized successfully');
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
-                method: 'handleTabClick',
-                event: event
+                method: '#initializeTabs',
+                details: error.message
             });
-        }
-    }
-
-    /**
-     * Wait for Bootstrap to be available
-     * @private
-     * @returns {Promise<void>}
-     */
-    async #waitForBootstrap() {
-        const maxAttempts = 10;
-        const delayMs = 500;
-        let attempts = 0;
-
-        while (typeof bootstrap === 'undefined' && attempts < maxAttempts) {
-            await new Promise(resolve => setTimeout(resolve, delayMs));
-            attempts++;
-            this.log(LogLevel.DEBUG, `Waiting for Bootstrap (attempt ${attempts}/${maxAttempts})`);
-        }
-
-        if (typeof bootstrap === 'undefined') {
-            throw new Error('Bootstrap failed to load after multiple attempts');
         }
     }
 
@@ -383,87 +309,17 @@ export class MenuManager extends BaseManager {
      * Handle tab show event
      * @private
      */
-    _handleTabShow(event) {
+    async _handleTabShow(event) {
         try {
-            const tab = event.target;
-            const relatedTarget = event.relatedTarget;
-            const targetId = tab.getAttribute('data-target');
-            const currentTab = this.#activeTab;
+            const targetId = event.target.getAttribute('href');
+            if (!targetId) return;
 
-            this.log(LogLevel.DEBUG, `🔄 Tab switch initiated`, {
-                from: {
-                    tab: currentTab,
-                    element: relatedTarget ? {
-                        href: relatedTarget.getAttribute('href'),
-                        target: relatedTarget.getAttribute('data-target'),
-                        classes: Array.from(relatedTarget.classList)
-                    } : null
-                },
-                to: {
-                    tab: targetId,
-                    element: {
-                        href: tab.getAttribute('href'),
-                        target: targetId,
-                        classes: Array.from(tab.classList)
-                    }
-                },
-                eventPhase: 'show.bs.tab'
-            });
+            this.log(LogLevel.INFO, `�� Tab show initiated: ${targetId}`);
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
                 method: '_handleTabShow',
                 event: event
             });
-        }
-    }
-
-    /**
-     * Handle keyboard navigation
-     * @private
-     */
-    #handleTabKeydown(event) {
-        const tab = event.currentTarget;
-        const tabs = Array.from(document.querySelectorAll(SELECTORS.TAB));
-        const index = tabs.indexOf(tab);
-        let nextTab = null;
-
-        switch (event.key) {
-            case KEYS.LEFT:
-                event.preventDefault();
-                nextTab = tabs[index - 1] || tabs[tabs.length - 1];
-                break;
-            case KEYS.RIGHT:
-                event.preventDefault();
-                nextTab = tabs[index + 1] || tabs[0];
-                break;
-            case KEYS.HOME:
-                event.preventDefault();
-                nextTab = tabs[0];
-                break;
-            case KEYS.END:
-                event.preventDefault();
-                nextTab = tabs[tabs.length - 1];
-                break;
-            case KEYS.ENTER:
-            case KEYS.SPACE:
-                event.preventDefault();
-                this.#handleTabClick(event);
-                return;
-        }
-
-        if (nextTab) {
-            // Update tabindex
-            tabs.forEach(t => t.setAttribute('tabindex', '-1'));
-            nextTab.setAttribute('tabindex', '0');
-            nextTab.focus();
-            
-            // Create new Tab instance for activation
-            const bsTab = new bootstrap.Tab(nextTab);
-            bsTab.show();
-            
-            // Update state
-            this.#activeTab = nextTab.getAttribute('href');
-            this.#saveTabState();
         }
     }
 
@@ -474,8 +330,9 @@ export class MenuManager extends BaseManager {
     async _handleTabShown(event) {
         try {
             const tab = event.target;
-            const relatedTarget = event.relatedTarget;
             const targetId = tab.getAttribute('href');
+            if (!targetId) return;
+
             const previousTab = this.#activeTab;
             this.#activeTab = targetId;
             
@@ -523,6 +380,27 @@ export class MenuManager extends BaseManager {
                 method: '_handleTabShown',
                 event: event
             });
+        }
+    }
+
+    /**
+     * Wait for Bootstrap to be available
+     * @private
+     * @returns {Promise<void>}
+     */
+    async #waitForBootstrap() {
+        const maxAttempts = 10;
+        const delayMs = 500;
+        let attempts = 0;
+
+        while (typeof bootstrap === 'undefined' && attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            attempts++;
+            this.log(LogLevel.DEBUG, `Waiting for Bootstrap (attempt ${attempts}/${maxAttempts})`);
+        }
+
+        if (typeof bootstrap === 'undefined') {
+            throw new Error('Bootstrap failed to load after multiple attempts');
         }
     }
 
@@ -619,23 +497,21 @@ export class MenuManager extends BaseManager {
         try {
             this.log(LogLevel.INFO, '🧹 Starting MenuManager cleanup');
 
-            // Remove event listeners
-            document.removeEventListener('show.bs.tab', this._handleTabShow);
-            document.removeEventListener('shown.bs.tab', this._handleTabShown);
-            this.log(LogLevel.DEBUG, '✅ Event listeners removed');
+            // Remove event listeners from tabs
+            if (this.#tabs) {
+                this.#tabs.forEach(tab => {
+                    tab.element.removeEventListener('show.bs.tab', this._handleTabShow);
+                    tab.element.removeEventListener('shown.bs.tab', this._handleTabShown);
+                    if (tab.instance) {
+                        tab.instance.dispose();
+                    }
+                });
+            }
+            this.log(LogLevel.DEBUG, '✅ Tab instances disposed');
 
-            // Dispose all tab instances
-            const tabLinks = document.querySelectorAll(SELECTORS.TAB);
-            this.log(LogLevel.DEBUG, `📍 Found ${tabLinks.length} tabs to dispose`);
-
-            tabLinks.forEach((link, index) => {
-                const targetId = link.getAttribute('data-target');
-                const tabInstance = bootstrap.Tab.getInstance(link);
-                if (tabInstance) {
-                    tabInstance.dispose();
-                    this.log(LogLevel.DEBUG, `✅ Disposed tab ${index + 1}/${tabLinks.length}: ${targetId}`);
-                }
-            });
+            // Clear tab references
+            this.#tabs = [];
+            this.#activeTab = null;
 
             super.dispose();
             this.log(LogLevel.SUCCESS, '✨ MenuManager disposed successfully');
@@ -659,29 +535,87 @@ export class MenuManager extends BaseManager {
                 return;
             }
 
+            // Verify UserCardService is available
+            if (typeof UserCardService === 'undefined') {
+                throw new Error('UserCardService is not available');
+            }
+
             // Initialize user selector
+            this.log(LogLevel.INFO, '⏳ Initializing user selector...');
             await UserCardService.initializeUserSelector();
 
             // Listen for user changes
             userSelect.addEventListener('change', async (e) => {
-                const selectedId = e.target.value;
-                const success = await UserCardService.setCurrentUser(selectedId);
-                
-                if (success) {
-                    window.dispatchEvent(new CustomEvent(EVENTS.USER_CHANGED, {
-                        detail: {
-                            userId: selectedId,
-                            timestamp: new Date().toISOString()
-                        }
-                    }));
+                try {
+                    const selectedId = e.target.value;
+                    const success = await UserCardService.setCurrentUser(selectedId);
+                    
+                    if (success) {
+                        window.dispatchEvent(new CustomEvent(EVENTS.USER_CHANGED, {
+                            detail: {
+                                userId: selectedId,
+                                timestamp: new Date().toISOString()
+                            }
+                        }));
+                        this.log(LogLevel.SUCCESS, `✅ User changed to: ${selectedId}`);
+                    }
+                } catch (error) {
+                    this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
+                        method: 'userSelect.onChange',
+                        details: error.message
+                    });
                 }
             });
 
             this.log(LogLevel.SUCCESS, '✅ User selector initialized');
         } catch (error) {
             this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.MEDIUM, {
-                method: 'initializeUserSelector'
+                method: 'initializeUserSelector',
+                details: error.message
             });
         }
+    }
+
+    /**
+     * Restore active tab
+     * @private
+     */
+    async #restoreActiveTab() {
+        try {
+            if (!this.#activeTab) {
+                this.log(LogLevel.DEBUG, '⏭️ No active tab to restore');
+                return;
+            }
+            
+            const activeTabElement = document.querySelector(`${SELECTORS.TAB}[href="${this.#activeTab}"]`);
+            if (!activeTabElement) {
+                this.log(LogLevel.WARNING, `⚠️ Active tab element not found: ${this.#activeTab}`);
+                return;
+            }
+
+            const tab = this.#tabs.find(t => t.element === activeTabElement);
+            if (tab) {
+                this.log(LogLevel.INFO, `🔄 Restoring active tab: ${this.#activeTab}`);
+                tab.show();
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: '#restoreActiveTab',
+                activeTab: this.#activeTab
+            });
+        }
+    }
+
+    /**
+     * Check if element is active
+     * @param {HTMLElement} elem - Element to check
+     * @returns {boolean}
+     * @private
+     */
+    _elemIsActive(elem) {
+        if (!elem) return false;
+        return elem.classList.contains('active') || 
+               elem.getAttribute('aria-selected') === 'true' ||
+               elem.getAttribute('data-active') === 'true';
     }
 } 

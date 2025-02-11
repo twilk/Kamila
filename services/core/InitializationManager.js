@@ -24,6 +24,7 @@ import { MessageManager } from './MessageManager.js';
 import { NotificationManager } from './NotificationManager.js';
 import { VolumeManager } from './VolumeManager.js';
 import { StatusManager } from './StatusManager.js';
+import { AlarmManager } from './AlarmManager.js';
 
 /**
  * @extends {BaseManager}
@@ -86,6 +87,7 @@ export class InitializationManager extends BaseManager {
                 const managersToInitialize = [
                     { instance: ErrorHandler.getInstance(), name: 'Error Handler' },
                     { instance: EventManager.getInstance(), name: 'Event Manager' },
+                    { instance: AlarmManager.getInstance(), name: 'Alarm Manager' },
                     { instance: ConnectionManager.getInstance(), name: 'Connection Manager' },
                     { instance: CacheManager.getInstance(), name: 'Cache Manager' },
                     { instance: UIManager.getInstance(), name: 'UI Manager' },

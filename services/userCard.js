@@ -1,7 +1,26 @@
 import { ACTIVE_USERS, getUserByMemberId, generateUserJson, saveUserFile } from './users.js';
+import { BaseManager } from './baseManager.js';
 
-export class UserCardService {
-    static async saveUserData(userData) {
+export class UserCardService extends BaseManager {
+    static #instance = null;
+    #currentUser = null;
+
+    constructor() {
+        if (UserCardService.#instance) {
+            return UserCardService.#instance;
+        }
+        super('UserCardService');
+        UserCardService.#instance = this;
+    }
+
+    static getInstance() {
+        if (!UserCardService.#instance) {
+            UserCardService.#instance = new UserCardService();
+        }
+        return UserCardService.#instance;
+    }
+
+    async saveUserData(userData) {
         if (!userData || !userData.memberId || !userData.qrCodeUrl) return false;
         
         try {
@@ -12,7 +31,7 @@ export class UserCardService {
             const isNewQRCode = !existingUser || existingUser.qrCodeUrl !== userData.qrCodeUrl;
             
             // Połącz z istniejącymi danymi
-            const baseUserData = await getUserByMemberId(userData.memberId);
+            const baseUserData = await this.getUserByMemberId(userData.memberId);
             const mergedData = {
                 ...baseUserData,
                 ...userData,
@@ -28,10 +47,10 @@ export class UserCardService {
             });
 
             // Zapisz plik
-            await saveUserFile(mergedData);
+            await this.saveUserFile(mergedData);
 
             // Aktualizuj kartę użytkownika
-            await UserCardService.updateUserCard(mergedData);
+            await this.updateUserCard(mergedData);
 
             return isNewQRCode;
         } catch (error) {
@@ -40,7 +59,7 @@ export class UserCardService {
         }
     }
 
-    static async loadCurrentUser() {
+    async loadCurrentUser() {
         try {
             const data = await chrome.storage.local.get(['darwin_current_user', 'darwin_users_data']);
             const currentUserId = data.darwin_current_user;
@@ -48,28 +67,28 @@ export class UserCardService {
             
             if (currentUserId && users[currentUserId]) {
                 const userData = users[currentUserId];
-                await UserCardService.updateUserCard(userData);
+                await this.updateUserCard(userData);
                 return userData;
             }
 
             if (currentUserId) {
-                const userData = await getUserByMemberId(currentUserId);
+                const userData = await this.getUserByMemberId(currentUserId);
                 if (userData) {
-                    await UserCardService.updateUserCard(userData);
+                    await this.updateUserCard(userData);
                     return userData;
                 }
             }
 
-            await UserCardService.updateUserCard(null);
+            await this.updateUserCard(null);
             return null;
         } catch (error) {
             console.error('Error loading current user:', error);
-            await UserCardService.updateUserCard(null);
+            await this.updateUserCard(null);
             return null;
         }
     }
 
-    static async getAllUsers() {
+    async getAllUsers() {
         try {
             const data = await chrome.storage.local.get('darwin_users_data');
             return data.darwin_users_data || {};
@@ -79,21 +98,21 @@ export class UserCardService {
         }
     }
 
-    static async setCurrentUser(userId) {
+    async setCurrentUser(userId) {
         try {
             if (!userId) {
                 await chrome.storage.local.remove('darwin_current_user');
-                await UserCardService.updateUserCard(null);
+                await this.updateUserCard(null);
                 return true;
             }
 
-            const userData = await getUserByMemberId(userId);
+            const userData = await this.getUserByMemberId(userId);
             if (!userData) {
                 throw new Error(`Nie znaleziono użytkownika o ID: ${userId}`);
             }
 
             await chrome.storage.local.set({ 'darwin_current_user': userId });
-            await UserCardService.updateUserCard(userData);
+            await this.updateUserCard(userData);
             return true;
         } catch (error) {
             console.error('Error setting current user:', error);
@@ -101,7 +120,7 @@ export class UserCardService {
         }
     }
 
-    static async markNotificationShown(userId) {
+    async markNotificationShown(userId) {
         try {
             const data = await chrome.storage.local.get('darwin_users_data');
             const users = data.darwin_users_data || {};
@@ -109,12 +128,12 @@ export class UserCardService {
             if (users[userId]) {
                 users[userId].notificationShown = true;
                 await chrome.storage.local.set({ 'darwin_users_data': users });
-                await saveUserFile(users[userId]);
+                await this.saveUserFile(users[userId]);
                 
                 // Jeśli to aktualny użytkownik, aktualizuj kartę
-                const currentUser = await UserCardService.loadCurrentUser();
+                const currentUser = await this.loadCurrentUser();
                 if (currentUser && currentUser.memberId === userId) {
-                    await UserCardService.updateUserCard(users[userId]);
+                    await this.updateUserCard(users[userId]);
                 }
             }
         } catch (error) {
@@ -122,48 +141,67 @@ export class UserCardService {
         }
     }
 
-    static async initializeUserSelector() {
-        const userSelect = document.getElementById('user-select');
-        if (!userSelect) return;
-
+    async initializeUserSelector() {
         try {
-            // Pobierz aktualnie wybranego użytkownika
-            const { darwin_current_user } = await chrome.storage.local.get('darwin_current_user');
+            const userSelector = document.getElementById('user-selector');
+            if (!userSelector) {
+                this.log(LogLevel.WARNING, '⚠️ User selector element not found');
+                return;
+            }
 
-            // Wyczyść obecne opcje
-            userSelect.innerHTML = '<option value="">Wybierz użytkownika</option>';
+            // Load current user
+            const currentUser = await this.getCurrentUser();
+            if (currentUser) {
+                userSelector.value = currentUser.id;
+            }
 
-            // Sortuj użytkowników alfabetycznie
-            const sortedUsers = [...ACTIVE_USERS].sort((a, b) => 
-                a.fullName.localeCompare(b.fullName)
-            );
-
-            // Dodaj posortowane opcje
-            sortedUsers.forEach(user => {
-                const option = document.createElement('option');
-                option.value = user.memberId;
-                option.textContent = user.fullName;
-                if (darwin_current_user === user.memberId) {
-                    option.selected = true;
+            // Add change listener
+            userSelector.addEventListener('change', async (event) => {
+                try {
+                    const userId = event.target.value;
+                    await this.changeUser(userId);
+                } catch (error) {
+                    this.errorHandler?.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM);
                 }
-                userSelect.appendChild(option);
             });
 
-            // Obsługa zmiany użytkownika
-            userSelect.addEventListener('change', async (e) => {
-                const selectedId = e.target.value;
-                await UserCardService.setCurrentUser(selectedId);
-            });
-
-            // Załaduj i wyświetl aktualnego użytkownika
-            await UserCardService.loadCurrentUser();
-
+            this.log(LogLevel.INFO, '✅ User selector initialized');
         } catch (error) {
-            console.error('Error initializing user selector:', error);
+            this.log(LogLevel.ERROR, '❌ Failed to initialize user selector:', error);
+            throw error;
         }
     }
 
-    static async updateUserCard(userData = null) {
+    async getCurrentUser() {
+        try {
+            if (!this.#currentUser) {
+                const data = await chrome.storage.local.get('currentUser');
+                this.#currentUser = data.currentUser || null;
+            }
+            return this.#currentUser;
+        } catch (error) {
+            this.log(LogLevel.ERROR, '❌ Failed to get current user:', error);
+            return null;
+        }
+    }
+
+    async changeUser(userId) {
+        try {
+            // Update storage
+            await chrome.storage.local.set({ currentUser: { id: userId } });
+            this.#currentUser = { id: userId };
+            
+            // Emit event
+            this.eventManager?.emit('user:changed', { userId });
+            
+            this.log(LogLevel.INFO, '✅ User changed successfully');
+        } catch (error) {
+            this.log(LogLevel.ERROR, '❌ Failed to change user:', error);
+            throw error;
+        }
+    }
+
+    async updateUserCard(userData = null) {
         const cardInner = document.querySelector('.user-card-inner');
         const nameElement = document.querySelector('.user-card-front .user-name');
         const qrElement = document.querySelector('.user-card-back .qr-code');
@@ -197,6 +235,43 @@ export class UserCardService {
             }
         } catch (error) {
             console.error('Error updating user card:', error);
+        }
+    }
+
+    async getUserByMemberId(memberId) {
+        try {
+            const response = await fetch(chrome.runtime.getURL(`users/${memberId}.json`));
+            if (!response.ok) {
+                throw new Error(`User not found: ${memberId}`);
+            }
+            return await response.json();
+        } catch (error) {
+            console.error(`Error fetching user data: ${error.message}`);
+            return null;
+        }
+    }
+
+    async saveUserFile(userData) {
+        try {
+            const fileName = `${userData.firstName}-${userData.memberId}.json`;
+            const fileContent = JSON.stringify({
+                ...userData,
+                exportDate: new Date().toISOString()
+            }, null, 2);
+
+            const blob = new Blob([fileContent], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            await chrome.downloads.download({
+                url: url,
+                filename: `users/${fileName}`,
+                saveAs: false,
+                conflictAction: 'overwrite'
+            });
+
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Error saving user file:', error);
         }
     }
 } 

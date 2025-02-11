@@ -29,7 +29,8 @@ export {
     languageManager,
     settingsManager,
     messageManager,
-    operationProgressManager
+    operationProgressManager,
+    counterManager
 } from './core/managers.js';
 
 // API services
@@ -37,7 +38,9 @@ export { APIManager, apiManager } from './api/index.js';
 export { OrderService } from './api/OrderService.js';
 
 // User services
-export { UserCardService } from './userCard.js';
+import { UserCardService } from './userCard.js';
+export const userCardService = UserCardService.getInstance();
+export { UserCardService };
 
 // Utilities
 export { i18n } from './i18n.js';

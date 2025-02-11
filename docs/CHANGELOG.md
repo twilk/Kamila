@@ -77,6 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       }
   });
   ```
+- Zaktualizowano system kolejkowania wiadomości w MessageManager
+- Ulepszono mechanizm ponownych prób dla nieudanych wiadomości
+- Zoptymalizowano obsługę portów w popup.js
 
 ### Fixed
 - Status counting logic in MenuManager with proper date handling
@@ -102,6 +105,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       }
   }
   ```
+- Naprawiono błąd inicjalizacji ProgressManager poprzez zmianę nazwy na OperationProgressManager
+- Poprawiono obsługę komunikacji między background a popup poprzez implementację kolejki wiadomości
+- Zaimplementowano prawidłową obsługę singleton pattern w UserCardService
 
 ### Removed
 - Deprecated cache structure without metadata
@@ -126,6 +132,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       READY_FOR_PICKUP: '5'
   } as const;
   ```
+- Dodano nowy system kolejkowania wiadomości
+- Zaimplementowano mechanizm retry dla komunikacji
+- Dodano persystencję wiadomości w storage
 
 ## [1.0.0] - 2024-03-XX
 
