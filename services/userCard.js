@@ -1,5 +1,6 @@
 import { ACTIVE_USERS, getUserByMemberId, generateUserJson, saveUserFile } from './users.js';
-import { BaseManager } from './baseManager.js';
+import { BaseManager } from './core/BaseManager.js';
+import { LogLevel, ErrorType, ErrorSeverity } from './core/EventType.js';
 
 export class UserCardService extends BaseManager {
     static #instance = null;

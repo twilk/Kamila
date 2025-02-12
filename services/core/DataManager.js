@@ -341,13 +341,34 @@ export class DataManager extends BaseManager {
             'OVERDUE': 0
         };
 
+        this.log(LogLevel.DEBUG, '📊 Starting order count calculation', { totalOrders: orders.length });
+
         orders.forEach(order => {
-            const status = this.#statusManager.constructor.mapStatus(order.status);
-            if (status in counts) {
-                counts[status]++;
+            const originalStatus = order.status;
+            const mappedStatus = this.#statusManager.constructor.mapStatus(order.status);
+            
+            this.log(LogLevel.DEBUG, '🔄 Processing order status', {
+                orderId: order.id,
+                originalStatus,
+                mappedStatus
+            });
+
+            if (mappedStatus in counts) {
+                counts[mappedStatus]++;
+                this.log(LogLevel.DEBUG, '✅ Incremented counter', {
+                    status: mappedStatus,
+                    newCount: counts[mappedStatus]
+                });
+            } else {
+                this.log(LogLevel.WARN, '⚠️ Unmapped status encountered', {
+                    orderId: order.id,
+                    originalStatus,
+                    mappedStatus
+                });
             }
         });
 
+        this.log(LogLevel.INFO, '📈 Final order counts', { counts });
         return counts;
     }
 
