@@ -179,6 +179,9 @@ async function setupEventListeners() {
         // Initialize user selector
         await userCardService.initializeUserSelector();
         
+        // Setup tabs
+        setupTabs();
+        
         // Now setup other event listeners
         document.getElementById('refresh-store-data')?.addEventListener('click', async () => {
             try {
@@ -616,4 +619,78 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return true; // Keep the message channel open for async response
 });
+
+// Initialize OrderService and fetch data
+async function initializeAndFetchData() {
+    try {
+        const credentials = await getDarwinaCredentials();
+        if (!credentials?.token) {
+            throw new Error('No API token available');
+        }
+        
+        orderService = new OrderService(credentials);
+        await orderService.initialize();
+        
+        // Force refresh on first load
+        const result = await orderService.fetchOrders('ALL', { forceRefresh: true });
+        
+        // Setup refresh interval
+        if (refreshInterval) {
+            clearInterval(refreshInterval);
+        }
+        
+        refreshInterval = setInterval(async () => {
+            try {
+                await orderService.fetchOrders('ALL');
+            } catch (error) {
+                console.error('Error refreshing data:', error);
+            }
+        }, REFRESH_INTERVAL);
+        
+        return result;
+    } catch (error) {
+        console.error('Failed to initialize OrderService:', error);
+        throw error;
+    }
+}
+
+// Call initialization when popup opens
+document.addEventListener('DOMContentLoaded', () => {
+    initializeAndFetchData()
+        .then(result => {
+            console.log('Initial data fetch completed:', result);
+        })
+        .catch(error => {
+            console.error('Error during initialization:', error);
+        });
+});
+
+// Add this after the other event listeners in setupEventListeners function
+function setupTabs() {
+    const menu = document.querySelector('.menu');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+    
+    menu.addEventListener('click', (event) => {
+        event.preventDefault();
+        const link = event.target.closest('.link');
+        if (!link) return;
+
+        // Remove active class from all links and panes
+        document.querySelectorAll('.link').forEach(l => l.classList.remove('active'));
+        tabPanes.forEach(pane => pane.classList.remove('active'));
+
+        // Add active class to clicked link and corresponding pane
+        link.classList.add('active');
+        const targetId = link.getAttribute('data-target');
+        document.getElementById(targetId)?.classList.add('active');
+
+        // Emit tab change event
+        window.dispatchEvent(new CustomEvent(EVENTS.TAB_CHANGED, {
+            detail: {
+                tab: targetId,
+                timestamp: new Date().toISOString()
+            }
+        }));
+    });
+}
 

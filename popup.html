@@ -108,7 +108,7 @@
 
             <div class="col-12">
                 <div class="menu">
-                    <a class="link active" href="#chat" data-target="#chat" role="tab" data-bs-toggle="tab" data-bs-tooltip="tooltip" data-i18n-tooltip="tooltipChat">
+                    <a class="link active" href="#chat" data-target="chat">
                         <span class="link-icon">
                             <i class="bi bi-chat-heart"></i>
                         </span>
@@ -116,7 +116,7 @@
                             <span class="menu-text" data-i18n="chat">Chat</span>
                         </div>
                     </a>
-                    <a class="link" href="#settings" data-target="#settings" role="tab" data-bs-toggle="tab" data-bs-tooltip="tooltip" data-i18n-tooltip="tooltipSettings">
+                    <a class="link" href="#settings" data-target="settings">
                         <span class="link-icon">
                             <i class="bi bi-gear"></i>
                         </span>
@@ -124,7 +124,7 @@
                             <span class="menu-text" data-i18n="settings">Ustawienia</span>
                         </div>
                     </a>
-                    <a class="link" href="#about" data-target="#about" role="tab" data-bs-toggle="tab" data-bs-tooltip="tooltip" data-i18n-tooltip="tooltipAbout">
+                    <a class="link" href="#about" data-target="about">
                         <span class="link-icon">
                             <i class="bi bi-info-square"></i>
                         </span>
@@ -132,7 +132,7 @@
                             <span class="menu-text" data-i18n="about">O aplikacji</span>
                         </div>
                     </a>
-                    <a class="link" href="#status" data-target="#status" role="tab" data-bs-toggle="tab" data-bs-tooltip="tooltip" data-i18n-tooltip="tooltipStatus">
+                    <a class="link" href="#status" data-target="status">
                         <span class="link-icon">
                             <i class="bi bi-activity"></i>
                         </span>
@@ -140,7 +140,7 @@
                             <span class="menu-text" data-i18n="status">Status</span>
                         </div>
                     </a>
-                    <a class="link" href="#drwn" data-target="#drwn" role="tab" data-bs-toggle="tab" data-bs-tooltip="tooltip" data-i18n-tooltip="tooltipDrwn">
+                    <a class="link" href="#drwn" data-target="drwn">
                         <span class="link-icon">
                             <i class="bi bi-box-seam"></i>
                         </span>
@@ -148,7 +148,7 @@
                             <span class="menu-text">DRWN</span>
                         </div>
                     </a>
-                    <a class="link" href="#ranking" data-target="#ranking" role="tab" data-bs-toggle="tab" data-bs-tooltip="tooltip" data-i18n-tooltip="tooltipRanking">
+                    <a class="link" href="#ranking" data-target="ranking">
                         <span class="link-icon">
                             <i class="bi bi-award"></i>
                         </span>
@@ -159,7 +159,7 @@
                 </div>
 
                 <div class="tab-content">
-                    <div class="tab-pane fade show active" id="chat" role="tabpanel">
+                    <div class="tab-pane active" id="chat">
                         <div class="input-group">
                             <input 
                                 type="text" 
@@ -184,7 +184,7 @@
                         <div id="response" class="mt-3 d-none"></div>
                     </div>
 
-                    <div class="tab-pane fade" id="settings" role="tabpanel">
+                    <div class="tab-pane" id="settings">
                         <!-- <div class="settings-section py-2">
                             <div class="form-group mb-0">
                                 <select id="user-select" class="form-select form-select-sm" data-i18n-placeholder="selectUser">
@@ -406,7 +406,7 @@
                         </div>
                     </div>
 
-                    <div class="tab-pane fade" id="about" role="tabpanel">
+                    <div class="tab-pane" id="about">
                         <!-- <h5 data-i18n="about">O aplikacji</h5> -->
                         <p data-i18n="creator">Twórca: Tomasz Wilk</p>
                         <p data-i18n="purpose">Cel: Automatyzacja procesów obsługi klienta i zarządzania zamówieniami w DARWINA.PL</p>
@@ -469,7 +469,7 @@
                         </div>
                     </div>
 
-                    <div class="tab-pane fade" id="status" role="tabpanel">
+                    <div class="tab-pane" id="status">
                         <div class="p-3">
                             <!-- <h5 data-i18n="serviceStatus">Status usług</h5> -->
                             
@@ -525,7 +525,7 @@
                         </div>
                     </div>
 
-                    <div class="tab-pane fade" id="drwn" role="tabpanel">
+                    <div class="tab-pane" id="drwn">
                         <div class="p-3">
                             <div id="drwn-data">
                                 <table class="table table-sm table-hover">
@@ -542,7 +542,7 @@
                         </div>
                     </div>
 
-                    <div class="tab-pane fade" id="ranking" role="tabpanel">
+                    <div class="tab-pane" id="ranking">
                         <div class="p-3">
                             <!-- Compact Filters Section -->
                             <div class="ranking-filters d-flex gap-2 align-items-center">

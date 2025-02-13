@@ -49,6 +49,7 @@ const CACHE_SCHEMA = {
         [COUNTER_KEYS.READY]: 'number',
         [COUNTER_KEYS.OVERDUE]: 'number'
     },
+    orders: 'array',
     timestamp: 'number',
     storeId: 'string',
     metadata: {
@@ -56,7 +57,8 @@ const CACHE_SCHEMA = {
         total: 'number',
         processedAt: 'number',
         forceRefresh: 'boolean',
-        originalFormat: 'object'
+        originalFormat: 'object',
+        initialFetch: 'boolean'
     }
 };
 
@@ -179,27 +181,38 @@ export class OrderService extends BaseManager {
                 throw new Error('No API token available');
             }
 
-            // Temporarily disabled token refresh since we already have a valid token
-            /*
-            const tokenAge = Date.now() - this.#lastTokenRefresh;
-            if (tokenAge > TOKEN_REFRESH_INTERVAL) {
-                console.log('[DEBUG] 🔄 Token needs refresh, refreshing...');
-                await this.#refreshToken();
-            }
-            */
+            this.log(LogLevel.DEBUG, '🔄 Making API request', {
+                endpoint,
+                method: options.method || 'GET',
+                hasBody: !!options.body
+            });
 
             const response = await fetch(endpoint, {
                 ...options,
                 headers: {
                     ...options.headers,
                     'Authorization': `Bearer ${this.#credentials.token}`,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
                 }
             });
 
             if (!response.ok) {
-                throw new Error(`API request failed: ${response.status}`);
+                const errorText = await response.text();
+                this.log(LogLevel.ERROR, '❌ API request failed', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    errorText,
+                    endpoint
+                });
+                throw new Error(`API request failed: ${response.status} - ${errorText}`);
             }
+
+            this.log(LogLevel.DEBUG, '✅ API request successful', {
+                endpoint,
+                status: response.status,
+                hasBody: response.headers.has('content-length')
+            });
 
             return response;
         } catch (error) {
@@ -218,98 +231,205 @@ export class OrderService extends BaseManager {
      * @returns {Promise<Array>} All fetched orders
      */
     async #fetchAllPages(params) {
-        let allOrders = [];
+        const allOrders = [];
         let currentPage = 1;
         let hasMorePages = true;
         let totalPages = 0;
         let totalOrders = 0;
+        let failedPages = [];
+        const maxRetries = 3;
+        let consecutiveFailures = 0;
+        const MAX_CONSECUTIVE_FAILURES = 3;
 
-        // Ensure we're using all required statuses
         const requestParams = {
             ...params,
-            status_id: '1,2,3,5', // Always use all statuses in one request
             limit: params.limit || API_DEFAULTS.LIMIT
         };
 
         this.log(LogLevel.INFO, '📑 Starting pagination fetch', {
             initialFetch: !this.#hasInitialData,
             params: requestParams,
-            baseUrl: `${API_CONFIG.DARWINA.BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}`
+            status: requestParams.status_id
         });
 
+        const startTime = Date.now();
+        const pageTimings = [];
+
         while (hasMorePages) {
+            const pageStartTime = Date.now();
             const url = new URL(`${API_CONFIG.DARWINA.BASE_URL}${API_CONFIG.DARWINA.ENDPOINTS.ORDERS}`);
             
-            // Add all parameters including status_id with all statuses
             Object.entries(requestParams).forEach(([key, value]) => {
                 if (value !== undefined && value !== null) {
                     url.searchParams.append(key, value.toString());
                 }
             });
 
-            // Add pagination parameters
             url.searchParams.append('page', currentPage.toString());
 
-            this.log(LogLevel.DEBUG, `📄 Fetching page ${currentPage}`, {
-                url: url.toString(),
-                params: Object.fromEntries(url.searchParams)
-            });
+            let retryCount = 0;
+            let pageData = null;
+            let lastError = null;
 
-            const response = await this.#makeRequest(url.toString());
-            const responseData = await response.json();
+            while (retryCount < maxRetries && !pageData) {
+                try {
+                    const response = await this.#makeRequest(url.toString());
+                    const responseData = await response.json();
 
-            if (!responseData.data || !Array.isArray(responseData.data)) {
-                throw new Error('Invalid API response format');
+                    // Log raw response for debugging
+                    this.log(LogLevel.DEBUG, `📄 Raw API response for page ${currentPage}`, {
+                        status: requestParams.status_id,
+                        hasData: !!responseData?.data,
+                        dataType: responseData?.data ? typeof responseData.data : 'undefined',
+                        dataLength: Array.isArray(responseData?.data) ? responseData.data.length : 'not array',
+                        hasMetadata: !!responseData?.__metadata,
+                        metadataKeys: responseData?.__metadata ? Object.keys(responseData.__metadata) : [],
+                        responseKeys: Object.keys(responseData || {}),
+                        statusCode: responseData?.statuscode,
+                        contentLength: response.headers.get('content-length'),
+                        contentType: response.headers.get('content-type')
+                    });
+
+                    // Check for empty response with metadata
+                    if (responseData?.data === null && responseData?.__metadata) {
+                        this.log(LogLevel.INFO, `📭 Empty page ${currentPage} for status ${requestParams.status_id}`);
+                        pageData = { 
+                            data: [], 
+                            metadata: responseData.__metadata,
+                            statuscode: responseData.statuscode 
+                        };
+                        consecutiveFailures = 0;
+                        break;
+                    }
+
+                    // Validate response structure
+                    if (!responseData?.data || !Array.isArray(responseData.data)) {
+                        throw new Error(`Invalid data format: ${responseData?.data ? typeof responseData.data : 'missing'}`);
+                    }
+
+                    if (!responseData?.__metadata) {
+                        throw new Error('Missing __metadata in response');
+                    }
+
+                    if (!responseData.__metadata.hasOwnProperty('page_count')) {
+                        // If page_count is missing, try to calculate it from total and limit
+                        if (responseData.__metadata.hasOwnProperty('total')) {
+                            const total = parseInt(responseData.__metadata.total, 10);
+                            const limit = parseInt(requestParams.limit, 10);
+                            responseData.__metadata.page_count = Math.ceil(total / limit);
+                            
+                            this.log(LogLevel.DEBUG, `📊 Calculated page_count from total`, {
+                                total,
+                                limit,
+                                calculatedPageCount: responseData.__metadata.page_count
+                            });
+                        } else {
+                            throw new Error('Missing page_count and total in __metadata');
+                        }
+                    }
+
+                    pageData = {
+                        data: responseData.data,
+                        metadata: responseData.__metadata,
+                        statuscode: responseData.statuscode
+                    };
+                    consecutiveFailures = 0;
+
+                } catch (error) {
+                    lastError = error;
+                    retryCount++;
+
+                    this.log(LogLevel.WARNING, `⚠️ Attempt ${retryCount}/${maxRetries} failed for page ${currentPage}`, {
+                        status: requestParams.status_id,
+                        error: error.message,
+                        url: url.toString()
+                    });
+
+                    if (retryCount === maxRetries) {
+                        consecutiveFailures++;
+                        this.log(LogLevel.ERROR, `❌ Failed to fetch page ${currentPage} after ${maxRetries} attempts`, { 
+                            error: error.message,
+                            url: url.toString(),
+                            consecutiveFailures
+                        });
+                        failedPages.push(currentPage);
+
+                        // Stop if too many consecutive failures
+                        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                            this.log(LogLevel.ERROR, `🛑 Stopping pagination due to ${consecutiveFailures} consecutive failures`, {
+                                status: requestParams.status_id,
+                                lastError: lastError.message
+                            });
+                            hasMorePages = false;
+                            break;
+                        }
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                }
             }
 
-            // Update pagination info from first response
+            if (!pageData) {
+                currentPage++;
+                continue;
+            }
+
+            // Process first page metadata
             if (currentPage === 1) {
-                totalPages = responseData.metadata?.page_count || 1;
-                totalOrders = responseData.metadata?.total || responseData.data.length;
-                this.log(LogLevel.INFO, '📊 Pagination info received', {
+                totalPages = pageData.metadata?.page_count || 1;
+                totalOrders = pageData.metadata?.total || pageData.data.length;
+                
+                this.log(LogLevel.INFO, `📊 Found ${totalOrders} orders for status ${requestParams.status_id}`, {
                     totalPages,
-                    totalOrders,
-                    pageSize: API_DEFAULTS.LIMIT,
-                    metadata: responseData.metadata
+                    pageSize: requestParams.limit,
+                    metadata: pageData.metadata
                 });
+
+                // If no pages or orders, we're done
+                if (totalPages === 0 || totalOrders === 0) {
+                    this.log(LogLevel.INFO, `✅ No orders found for status ${requestParams.status_id}`);
+                    break;
+                }
             }
 
-            const pageOrders = responseData.data;
-            
-            // Log status breakdown for this page
-            const pageStatusBreakdown = pageOrders.reduce((acc, order) => {
-                const status = order.status_id?.toString();
-                acc[status] = (acc[status] || 0) + 1;
-                return acc;
-            }, {});
+            const pageTime = Date.now() - pageStartTime;
+            pageTimings.push(pageTime);
 
-            this.log(LogLevel.DEBUG, `📦 Fetched page ${currentPage}/${totalPages}`, {
+            const pageOrders = pageData.data;
+            const uniquePageOrders = new Set(pageOrders.map(o => o.order_id || o.id));
+
+            this.log(LogLevel.DEBUG, `📄 Processing page ${currentPage}/${totalPages}`, {
+                status: requestParams.status_id,
                 ordersOnPage: pageOrders.length,
-                totalOrdersSoFar: allOrders.length + pageOrders.length,
-                expectedTotal: totalOrders,
-                pageStatusBreakdown
+                uniqueOrdersOnPage: uniquePageOrders.size,
+                totalSoFar: allOrders.length + pageOrders.length,
+                pageTime,
+                averagePageTime: pageTimings.reduce((a, b) => a + b, 0) / pageTimings.length
             });
 
-            allOrders = [...allOrders, ...pageOrders];
+            allOrders.push(...pageOrders);
             
-            // Check if we have more pages
-            hasMorePages = currentPage < totalPages;
+            hasMorePages = currentPage < totalPages && pageOrders.length > 0;
             currentPage++;
+
+            if (hasMorePages) {
+                await new Promise(resolve => setTimeout(resolve, 200)); // Increased delay between pages
+            }
         }
 
-        // Final status breakdown
-        const finalStatusBreakdown = allOrders.reduce((acc, order) => {
-            const status = order.status_id?.toString();
-            acc[status] = (acc[status] || 0) + 1;
-            return acc;
-        }, {});
+        const totalTime = Date.now() - startTime;
+        const uniqueOrderIds = new Set(allOrders.map(o => o.order_id || o.id));
 
-        this.log(LogLevel.SUCCESS, '✅ Pagination fetch completed', {
+        this.log(LogLevel.SUCCESS, `✅ Completed fetching orders for status ${requestParams.status_id}`, {
             totalPages,
+            fetchedPages: currentPage - 1,
+            failedPages,
             totalOrdersFetched: allOrders.length,
+            uniqueOrdersFetched: uniqueOrderIds.size,
             expectedTotal: totalOrders,
-            matchesExpected: allOrders.length === totalOrders,
-            finalStatusBreakdown
+            totalTime,
+            averageTimePerPage: totalTime / (currentPage - 1),
+            consecutiveFailures
         });
 
         return allOrders;
@@ -343,16 +463,15 @@ export class OrderService extends BaseManager {
             });
             
             // Prepare base parameters
-            const params = {};
-            
-            // Add status_id filter
-            params.status_id = API_DEFAULTS.STATUSES;
+            const baseParams = {
+                limit: API_DEFAULTS.LIMIT
+            };
             
             // Add delivery_id if specific store
             if (storeId !== 'ALL') {
                 const store = stores.find(s => s.id === storeId);
                 if (store?.deliveryId) {
-                    params.delivery_id = store.deliveryId;
+                    baseParams.delivery_id = store.deliveryId;
                     this.log(LogLevel.DEBUG, '🏪 Using delivery_id filter', {
                         storeId,
                         deliveryId: store.deliveryId
@@ -364,18 +483,44 @@ export class OrderService extends BaseManager {
             if (!options.forceRefresh && this.#hasInitialData) {
                 const lastUpdate = await this.#storage.load(CACHE_KEYS.LAST_UPDATE);
                 if (lastUpdate) {
-                    params.modified_from = new Date(lastUpdate).toISOString();
+                    baseParams.modified_from = new Date(lastUpdate).toISOString();
                     this.log(LogLevel.DEBUG, '⌚ Using modified_from filter', {
-                        lastUpdate: params.modified_from
+                        lastUpdate: baseParams.modified_from
                     });
                 }
             }
+
+            let allOrders = [];
+            const statusGroups = API_DEFAULTS.STATUSES.split(',');
             
-            // Fetch all pages
-            const orders = await this.#fetchAllPages(params);
-            
+            this.log(LogLevel.INFO, '📑 Starting orders fetch', {
+                statusGroups,
+                baseParams
+            });
+
+            for (const statusGroup of statusGroups) {
+                try {
+                    const params = {
+                        ...baseParams,
+                        status_id: statusGroup
+                    };
+                    
+                    const statusOrders = await this.#fetchAllPages(params);
+                    allOrders.push(...statusOrders);
+                    
+                    this.log(LogLevel.DEBUG, `✅ Fetched orders for status ${statusGroup}`, {
+                        count: statusOrders.length,
+                        total: allOrders.length
+                    });
+                } catch (error) {
+                    this.log(LogLevel.ERROR, `❌ Failed to fetch orders for status ${statusGroup}`, {
+                        error: error.message
+                    });
+                }
+            }
+
             // Process orders
-            const result = await this.#processOrders(orders, { id: storeId });
+            const result = await this.#processOrders(allOrders, { id: storeId });
             
             // Update cache
             await this.#updateCache(storeId, result);
@@ -412,6 +557,7 @@ export class OrderService extends BaseManager {
 
             this.log(LogLevel.INFO, '📊 Starting order processing', {
                 totalOrders: orders.length,
+                uniqueOrders: new Set(orders.map(o => o.order_id || o.id)).size,
                 initialFetch: !this.#hasInitialData,
                 storeId: store?.id || 'ALL'
             });
@@ -419,6 +565,9 @@ export class OrderService extends BaseManager {
             const statusBreakdown = {};
             const readyOrders = [];
             const overdueOrders = [];
+            const processedOrders = []; // Array to store processed orders
+            const ordersByStatus = new Map();
+            const startTime = Date.now();
 
             for (const order of orders) {
                 const status = order.status_id?.toString();
@@ -428,6 +577,16 @@ export class OrderService extends BaseManager {
                     continue;
                 }
 
+                // Keep track of orders by status
+                if (!ordersByStatus.has(status)) {
+                    ordersByStatus.set(status, []);
+                }
+                ordersByStatus.get(status).push(order.order_id || order.id);
+
+                // Transform order data
+                const processedOrder = this.transformOrdersData([order])[0];
+                processedOrders.push(processedOrder);
+
                 // Track status breakdown
                 statusBreakdown[status] = (statusBreakdown[status] || 0) + 1;
 
@@ -436,13 +595,13 @@ export class OrderService extends BaseManager {
 
                     if (!dateToCheck) {
                         this.log(LogLevel.WARNING, '⚠️ No valid date for READY order', {
-                    id: order.order_id,
+                            id: order.order_id,
                             availableFields: Object.keys(order).filter(k => k.includes('date') || k.includes('_at'))
                         });
                         counts[COUNTER_KEYS.READY]++;
                         readyOrders.push({ id: order.order_id, reason: 'no_date' });
-                    continue;
-                }
+                        continue;
+                    }
                 
                     try {
                         const orderDate = new Date(dateToCheck.replace(' ', 'T'));
@@ -477,7 +636,7 @@ export class OrderService extends BaseManager {
                         counts[COUNTER_KEYS.READY]++;
                         readyOrders.push({ id: order.order_id, reason: 'invalid_date' });
                     }
-                } else if ([ORDER_STATUSES.NEW, ORDER_STATUSES.CONFIRMED, ORDER_STATUSES.ACCEPTED].includes(status)) {
+                } else if (status in counts) {
                     counts[status]++;
                 } else {
                     this.log(LogLevel.WARNING, '⚠️ Unhandled status', {
@@ -488,6 +647,8 @@ export class OrderService extends BaseManager {
                 }
             }
 
+            const processingTime = Date.now() - startTime;
+
             this.log(LogLevel.INFO, '📊 Processing completed', {
                 counts,
                 total: Object.values(counts).reduce((a, b) => a + b, 0),
@@ -497,12 +658,29 @@ export class OrderService extends BaseManager {
                     overdue: counts[COUNTER_KEYS.OVERDUE],
                     total: statusBreakdown['5'] || 0
                 },
+                ordersByStatusCount: Object.fromEntries(Array.from(ordersByStatus.entries()).map(([status, orders]) => [status, orders.length])),
                 readyOrders: readyOrders.length > 10 ? `${readyOrders.length} orders` : readyOrders,
-                overdueOrders: overdueOrders.length > 10 ? `${overdueOrders.length} orders` : overdueOrders
+                overdueOrders: overdueOrders.length > 10 ? `${overdueOrders.length} orders` : overdueOrders,
+                processedOrdersCount: processedOrders.length,
+                processingTime,
+                averageTimePerOrder: processingTime / orders.length
+            });
+
+            // Verify processed data integrity
+            const processedOrderIds = new Set(processedOrders.map(o => o.id));
+            const originalOrderIds = new Set(orders.map(o => o.order_id || o.id));
+            
+            this.log(LogLevel.DEBUG, '🔍 Data integrity check', {
+                originalOrders: orders.length,
+                processedOrders: processedOrders.length,
+                uniqueOriginalOrders: originalOrderIds.size,
+                uniqueProcessedOrders: processedOrderIds.size,
+                allOrdersProcessed: processedOrders.length === orders.length,
+                integrityMatch: processedOrderIds.size === originalOrderIds.size
             });
 
             return {
-                orders,
+                orders: processedOrders,
                 counts,
                 timestamp: Date.now(),
                 storeId: store?.id || 'ALL',
@@ -512,7 +690,9 @@ export class OrderService extends BaseManager {
                     initialFetch: !this.#hasInitialData,
                     statusBreakdown,
                     readyCount: readyOrders.length,
-                    overdueCount: overdueOrders.length
+                    overdueCount: overdueOrders.length,
+                    processingTime,
+                    uniqueOrders: processedOrderIds.size
                 }
             };
         } catch (error) {
@@ -585,6 +765,7 @@ export class OrderService extends BaseManager {
                     [COUNTER_KEYS.READY]: Number(data.counts[COUNTER_KEYS.READY]) || 0,
                     [COUNTER_KEYS.OVERDUE]: Number(data.counts[COUNTER_KEYS.OVERDUE]) || 0
                 },
+                orders: data.orders || [],
                 timestamp: Number(data.timestamp) || Date.now(),
                 storeId: String(storeId || 'ALL'),
                 metadata: {
@@ -759,22 +940,36 @@ export class OrderService extends BaseManager {
      */
     transformOrdersData(orders) {
         return orders.map(order => ({
-            id: order.order_id,
+            id: order.order_id || order.id,
             status_id: order.status_id,
-            status_name: this.getStatusName(order.status_id),
+            status_name: ORDER_STATUS_NAMES[order.status_id] || 'Unknown',
             customer: {
                 name: order.customer_name,
-                email: order.customer_email
+                email: order.customer_email,
+                phone: order.customer_phone
             },
-            items: order.items?.map(item => ({
+            delivery: {
+                id: order.delivery_id,
+                name: order.delivery_name,
+                address: order.delivery_address
+            },
+            items: (order.items || []).map(item => ({
+                id: item.id || item.product_id,
                 name: item.product_name,
-                quantity: item.quantity,
-                price: item.price
-            })) || [],
-            total: order.total_amount,
-            created_at: order.created_at,
-            modified_at: order.modified_at,
-            ready_date: order.ready_date
+                quantity: Number(item.quantity) || 0,
+                price: Number(item.price) || 0,
+                total: Number(item.total) || 0
+            })),
+            dates: {
+                created: order.created_at,
+                modified: order.modified_at,
+                ready: order.ready_date,
+                status_change: order.status_change_date
+            },
+            total_amount: Number(order.total_amount) || 0,
+            currency: order.currency || 'PLN',
+            notes: order.notes || '',
+            lastUpdate: Date.now()
         }));
     }
     
