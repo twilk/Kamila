@@ -1,7 +1,10 @@
+/// <reference types="chrome"/>
+
 import { BaseManager } from '../core/BaseManager';
 import { LogManager } from '../core/LogManager';
 import { CacheManager } from '../core/CacheManager';
 import { ErrorHandler } from '../core/ErrorHandler';
+import { environment } from '../core/environment';
 
 interface RequestOptions {
     method?: string;
@@ -11,13 +14,24 @@ interface RequestOptions {
     timeout?: number;
 }
 
+declare const chrome: any;
+
 class APIManager extends BaseManager {
     private static _instance: APIManager | null = null;
-    private _baseURL: string = process.env.API_URL || 'https://api.darwina.pl/v1';
-    private _apiKey: string = process.env.API_KEY || '';
+    private _baseURL: string;
+    private _apiKey: string = '';
     private _logger = LogManager.getInstance();
     private _cache = CacheManager.getInstance();
     private _errorHandler = ErrorHandler.getInstance();
+
+    private constructor() {
+        if (APIManager._instance) {
+            throw new Error('Use APIManager.getInstance()');
+        }
+        super('APIManager');
+        this._baseURL = chrome.runtime.getManifest().api_url || environment.apiUrl;
+        this._initializeApiKey();
+    }
 
     public static getInstance(): APIManager {
         if (!APIManager._instance) {
@@ -26,11 +40,13 @@ class APIManager extends BaseManager {
         return APIManager._instance;
     }
 
-    private constructor() {
-        if (APIManager._instance) {
-            throw new Error('Use APIManager.getInstance()');
+    private async _initializeApiKey(): Promise<void> {
+        try {
+            const result = await chrome.storage.local.get(['apiKey']);
+            this._apiKey = result.apiKey || '';
+        } catch (error) {
+            this._logger.error('Failed to initialize API key', error);
         }
-        super();
     }
 
     public async request(endpoint: string, options: RequestOptions = {}): Promise<any> {
@@ -63,7 +79,7 @@ class APIManager extends BaseManager {
                 'Authorization': `Bearer ${this._apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: process.env.REQUEST_TIMEOUT ? parseInt(process.env.REQUEST_TIMEOUT) : 5000
+            timeout: 5000
         };
 
         const requestOptions = {

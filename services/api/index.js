@@ -27,7 +27,7 @@ import { EndpointTTL, CacheLimits, CachePriorities } from '../../config/cache.js
 
 class APIManager extends BaseManager {
     static _instance = null;
-    _baseURL = chrome.runtime.getManifest().api_url || 'https://api.darwina.pl/v1';
+    _baseURL = chrome.runtime.getManifest().api_url || 'https://darwina.pl/api';
     _apiKey = '';
     _logger = LogManager.getInstance();
     _cache = CacheManager.getInstance();

@@ -3,6 +3,7 @@ import { BaseManager } from './services/core/BaseManager.js';
 import { InitLogger } from './services/core/InitLogger.js';
 import { MenuManager } from './services/core/MenuManager.js';
 import { CacheManager } from './services/core/CacheManager.js';
+import { ErrorType, ErrorSeverity, LogLevel } from './services/core/EventType.js';
 
 // Import all necessary services from central point
 import {
@@ -21,8 +22,6 @@ import {
     i18n,
     stores,
     EventType,
-    ErrorType,
-    ErrorSeverity,
     initializationManager,
     userCardService,
     counterManager,
@@ -292,19 +291,32 @@ async function loadAndUpdateData(forceRefresh = false) {
         updateLoadingState(true);
         
         const selectedStore = await getSelectedStore();
-        counterManager.setCurrentStore(selectedStore);
         
-        const { counts, timestamp } = await counterManager.getCounters();
+        // Update store in data manager
+        await dataManager.setActiveStore(selectedStore.id);
         
-        if (forceRefresh || !counts || Date.now() - timestamp > 5 * 60 * 1000) {
-            await messageManager.sendMessage('background', {
-                type: 'REFRESH_COUNTERS',
-                store: selectedStore
-            });
+        // Load data with or without force refresh
+        if (forceRefresh) {
+            await dataManager.clearCache();
+            await dataManager.loadData(true);
         } else {
-            await updateCounters(counts);
+            await dataManager.loadData();
         }
+
+        // Get updated counts from data manager
+        const counts = await dataManager.getOrderCounts();
+        await updateCounters(counts);
+        
+        // Emit data updated event
+        window.dispatchEvent(new CustomEvent(EVENTS.DATA_UPDATED, {
+            detail: {
+                store: selectedStore.id,
+                counts,
+                timestamp: new Date().toISOString()
+            }
+        }));
     } catch (error) {
+        console.error('[ERROR] ❌ Load and update failed:', error);
         errorHandler.handle(error, 'Error loading data');
         handleCounterError(error);
     } finally {
@@ -386,12 +398,10 @@ function showLoader(counter) {
 // Function to handle counter errors
 function handleCounterError(error) {
     console.error('Counter error:', error);
-    debugManager.log('❌ Błąd liczników', LogLevel.ERROR, error);
-
-        document.querySelectorAll('.lead-count').forEach(counter => {
-            counter.textContent = '-';
-            counter.classList.add('count-error');
-        counter.classList.remove('loading', 'count-zero', 'count-updated');
+    // Use proper error handling
+    errorHandler.handle(error, ErrorType.DATA, ErrorSeverity.MEDIUM, {
+        method: 'handleCounterError',
+        details: error.message
     });
 }
 

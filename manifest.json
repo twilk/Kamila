@@ -8,11 +8,11 @@
         "tabs",
         "scripting",
         "notifications",
-        "alarms"
+        "alarms",
+        "https://darwina.pl/api/*"
     ],
     "host_permissions": [
         "https://darwina.pl/api/*",
-        "https://api.darwina.pl/v1/*",
         "https://docs.google.com/*",
         "https://spreadsheets.google.com/*",
         "https://*.googleapis.com/*",
@@ -68,5 +68,5 @@
     "incognito": "spanning",
     "offline_enabled": false,
     "short_name": "Kamila",
-    "api_url": "https://api.darwina.pl/v1"
+    "api_url": "https://darwina.pl/api"
 }

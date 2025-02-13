@@ -46,7 +46,7 @@ export class StatusManager extends BaseManager {
     };
     #updateInterval = null;
     #pendingUIUpdates = new Set();
-    #baseUrl = 'https://darwina.pl';
+    #baseUrl = 'https://darwina.pl/api';
     #dataManager = null;
 
     constructor() {
@@ -352,58 +352,214 @@ export class StatusManager extends BaseManager {
     }
 
     /**
-     * Map status to internal status code
+     * Map status to internal status code with validation
      * @param {string} status - Status to map
-     * @returns {string} Internal status code
+     * @param {string} [orderId] - Optional order ID for logging
+     * @returns {string|null} Internal status code or null if invalid
      */
     static mapStatus(status) {
-        return STATUS_MAP[status.toLowerCase()] || status;
+        try {
+            if (!status) {
+                throw new Error('Status cannot be empty');
+            }
+
+            const normalized = status.toLowerCase().trim();
+            const mapped = STATUS_MAP[normalized];
+
+            if (!mapped) {
+                throw new Error(`Invalid status: ${status}`);
+            }
+
+            return mapped;
+        } catch (error) {
+            this.handleError(error, ErrorType.VALIDATION, ErrorSeverity.LOW, {
+                method: 'mapStatus',
+                status,
+                orderId
+            });
+            return null;
+        }
     }
 
     /**
-     * Update order counts and UI
+     * Update order counts with atomic operations and validation
      * @param {Object} counts - Order counts by status
      * @returns {Promise<void>}
      */
     async updateOrderCounts(counts) {
+        const lockKey = 'orderCountsLock';
         try {
             // Get dependencies
             const eventManager = this.getDependency('EventManager');
             const uiManager = this.getDependency('UIManager');
 
-            if (!eventManager?.isInitialized()) {
-                throw new Error('EventManager must be initialized');
+            if (!eventManager?.isInitialized() || !uiManager?.isInitialized()) {
+                throw new Error('Required managers not initialized');
             }
 
-            if (!uiManager?.isInitialized()) {
-                throw new Error('UIManager must be initialized');
+            // Acquire lock
+            const lock = await this.#acquireLock(lockKey);
+            if (!lock) {
+                throw new Error('Failed to acquire lock for counter update');
             }
 
-            // Save counts to storage
-            await chrome.storage.local.set({ orderCounts: counts });
+            try {
+                // Validate counts
+                const validatedCounts = await this.#validateCounts(counts);
+                
+                // Get current counts from storage
+                const { orderCounts: currentCounts = {} } = await chrome.storage.local.get('orderCounts');
+                
+                // Create snapshot for rollback
+                const snapshot = { ...currentCounts };
 
-            // Update UI for each status
-            Object.entries(counts).forEach(([status, count]) => {
-                const elementId = `count-${status}`;
-                this.#pendingUIUpdates.add({
-                    elementId,
-                    value: count,
-                    type: 'count'
-                });
-            });
+                try {
+                    // Update storage atomically
+                    await chrome.storage.local.set({ orderCounts: validatedCounts });
 
-            // Process UI updates if possible
-            if (uiManager.isInitialized()) {
-                await this.#processPendingUIUpdates();
+                    // Queue UI updates
+                    Object.entries(validatedCounts).forEach(([status, count]) => {
+                        const elementId = `count-${status}`;
+                        this.#pendingUIUpdates.add({
+                            elementId,
+                            value: count,
+                            type: 'count',
+                            previousValue: currentCounts[status]
+                        });
+                    });
+
+                    // Process UI updates if possible
+                    if (uiManager.isInitialized()) {
+                        await this.#processPendingUIUpdates();
+                    }
+
+                    // Emit event with updated counts and changes
+                    const changes = this.#calculateChanges(currentCounts, validatedCounts);
+                    eventManager.emit('orders:counts-updated', { 
+                        counts: validatedCounts,
+                        changes,
+                        timestamp: Date.now()
+                    });
+
+                    this.log(LogLevel.DEBUG, '📊 Order counts updated', { 
+                        counts: validatedCounts,
+                        changes 
+                    });
+                } catch (error) {
+                    // Rollback on error
+                    await chrome.storage.local.set({ orderCounts: snapshot });
+                    throw error;
+                }
+            } finally {
+                // Release lock
+                await this.#releaseLock(lockKey);
             }
-
-            // Emit event with updated counts
-            eventManager.emit('orders:counts-updated', { counts });
-
-            this.log(LogLevel.DEBUG, '📊 Order counts updated', { counts });
         } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: 'updateOrderCounts'
+            this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
+                method: 'updateOrderCounts',
+                counts
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Validate counter values
+     * @private
+     * @param {Object} counts - Counts to validate
+     * @returns {Promise<Object>} Validated counts
+     */
+    async #validateCounts(counts) {
+        const validCounts = {};
+        const validStatuses = Object.values(STATUS_MAP);
+
+        for (const [status, count] of Object.entries(counts)) {
+            // Validate status
+            if (!validStatuses.includes(status)) {
+                this.log(LogLevel.WARNING, `⚠️ Invalid status: ${status}`);
+                continue;
+            }
+
+            // Validate count
+            const numCount = parseInt(count, 10);
+            if (isNaN(numCount) || numCount < 0) {
+                this.log(LogLevel.WARNING, `⚠️ Invalid count for ${status}: ${count}`);
+                validCounts[status] = 0;
+            } else {
+                validCounts[status] = numCount;
+            }
+        }
+
+        // Ensure all statuses have a value
+        validStatuses.forEach(status => {
+            if (!(status in validCounts)) {
+                validCounts[status] = 0;
+            }
+        });
+
+        return validCounts;
+    }
+
+    /**
+     * Calculate changes between old and new counts
+     * @private
+     * @param {Object} oldCounts - Previous counts
+     * @param {Object} newCounts - New counts
+     * @returns {Object} Changes object
+     */
+    #calculateChanges(oldCounts, newCounts) {
+        const changes = {};
+        Object.entries(newCounts).forEach(([status, count]) => {
+            const oldCount = oldCounts[status] || 0;
+            if (count !== oldCount) {
+                changes[status] = {
+                    previous: oldCount,
+                    current: count,
+                    delta: count - oldCount
+                };
+            }
+        });
+        return changes;
+    }
+
+    /**
+     * Acquire lock for atomic operations
+     * @private
+     * @param {string} key - Lock key
+     * @returns {Promise<boolean>} Whether lock was acquired
+     */
+    async #acquireLock(key) {
+        try {
+            const lockData = {
+                [key]: {
+                    timestamp: Date.now(),
+                    owner: crypto.randomUUID()
+                }
+            };
+            await chrome.storage.local.set(lockData);
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.LOCK, ErrorSeverity.LOW, {
+                method: '#acquireLock',
+                key
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Release lock
+     * @private
+     * @param {string} key - Lock key
+     * @returns {Promise<void>}
+     */
+    async #releaseLock(key) {
+        try {
+            await chrome.storage.local.remove(key);
+        } catch (error) {
+            this.handleError(error, ErrorType.LOCK, ErrorSeverity.LOW, {
+                method: '#releaseLock',
+                key
             });
         }
     }

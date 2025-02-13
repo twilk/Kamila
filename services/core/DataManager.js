@@ -31,6 +31,7 @@ export class DataManager extends BaseManager {
     #isRefreshing = false;
     #lastUpdate = null;
     #cache = null;
+    #baseUrl = 'https://darwina.pl/api';
 
     constructor() {
         if (DataManager.#instance) {
@@ -134,17 +135,26 @@ export class DataManager extends BaseManager {
             this.#isRefreshing = true;
 
             // Check cache first
-            if (!forceRefresh) {
-                const cachedData = await this.#loadFromCache();
-                if (cachedData) {
-                    this.log(LogLevel.DEBUG, '📦 Using cached data');
-                    await this.#updateData(cachedData);
-                    return true;
+            const cachedData = await this.#loadFromCache();
+            
+            // Determine if we need delta or full update
+            let data;
+            if (cachedData && !forceRefresh) {
+                // Get delta updates since last cache update
+                const deltaUpdates = await this.#fetchDeltaUpdates(cachedData.timestamp);
+                if (deltaUpdates) {
+                    // Merge delta with cached data
+                    data = await this.#mergeData(cachedData.data, deltaUpdates);
+                    this.log(LogLevel.DEBUG, '🔄 Merged delta updates with cache');
                 }
             }
 
-            // Fetch fresh data
-            const data = await this.#fetchData();
+            // If no delta updates or force refresh, get full data
+            if (!data) {
+                data = await this.#fetchData();
+                this.log(LogLevel.DEBUG, '📥 Fetched full data');
+            }
+
             if (!data) return false;
 
             // Validate data
@@ -152,8 +162,11 @@ export class DataManager extends BaseManager {
                 throw new Error('Invalid data format');
             }
 
-            // Update cache
-            await this.#updateCache(data);
+            // Update cache with merged/new data
+            await this.#updateCache({
+                data,
+                timestamp: Date.now()
+            });
 
             // Update UI
             await this.#updateData(data);
@@ -191,7 +204,7 @@ export class DataManager extends BaseManager {
                 return null;
             }
 
-            return data;
+            return { data, timestamp };
         } catch (error) {
             this.handleError(error, ErrorType.CACHE, ErrorSeverity.LOW, {
                 method: '#loadFromCache'
@@ -212,7 +225,7 @@ export class DataManager extends BaseManager {
             await chrome.storage.local.set({
                 [key]: {
                     data,
-                    timestamp: Date.now(),
+                    timestamp: data.timestamp,
                     cacheVersion: version
                 }
             });
@@ -237,7 +250,7 @@ export class DataManager extends BaseManager {
                 return this.#getTestData();
             }
 
-            const response = await fetch('https://api.darwina.pl/orders', {
+            const response = await fetch('https://darwina.pl/api/orders', {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -466,6 +479,94 @@ export class DataManager extends BaseManager {
             return false;
         } finally {
             this.#isRefreshing = false;
+        }
+    }
+
+    /**
+     * Fetch delta updates from API
+     * @private
+     * @param {number} lastUpdate - Timestamp of last update
+     * @returns {Promise<Object|null>}
+     */
+    async #fetchDeltaUpdates(lastUpdate) {
+        try {
+            if (!navigator.onLine || this._environment.isDevelopment) {
+                return null;
+            }
+
+            const response = await fetch(`${this.#baseUrl}/orders`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': await this.#getAuthToken()
+                },
+                params: {
+                    modified_from: lastUpdate
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`API request failed: ${response.status}`);
+            }
+
+            const data = await response.json();
+            this.log(LogLevel.DEBUG, '📥 Fetched delta updates', {
+                count: data.orders?.length || 0,
+                since: new Date(lastUpdate).toISOString()
+            });
+
+            return data;
+        } catch (error) {
+            this.handleError(error, ErrorType.API, ErrorSeverity.LOW, {
+                method: '#fetchDeltaUpdates',
+                lastUpdate
+            });
+            return null;
+        }
+    }
+
+    /**
+     * Merge cached data with new updates
+     * @private
+     * @param {Object} cached - Cached data
+     * @param {Object} updates - New updates
+     * @returns {Object} Merged data
+     */
+    async #mergeData(cached, updates) {
+        try {
+            if (!cached?.orders || !updates?.orders) {
+                throw new Error('Invalid data format for merging');
+            }
+
+            // Create a map of existing orders
+            const orderMap = new Map(
+                cached.orders.map(order => [order.id, order])
+            );
+
+            // Update or add new orders
+            updates.orders.forEach(order => {
+                orderMap.set(order.id, {
+                    ...orderMap.get(order.id),
+                    ...order,
+                    lastUpdate: Date.now()
+                });
+            });
+
+            this.log(LogLevel.DEBUG, '🔄 Merged data', {
+                cachedCount: cached.orders.length,
+                updatesCount: updates.orders.length,
+                finalCount: orderMap.size
+            });
+
+            return {
+                ...cached,
+                orders: Array.from(orderMap.values())
+            };
+        } catch (error) {
+            this.handleError(error, ErrorType.DATA, ErrorSeverity.MEDIUM, {
+                method: '#mergeData'
+            });
+            throw error;
         }
     }
 }

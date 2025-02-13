@@ -266,35 +266,90 @@ export class MenuManager extends BaseManager {
             const tabElements = document.querySelectorAll(SELECTORS.TAB);
             this.log(LogLevel.INFO, `📌 Found ${tabElements.length} tab elements`);
 
-            // Initialize Bootstrap tabs
-            this.#tabs = Array.from(tabElements).map(element => {
-                // Create new tab instance
-                const tab = bootstrap.Tab.getOrCreateInstance(element);
-                
-                // Create a wrapper function that maintains the correct context
-                const showTab = (event) => {
-                    if (event) {
-                        event.preventDefault();
-                    }
-                    tab.show.call(element);
-                };
-                
-                // Add click handler
-                element.addEventListener('click', showTab);
+            // Initialize tabs array
+            this.#tabs = [];
 
-                // Add Bootstrap tab events
-                element.addEventListener('show.bs.tab', this._handleTabShow.bind(this));
-                element.addEventListener('shown.bs.tab', this._handleTabShown.bind(this));
-
-                return {
+            // Process each tab element
+            tabElements.forEach(element => {
+                // Create tab data object
+                const tabData = {
                     element,
-                    instance: tab,
-                    show: showTab
+                    href: element.getAttribute('href'),
+                    active: element.classList.contains('active')
                 };
+
+                // Add click handler
+                element.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    
+                    try {
+                        // Get target pane
+                        const targetId = event.currentTarget.getAttribute('href');
+                        if (!targetId) return;
+
+                        // Hide all panes first
+                        document.querySelectorAll(SELECTORS.TAB_PANE).forEach(pane => {
+                            pane.classList.remove('show', 'active');
+                        });
+
+                        // Show target pane
+                        const targetPane = document.querySelector(targetId);
+                        if (targetPane) {
+                            targetPane.classList.add('show', 'active');
+                        }
+
+                        // Update tab states
+                        document.querySelectorAll(SELECTORS.TAB).forEach(tab => {
+                            const isActive = tab.getAttribute('href') === targetId;
+                            tab.classList.toggle('active', isActive);
+                            tab.setAttribute('aria-selected', isActive.toString());
+                            tab.setAttribute('tabindex', isActive ? '0' : '-1');
+                        });
+
+                        // Handle tab change
+                        this._handleTabChange(event.currentTarget);
+                    } catch (error) {
+                        this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                            method: 'tabClickHandler',
+                            href: event.currentTarget.getAttribute('href')
+                        });
+                    }
+                });
+
+                // Store tab data
+                this.#tabs.push(tabData);
             });
 
             // Restore active tab after initialization
-            await this.#restoreActiveTab();
+            if (this.#activeTab) {
+                const activeElement = document.querySelector(`${SELECTORS.TAB}[href="${this.#activeTab}"]`);
+                if (activeElement) {
+                    // Get target pane
+                    const targetId = activeElement.getAttribute('href');
+                    if (targetId) {
+                        // Show target pane
+                        const targetPane = document.querySelector(targetId);
+                        if (targetPane) {
+                            // Hide all panes first
+                            document.querySelectorAll(SELECTORS.TAB_PANE).forEach(pane => {
+                                pane.classList.remove('show', 'active');
+                            });
+                            
+                            // Show target pane
+                            targetPane.classList.add('show', 'active');
+                            
+                            // Update tab states
+                            document.querySelectorAll(SELECTORS.TAB).forEach(tab => {
+                                const isActive = tab.getAttribute('href') === targetId;
+                                tab.classList.toggle('active', isActive);
+                                tab.setAttribute('aria-selected', isActive.toString());
+                                tab.setAttribute('tabindex', isActive ? '0' : '-1');
+                            });
+                        }
+                    }
+                    this._handleTabChange(activeElement);
+                }
+            }
 
             this.log(LogLevel.SUCCESS, '✅ Tabs initialized successfully');
         } catch (error) {
@@ -306,31 +361,13 @@ export class MenuManager extends BaseManager {
     }
 
     /**
-     * Handle tab show event
+     * Handle tab change
      * @private
+     * @param {HTMLElement} targetTab - The tab element that was clicked
      */
-    async _handleTabShow(event) {
+    async _handleTabChange(targetTab) {
         try {
-            const targetId = event.target.getAttribute('href');
-            if (!targetId) return;
-
-            this.log(LogLevel.INFO, `�� Tab show initiated: ${targetId}`);
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: '_handleTabShow',
-                event: event
-            });
-        }
-    }
-
-    /**
-     * Handle tab shown event
-     * @private
-     */
-    async _handleTabShown(event) {
-        try {
-            const tab = event.target;
-            const targetId = tab.getAttribute('href');
+            const targetId = targetTab.getAttribute('href');
             if (!targetId) return;
 
             const previousTab = this.#activeTab;
@@ -341,6 +378,9 @@ export class MenuManager extends BaseManager {
             menuLinks.forEach(link => {
                 const linkHref = link.getAttribute('href');
                 link.classList.toggle('active', linkHref === targetId);
+                // Update ARIA states
+                link.setAttribute('aria-selected', linkHref === targetId);
+                link.setAttribute('tabindex', linkHref === targetId ? '0' : '-1');
             });
 
             // Update active states for tab panes
@@ -368,17 +408,10 @@ export class MenuManager extends BaseManager {
                     timestamp: new Date().toISOString()
                 }
             }));
-
-            // Update ARIA states
-            menuLinks.forEach(link => {
-                const isActive = link.getAttribute('href') === targetId;
-                link.setAttribute('aria-selected', isActive);
-                link.setAttribute('tabindex', isActive ? '0' : '-1');
-            });
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: '_handleTabShown',
-                event: event
+                method: '_handleTabChange',
+                targetId: targetTab?.getAttribute('href')
             });
         }
     }
@@ -500,8 +533,9 @@ export class MenuManager extends BaseManager {
             // Remove event listeners from tabs
             if (this.#tabs) {
                 this.#tabs.forEach(tab => {
-                    tab.element.removeEventListener('show.bs.tab', this._handleTabShow);
-                    tab.element.removeEventListener('shown.bs.tab', this._handleTabShown);
+                    if (tab.element && tab.clickHandler) {
+                        tab.element.removeEventListener('click', tab.clickHandler);
+                    }
                     if (tab.instance) {
                         tab.instance.dispose();
                     }
@@ -593,11 +627,11 @@ export class MenuManager extends BaseManager {
                 return;
             }
 
-            const tab = this.#tabs.find(t => t.element === activeTabElement);
-            if (tab) {
-                this.log(LogLevel.INFO, `🔄 Restoring active tab: ${this.#activeTab}`);
-                tab.show();
-            }
+            // Create new tab instance for activation
+            const tab = new bootstrap.Tab(activeTabElement);
+            tab.show();
+            
+            this.log(LogLevel.INFO, `🔄 Restored active tab: ${this.#activeTab}`);
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
                 method: '#restoreActiveTab',

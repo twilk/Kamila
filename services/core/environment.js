@@ -31,8 +31,7 @@ export const environment = {
     isProduction: !isDevelopment,
     
     // API configuration
-    apiUrl: isDevelopment ? 'https://dev-api.darwina.pl' : 'https://api.darwina.pl',
-    apiVersion: 'v1',
+    apiUrl: isDevelopment ? 'https://dev.darwina.pl/api' : 'https://darwina.pl/api',
     
     // Feature flags
     features: {
