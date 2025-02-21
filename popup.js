@@ -115,7 +115,7 @@ for (const [name, Manager] of MANAGERS) {
             return new OrderService(registry);
         });
     } else {
-        registry.register(name, Manager);
+    registry.register(name, Manager);
     }
 }
 
@@ -449,7 +449,7 @@ function setupTabs() {
     const menu = document.querySelector('.menu');
     const tabPanes = document.querySelectorAll('.tab-pane');
     
-    menu?.addEventListener('click', (event) => {
+    menu?.addEventListener('click', async (event) => {
         event.preventDefault();
         const link = event.target.closest('.link');
         if (!link) return;
@@ -463,11 +463,18 @@ function setupTabs() {
         const targetId = link.getAttribute('data-target');
         document.getElementById(targetId)?.classList.add('active');
 
-        // Emit tab change event
-        managerInstances.eventManager.emit(EVENTS.TAB_CHANGED, {
-            tab: targetId,
-            timestamp: new Date().toISOString()
-        });
+        try {
+            // Get event manager safely
+            const eventManager = await registry.get('event');
+            if (eventManager?.isInitialized()) {
+                await eventManager.emit(EVENTS.TAB_CHANGED, {
+                    tab: targetId,
+                    timestamp: new Date().toISOString()
+                });
+            }
+        } catch (error) {
+            console.error('Failed to emit tab change event:', error);
+        }
     });
 }
 

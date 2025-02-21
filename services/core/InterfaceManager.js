@@ -77,6 +77,10 @@ class InterfaceManager extends BaseManager {
         InterfaceManager.#instance = this;
         InterfaceManager._registry = registry;
 
+        // Add dependencies
+        this.addDependency('event');
+        this.addDependency('language');
+
         // Initialize private methods
         this.#handleViewChange = async (event) => {
             try {
@@ -146,6 +150,9 @@ class InterfaceManager extends BaseManager {
             
             // Set up event listeners
             await this.#setupEventListeners();
+
+            // Initialize language switcher
+            await this.initializeLanguageSwitcher();
             
             this.log(LogLevel.SUCCESS, '✅ Interface manager initialized');
             return true;
@@ -524,6 +531,44 @@ class InterfaceManager extends BaseManager {
         };
 
         await super.dispose();
+    }
+
+    /**
+     * Initialize language switcher
+     */
+    async initializeLanguageSwitcher() {
+        try {
+            const languageButtons = document.querySelectorAll('.lang-btn');
+            const languageManager = await this.getDependency('language');
+            const currentLang = languageManager.getCurrentLanguage();
+
+            languageButtons.forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.lang === currentLang) {
+                    btn.classList.add('active');
+                }
+
+                btn.addEventListener('click', async () => {
+                    const lang = btn.dataset.lang;
+                    languageButtons.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+
+                    try {
+                        await languageManager.setLanguage(lang);
+                        this.log(LogLevel.INFO, `🌍 Language changed to: ${lang}`);
+                    } catch (error) {
+                        this.handleError(error, ErrorType.LANGUAGE, ErrorSeverity.MEDIUM, {
+                            method: 'initializeLanguageSwitcher',
+                            language: lang
+                        });
+                    }
+                });
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.MEDIUM, {
+                method: 'initializeLanguageSwitcher'
+            });
+        }
     }
 }
 

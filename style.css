@@ -430,48 +430,43 @@ body.debug-enabled {
     padding-left: 2.5rem;
 }
 
-/* Flagi językowe */
 #language-switcher {
-    position: absolute;
-    top: 0.5rem;
-    left: 0.5rem;
-    z-index: 1000;
+    display: inline-flex;
+    gap: 0.5rem;
+    padding: 0.25rem;
 }
 
-.flag-btn {
+.lang-btn {
     background: none;
     border: none;
     padding: 0.25rem 0.5rem;
-    margin: 0 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
     cursor: pointer;
-    opacity: 0.6;
-    transition: opacity 0.2s ease-in-out;
     border-radius: 0.25rem;
+    transition: all 0.2s ease;
 }
 
-.flag-btn:hover {
-    opacity: 0.8;
+.lang-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
 }
 
-.flag-btn.active {
-    opacity: 1;
-    background-color: var(--bg-hover);
-}
+.lang-btn.active {
+    color: var(--text-primary);
+    font-weight: 500;
+    background: var(--bg-active);
+} 
 
-.flag-icon {
-    font-size: 1.25rem;
-    line-height: 1;
-}
-
-[data-theme="dark"] .flag-btn {
+[data-theme="dark"] .lang-btn {
     color: var(--text-light);
 }
 
-[data-theme="dark"] .flag-btn.active {
+[data-theme="dark"] .lang-btn.active {
     background-color: var(--bg-dark-hover);
 }
 
-/* Ciemny motyw dla flag */
+/* //Ciemny motyw dla flag
 [data-theme="dark"] .flag {
     background: rgba(222, 226, 230, 0.2);
     color: var(--gray-200);
@@ -484,7 +479,7 @@ body.debug-enabled {
 [data-theme="dark"] .flag.active {
     background: rgba(222, 226, 230, 0.4);
     color: var(--gray-900);
-}
+} */
 
 /* Animacja aktualizacji licznika */
 @keyframes countUpdate {

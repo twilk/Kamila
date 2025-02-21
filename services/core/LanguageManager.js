@@ -5,6 +5,19 @@ import { EventType } from './EventType.js';
 import { LANGUAGE_CONFIG } from '../../config/language.js';
 
 /**
+ * @typedef {Object} TranslationConfig
+ * @property {string} code - Language code (pl, en, ua)
+ * @property {string} name - Display name (polish, english, ukrainian)
+ * @property {string} file - JSON file name
+ */
+
+const LANGUAGES = {
+    polish: { code: 'pl', name: 'polish', file: 'polish.json' },
+    english: { code: 'en', name: 'english', file: 'english.json' },
+    ukrainian: { code: 'ua', name: 'ukrainian', file: 'ukrainian.json' }
+};
+
+/**
  * @extends {BaseManager}
  * Manages language settings and translations
  */
@@ -14,14 +27,12 @@ class LanguageManager extends BaseManager {
     static _registry = null;
 
     /** @private */
-    #settings;
-
-    /** @private */
-
     #currentLanguage = 'polish';
     #translations = {};
-    #supportedLanguages = ['polish', 'english', 'ukrainian'];
+    #supportedLanguages = Object.keys(LANGUAGES);
     #isReady = false;
+    #eventManager = null;
+    #lastUpdate = 0;
 
     constructor(registry) {
         if (LanguageManager.#instance) {
@@ -31,8 +42,8 @@ class LanguageManager extends BaseManager {
         LanguageManager.#instance = this;
         LanguageManager._registry = registry;
         
-        // Add EventManager dependency
         this.addDependency('event');
+        this.addDependency('storage');
     }
 
     static getInstance() {
@@ -54,13 +65,24 @@ class LanguageManager extends BaseManager {
         try {
             this.log(LogLevel.INFO, '🔄 Initializing language manager...');
             
-            // Load language settings
-            const storage = await this.getDependency('storage');
-            const settings = await storage.get(LANGUAGE_CONFIG.STORAGE_KEY) || {};
-            this.#settings = { ...LANGUAGE_CONFIG.DEFAULT_SETTINGS, ...settings };
+            // Get required dependencies
+            const [eventManager, storage] = await Promise.all([
+                this.getDependency('event'),
+                this.getDependency('storage')
+            ]);
+
+            this.#eventManager = eventManager;
+
+            // Load saved language or use default
+            await this.#loadLanguagePreference();
+            
+            // Load translations
+            await this.#loadTranslations();
             
             // Set up event listeners
-            this.#setupEventListeners();
+            await this.#setupEventListeners();
+            
+            this.#isReady = true;
             
             this.log(LogLevel.SUCCESS, '✅ Language manager initialized');
             return true;
@@ -70,22 +92,19 @@ class LanguageManager extends BaseManager {
         }
     }
 
-    isReady() {
-        return this.#isReady;
-    }
-
     /**
      * Load saved language preference
      * @private
      */
     async #loadLanguagePreference() {
         try {
-            const { language } = await chrome.storage.local.get('language');
+            const storage = await this.getDependency('storage');
+            const { language } = await storage.get('language') || {};
             
             // If no language in storage or unsupported, set default
             if (!language || !this.#supportedLanguages.includes(language)) {
                 this.#currentLanguage = 'polish';
-                await chrome.storage.local.set({ language: this.#currentLanguage });
+                await storage.set('language', { language: this.#currentLanguage });
                 this.log(LogLevel.INFO, `Set default language: ${this.#currentLanguage}`);
             } else {
                 this.#currentLanguage = language;
@@ -106,22 +125,69 @@ class LanguageManager extends BaseManager {
      */
     async #loadTranslations() {
         try {
-            const url = chrome.runtime.getURL(`locales/${this.#currentLanguage}.json`);
+            const langConfig = LANGUAGES[this.#currentLanguage];
+            if (!langConfig) {
+                throw new Error(`Invalid language configuration for: ${this.#currentLanguage}`);
+            }
+
+            const url = chrome.runtime.getURL(`locales/${langConfig.file}`);
+            this.log(LogLevel.DEBUG, `🔄 Loading translations from: ${url}`);
+            
             const response = await fetch(url);
             
             if (!response.ok) {
-                throw new Error(`Failed to load translations for ${this.#currentLanguage}`);
+                throw new Error(`Failed to load translations for ${this.#currentLanguage} (${response.status})`);
             }
             
-            this.#translations = await response.json();
-            this.log(LogLevel.DEBUG, `✅ Loaded translations for ${this.#currentLanguage}`);
+            const translations = await response.json();
+            if (!translations || typeof translations !== 'object') {
+                throw new Error(`Invalid translations format for ${this.#currentLanguage}`);
+            }
+
+            this.#translations = translations;
+            this.#lastUpdate = Date.now();
+            
+            this.log(LogLevel.SUCCESS, `✅ Loaded translations for ${this.#currentLanguage}`, {
+                keysCount: Object.keys(translations).length
+            });
+            
+            // Emit translations loaded event
+            if (this.#eventManager?.isInitialized()) {
+                await this.#eventManager.emit('language:translations-loaded', {
+                    language: this.#currentLanguage,
+                    timestamp: this.#lastUpdate,
+                    keysCount: Object.keys(translations).length
+                });
+            }
         } catch (error) {
             this.handleError(error, ErrorType.RESOURCE, ErrorSeverity.HIGH, {
                 method: '_loadTranslations',
-                language: this.#currentLanguage
+                language: this.#currentLanguage,
+                url: chrome.runtime.getURL(`locales/${LANGUAGES[this.#currentLanguage]?.file}`)
             });
             this.#translations = {};
         }
+    }
+
+    /**
+     * Check if translations are loaded
+     * @returns {boolean}
+     */
+    hasTranslations() {
+        return Object.keys(this.#translations).length > 0;
+    }
+
+    /**
+     * Wait for translations to load
+     * @param {number} timeout Timeout in ms
+     * @returns {Promise<boolean>}
+     */
+    async waitForTranslations(timeout = 5000) {
+        const start = Date.now();
+        while (!this.hasTranslations() && Date.now() - start < timeout) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        return this.hasTranslations();
     }
 
     /**
@@ -130,10 +196,8 @@ class LanguageManager extends BaseManager {
      */
     async #setupEventListeners() {
         try {
-            const eventManager = await this.getDependency('event');
-            
-            // Listen for language events
-            await eventManager.on('language:change', async (event) => {
+            // Listen for language change events
+            await this.#eventManager.on('language:change', async (event) => {
                 const language = event?.detail?.language || event?.language;
                 if (language && language !== this.#currentLanguage) {
                     await this.setLanguage(language);
@@ -141,12 +205,22 @@ class LanguageManager extends BaseManager {
             });
 
             // Listen for UI update events
-            await eventManager.on('ui:ready', this.updateUI.bind(this));
-            await eventManager.on('orders:updated', this.updateOrderTranslations.bind(this));
+            await this.#eventManager.on('ui:ready', this.updateUI.bind(this));
+            await this.#eventManager.on('orders:updated', this.updateOrderTranslations.bind(this));
             
-            // Load initial language
-            await this.#loadLanguagePreference();
-            await this.#loadTranslations();
+            // Listen for DOM changes to update new elements
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    if (mutation.addedNodes.length) {
+                        this.updateUI();
+                    }
+                });
+            });
+            
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
             
             this.log(LogLevel.DEBUG, '🌍 Language event listeners set up');
         } catch (error) {
@@ -158,84 +232,45 @@ class LanguageManager extends BaseManager {
     }
 
     /**
-     * Update order-related translations in UI
-     * @private
-     */
-    async updateOrderTranslations() {
-        try {
-            // Update status labels
-            document.querySelectorAll('[data-order-status]').forEach(element => {
-                const status = element.dataset.orderStatus;
-                const key = `leadStatuses.${status}`;
-                element.textContent = this.translate(key);
-            });
-
-            // Update notification texts
-            document.querySelectorAll('[data-order-notification]').forEach(element => {
-                const type = element.dataset.orderNotification;
-                const key = `notifications.${type}`;
-                element.textContent = this.translate(key);
-            });
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: 'updateOrderTranslations'
-            });
-        }
-    }
-
-    /**
-     * Handle language change event
-     * @private
-     * @param {Event} event Click event
-     */
-    async #handleLanguageChange(event) {
-        try {
-            const newLanguage = event.target.dataset.lang;
-            if (this.#supportedLanguages.includes(newLanguage)) {
-                await this.setLanguage(newLanguage);
-                
-                this.log(LogLevel.INFO, `🌍 Language changed to: ${newLanguage}`);
-            }
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: 'handleLanguageChange'
-            });
-        }
-    }
-
-    /**
-     * Update UI language indicators
+     * Update UI with translations
      */
     async updateUI() {
         try {
-            // Update all translatable elements
-            document.querySelectorAll('[data-i18n]').forEach(element => {
-                const key = element.dataset.i18n;
-                element.textContent = this.translate(key);
-            });
-
-            // Update tooltips
-            document.querySelectorAll('[data-i18n-tooltip]').forEach(element => {
-                const key = element.dataset.i18nTooltip;
-                element.title = this.translate(key);
-            });
-
-            // Update placeholders
-            document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
-                const key = element.dataset.i18nPlaceholder;
-                element.placeholder = this.translate(key);
-            });
+            // Update text content
+            const elements = document.querySelectorAll('[data-i18n], [data-i18n-placeholder], [data-i18n-tooltip], [data-i18n-aria]');
+            await Promise.all(Array.from(elements).map(async element => {
+                try {
+                    if (element.hasAttribute('data-i18n')) {
+                        const key = element.dataset.i18n;
+                        element.textContent = await this.translate(key);
+                    }
+                    if (element.hasAttribute('data-i18n-placeholder')) {
+                        const key = element.dataset.i18nPlaceholder;
+                        element.placeholder = await this.translate(key);
+                    }
+                    if (element.hasAttribute('data-i18n-tooltip')) {
+                        const key = element.dataset.i18nTooltip;
+                        element.title = await this.translate(key);
+                    }
+                    if (element.hasAttribute('data-i18n-aria')) {
+                        const key = element.dataset.i18nAria;
+                        element.setAttribute('aria-label', await this.translate(key));
+                    }
+                } catch (error) {
+                    this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                        method: 'updateUI',
+                        element: element.outerHTML
+                    });
+                }
+            }));
 
             // Update order translations
             await this.updateOrderTranslations();
 
-            // Emit language changed event
-            const eventManager = await this.getDependency('event');
-            await eventManager.emit(EventType.LANGUAGE_CHANGED, {
-                detail: {
-                    language: this.#currentLanguage,
-                    timestamp: new Date().toISOString()
-                }
+            // Emit UI updated event
+            await this.#eventManager.emit('language:ui-updated', {
+                language: this.#currentLanguage,
+                timestamp: Date.now()
             });
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
@@ -245,8 +280,44 @@ class LanguageManager extends BaseManager {
     }
 
     /**
+     * Update order-related translations
+     */
+    async updateOrderTranslations() {
+        try {
+            // Update status labels and notifications in parallel
+            const elements = [
+                ...document.querySelectorAll('[data-order-status]'),
+                ...document.querySelectorAll('[data-order-notification]')
+            ];
+
+            await Promise.all(elements.map(async element => {
+                try {
+                    if (element.hasAttribute('data-order-status')) {
+                        const status = element.dataset.orderStatus;
+                        const key = `leadStatuses.${status}`;
+                        element.textContent = await this.translate(key);
+                    } else if (element.hasAttribute('data-order-notification')) {
+                        const type = element.dataset.orderNotification;
+                        const key = `notifications.${type}`;
+                        element.textContent = await this.translate(key);
+                    }
+                } catch (error) {
+                    this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                        method: 'updateOrderTranslations',
+                        element: element.outerHTML
+                    });
+                }
+            }));
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: 'updateOrderTranslations'
+            });
+        }
+    }
+
+    /**
      * Set current language
-     * @param {string} language Language code
+     * @param {string} language Language name (polish, english, ukrainian)
      */
     async setLanguage(language) {
         try {
@@ -254,22 +325,39 @@ class LanguageManager extends BaseManager {
                 throw new Error(`Unsupported language: ${language}`);
             }
 
+            const oldLanguage = this.#currentLanguage;
             this.#currentLanguage = language;
-            await chrome.storage.local.set({ language });
+
+            // Save to storage
+            const storage = await this.getDependency('storage');
+            await storage.set('language', { language });
+
+            // Load new translations
             await this.#loadTranslations();
+
+            // Update UI
             await this.updateUI();
 
+            // Emit language changed event
+            await this.#eventManager.emit('language:changed', {
+                oldLanguage,
+                newLanguage: language,
+                timestamp: Date.now()
+            });
+
+            this.log(LogLevel.INFO, `🌍 Language changed from ${oldLanguage} to ${language}`);
         } catch (error) {
             this.handleError(error, ErrorType.LANGUAGE, ErrorSeverity.MEDIUM, {
                 method: 'setLanguage',
                 language
             });
+            throw error;
         }
     }
 
     /**
      * Get current language
-     * @returns {string} Current language code
+     * @returns {string} Current language name
      */
     getCurrentLanguage() {
         return this.#currentLanguage;
@@ -277,21 +365,34 @@ class LanguageManager extends BaseManager {
 
     /**
      * Get supported languages
-     * @returns {string[]} List of supported language codes
+     * @returns {string[]} List of supported language names
      */
     getSupportedLanguages() {
         return [...this.#supportedLanguages];
     }
 
     /**
-     * Translate a key
-     * @param {string} key Translation key
-     * @param {Object} [params] Translation parameters
-     * @returns {string} Translated text
+     * Get language code for current language
+     * @returns {string} Language code (pl, en, ua)
      */
-    translate(key, params = {}) {
+    getCurrentLanguageCode() {
+        return LANGUAGES[this.#currentLanguage]?.code || 'pl';
+    }
+
+    /**
+     * Translate a key
+     * @param {string} key Translation key (dot notation supported)
+     * @param {Object} [params] Optional parameters for interpolation
+     * @returns {Promise<string>} Translated text
+     */
+    async translate(key, params = {}) {
         try {
-            let text = this.#translations[key]?.message || this.#translations[key] || key;
+            if (!this.hasTranslations()) {
+                await this.waitForTranslations();
+            }
+
+            // Get translation using dot notation
+            let text = key.split('.').reduce((obj, k) => obj?.[k], this.#translations) || key;
 
             // Replace parameters
             Object.entries(params).forEach(([param, value]) => {
@@ -300,24 +401,39 @@ class LanguageManager extends BaseManager {
 
             return text;
         } catch (error) {
-            this.handleError(error, ErrorType.LANGUAGE, ErrorSeverity.LOW, {
+            this.handleError(error, ErrorType.TRANSLATION, ErrorSeverity.LOW, {
                 method: 'translate',
-                key
+                key,
+                params
             });
             return key;
         }
     }
 
     /**
-     * Cleanup and dispose
-     * @returns {Promise<void>}
+     * Check if manager is ready
+     * @returns {boolean}
+     */
+    isReady() {
+        return this.#isReady;
+    }
+
+    /**
+     * Get last update timestamp
+     * @returns {number}
+     */
+    getLastUpdate() {
+        return this.#lastUpdate;
+    }
+
+    /**
+     * Clean up resources
      */
     async dispose() {
         try {
-            const eventManager = this.getDependency('event');
-            if (eventManager) {
-                eventManager.removeAllDelegates();
-            }
+            this.#translations = {};
+            this.#isReady = false;
+            this.#lastUpdate = 0;
             await super.dispose();
         } catch (error) {
             this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH, {

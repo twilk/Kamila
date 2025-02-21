@@ -197,7 +197,7 @@ export class UIManager extends BaseManager {
             this.#tooltipsInitialized = true;
             this.#modalsInitialized = true;
             this.#listenersInitialized = true;
-
+            
             this.log(LogLevel.SUCCESS, '✅ UI manager initialized');
             return true;
         } catch (error) {
@@ -707,7 +707,7 @@ export class UIManager extends BaseManager {
             
             // Update ARIA state
             themeSwitch.setAttribute('aria-pressed', String(newTheme === 'dark'));
-            
+
             this.log(LogLevel.DEBUG, '🎨 Theme toggled', { theme: newTheme });
         } catch (error) {
             // Revert checkbox state on error
@@ -1093,7 +1093,7 @@ export class UIManager extends BaseManager {
 
             // Show modal
             modal.show();
-            
+
             await this.#eventManager.emit('ui:modal:show', { 
                 modalId: id 
             });
@@ -1348,4 +1348,4 @@ export class UIManager extends BaseManager {
 }
 
 // Export singleton instance
-export const uiManager = UIManager.getInstance();
+export const uiManager = UIManager.getInstance(); 
