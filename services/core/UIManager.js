@@ -9,7 +9,7 @@ import { EventManager } from './EventManager.js';
  * @extends {BaseManager}
  * Base class for UI-related managers
  */
-class UIManager extends BaseManager {
+export class UIManager extends BaseManager {
     /** @private */
     static #instance = null;
     static _registry = null;
@@ -22,7 +22,7 @@ class UIManager extends BaseManager {
     #components = new Map();
     
     /** @private */
-    #toasts = new Map();
+    #toasts = [];
     
     /** @private */
     #modals = new Map();
@@ -89,7 +89,6 @@ class UIManager extends BaseManager {
         this.addDependency('error');
         this.addDependency('event');
         this.addDependency('theme');
-        this.addDependency('store');
         this.addDependency('refresh');
     }
 
@@ -168,17 +167,15 @@ class UIManager extends BaseManager {
             this.log(LogLevel.INFO, '🔄 Initializing UI manager...');
             
             // Get required dependencies
-            const [eventManager, themeManager, storeManager, refreshManager] = await Promise.all([
+            const [eventManager, themeManager, refreshManager] = await Promise.all([
                 this.getDependency('event'),
                 this.getDependency('theme'),
-                this.getDependency('store'),
                 this.getDependency('refresh')
             ]);
 
             // Store dependencies as instance variables
             this.#eventManager = eventManager;
             this.#themeManager = themeManager;
-            this.#storeManager = storeManager;
             this.#refreshManager = refreshManager;
 
             // Validate required dependencies
@@ -187,9 +184,6 @@ class UIManager extends BaseManager {
             }
             if (!this.#themeManager?.isInitialized()) {
                 throw new Error('ThemeManager must be initialized');
-            }
-            if (!this.#storeManager?.isInitialized()) {
-                throw new Error('StoreManager must be initialized');
             }
             if (!this.#refreshManager?.isInitialized()) {
                 throw new Error('RefreshManager must be initialized');
@@ -215,35 +209,99 @@ class UIManager extends BaseManager {
     }
 
     /**
-     * Initialize UI elements
+     * Initialize UI components
      * @private
      */
     async initializeUI() {
         try {
-            // Initialize UI elements
-            const elements = document.querySelectorAll('[data-ui-element]');
+            this.log(LogLevel.INFO, '🔄 Initializing UI components...');
             
-            for (const element of elements) {
-                const type = element.getAttribute('data-ui-element');
-                switch (type) {
-                    case 'counter':
-                        await this.initializeCounter(element);
-                        break;
-                    case 'progress':
-                        await this.initializeProgress(element);
-                        break;
-                    case 'status':
-                        await this.initializeStatus(element);
-                        break;
-                    default:
-                        this.log(LogLevel.WARNING, `⚠️ Unknown UI element type: ${type}`);
-                }
+            // Initialize store selector
+            await this.#initializeStoreSelect();
+            
+            // Initialize theme toggle
+            const themeSwitch = document.getElementById('theme-switch');
+            if (themeSwitch) {
+                const { theme } = await ThemeManager.getInstance().getThemeSettings();
+                themeSwitch.checked = theme === 'dark';
+                themeSwitch.setAttribute('aria-pressed', String(theme === 'dark'));
             }
             
-            this.log(LogLevel.DEBUG, '🔄 UI elements initialized');
+            // Initialize other UI components...
+            
+            this.log(LogLevel.SUCCESS, '✅ UI components initialized');
         } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.HIGH, {
                 method: 'initializeUI'
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Initialize store select element
+     * @private
+     */
+    async #initializeStoreSelect() {
+        try {
+            const storeSelect = document.getElementById('store-select');
+            if (!storeSelect) {
+                throw new Error('Store select element not found');
+            }
+
+            // Get stores from StoreManager
+            const storeManager = await this.getDependency('store');
+            const stores = storeManager.getStores();
+            const activeStore = storeManager.getActiveStore();
+
+            // Clear existing options
+            storeSelect.innerHTML = '';
+
+            // Add stores to select
+            stores.forEach(store => {
+                const option = document.createElement('option');
+                option.value = store.id;
+                option.textContent = store.id === 'ALL' ? 
+                    'Wszystkie sklepy' : 
+                    `${store.name} - ${store.address}`;
+                storeSelect.appendChild(option);
+            });
+
+            // Set active store
+            if (activeStore) {
+                storeSelect.value = activeStore.id;
+            }
+
+            // Add change handler
+            storeSelect.addEventListener('change', async (e) => {
+                try {
+                    const selectedStore = e.target.value;
+                    await storeManager.setActiveStore(selectedStore);
+                    
+                    // Update UI elements
+                    document.querySelectorAll('.lead-count').forEach(counter => {
+                        counter.textContent = '...';
+                        counter.classList.remove('count-error', 'count-zero');
+                    });
+                    
+                    this.log(LogLevel.INFO, `🏪 Store changed to: ${selectedStore}`);
+                    
+                    // Trigger data refresh
+                    const eventManager = await this.getDependency('event');
+                    await eventManager.emit('store:changed', { storeId: selectedStore });
+                } catch (error) {
+                    this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
+                        method: '#initializeStoreSelect',
+                        action: 'change',
+                        selectedStore: e.target.value
+                    });
+                }
+            });
+
+            this.log(LogLevel.SUCCESS, '✅ Store select initialized');
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.HIGH, {
+                method: '#initializeStoreSelect'
             });
             throw error;
         }
@@ -532,7 +590,10 @@ class UIManager extends BaseManager {
             this.setupButtonListener('#storeSelector', 'change', this.handleStoreChange.bind(this));
 
             // Theme toggle
-            this.setupButtonListener('#themeToggle', 'click', this.handleThemeToggle.bind(this));
+            const themeSwitch = document.getElementById('theme-switch');
+            if (themeSwitch) {
+                themeSwitch.addEventListener('change', this.handleThemeToggle.bind(this));
+            }
 
             // Debug panel toggle
             this.setupButtonListener('#debugToggle', 'click', this.handleDebugToggle.bind(this));
@@ -640,26 +701,17 @@ class UIManager extends BaseManager {
      */
     async handleThemeToggle(event) {
         try {
-            const button = event.target;
-            const themeManager = ThemeManager.getInstance();
-            const { theme: currentTheme } = themeManager.getThemeSettings();
-            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            const themeSwitch = event.target;
+            const newTheme = themeSwitch.checked ? 'dark' : 'light';
+            await ThemeManager.getInstance().setTheme(newTheme, false);
             
-            // Update theme using ThemeManager
-            await themeManager.setTheme(newTheme, false);
+            // Update ARIA state
+            themeSwitch.setAttribute('aria-pressed', String(newTheme === 'dark'));
             
-            // Update button state
-            button.setAttribute('aria-pressed', String(newTheme === 'dark'));
-            button.classList.toggle('theme-dark', newTheme === 'dark');
-
-            // Update theme switch if exists
-            const themeSwitch = document.getElementById('theme-switch');
-            if (themeSwitch) {
-                themeSwitch.checked = newTheme === 'dark';
-            }
-
             this.log(LogLevel.DEBUG, '🎨 Theme toggled', { theme: newTheme });
         } catch (error) {
+            // Revert checkbox state on error
+            themeSwitch.checked = !themeSwitch.checked;
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
                 method: 'handleThemeToggle'
             });
@@ -1189,7 +1241,7 @@ class UIManager extends BaseManager {
         try {
             const component = this.#components.get(id);
             if (!component) {
-                throw new Error(`Component not found: ${id}`);
+                throw new Error(`Component ${id} not found`);
             }
 
             component.state.loading = loading;
@@ -1201,7 +1253,7 @@ class UIManager extends BaseManager {
                 component.element.removeAttribute('aria-busy');
             }
             
-            await managers.eventManager.emit('ui:loading', {
+            await this.#eventManager.emit('ui:loading', {
                 componentId: id,
                 loading
             });
@@ -1216,89 +1268,11 @@ class UIManager extends BaseManager {
     }
 
     /**
-     * Set component enabled state
-     * @param {string} id Component ID
-     * @param {boolean} enabled Enabled state
-     */
-    async setEnabled(id, enabled) {
-        try {
-            const component = this.#components.get(id);
-            if (!component) {
-                throw new Error(`Component not found: ${id}`);
-            }
-
-            component.state.enabled = enabled;
-            component.element.disabled = !enabled;
-            component.element.classList.toggle('disabled', !enabled);
-            
-            if (!enabled) {
-                component.element.setAttribute('aria-disabled', 'true');
-            } else {
-                component.element.removeAttribute('aria-disabled');
-            }
-            
-            await managers.eventManager.emit('ui:enabled', {
-                componentId: id,
-                enabled
-            });
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                operation: 'setEnabled',
-                id,
-                enabled
-            });
-            throw error;
-        }
-    }
-
-    /**
-     * Setup resize observer
-     * @private
-     */
-    #setupResizeObserver() {
-        if (!window.ResizeObserver) return;
-
-        this.#resizeObserver = new ResizeObserver(
-            this.#debounce(entries => {
-                for (const entry of entries) {
-                    const component = Array.from(this.#components.values())
-                        .find(c => c.element === entry.target);
-                    
-                    if (component) {
-                        managers.eventManager.emit('ui:resize', {
-                            componentId: component.id,
-                            contentRect: entry.contentRect
-                        });
-                    }
-                }
-            }, UI_CONFIG.DEBOUNCE_DELAY)
-        );
-    }
-
-    /**
-     * Setup event handlers
-     * @private
-     */
-    #setupEventHandlers() {
-        // Handle escape key for modals
-        this.#eventHandlers.set('keydown', event => {
-            if (event.key === 'Escape' && this.#modalStack.length > 0) {
-                const topModalId = this.#modalStack[this.#modalStack.length - 1];
-                this.hideModal(topModalId);
-            }
-        });
-
-        // Add event listeners
-        for (const [event, handler] of this.#eventHandlers) {
-            document.addEventListener(event, handler);
-        }
-    }
-
-    /**
+     * Show a component with animation
      * @private
      */
     async #animateShow(element, animation = {}) {
-        const { duration = UI_CONFIG.ANIMATION_DURATION } = animation;
+        const { duration = 300 } = animation;
         element.style.opacity = '0';
         
         await this.#animate(() => {
@@ -1307,10 +1281,11 @@ class UIManager extends BaseManager {
     }
 
     /**
+     * Hide a component with animation
      * @private
      */
     async #animateHide(element, animation = {}) {
-        const { duration = UI_CONFIG.ANIMATION_DURATION } = animation;
+        const { duration = 300 } = animation;
         
         await this.#animate(() => {
             element.style.opacity = '0';
@@ -1318,6 +1293,7 @@ class UIManager extends BaseManager {
     }
 
     /**
+     * Run animation frame
      * @private
      */
     #animate(callback, duration) {
@@ -1342,18 +1318,6 @@ class UIManager extends BaseManager {
     }
 
     /**
-     * Debounce function
-     * @private
-     */
-    #debounce(fn, delay) {
-        let timeoutId;
-        return (...args) => {
-            clearTimeout(timeoutId);
-            timeoutId = setTimeout(() => fn(...args), delay);
-        };
-    }
-
-    /**
      * Get UI manager stats
      */
     getStats() {
@@ -1364,8 +1328,24 @@ class UIManager extends BaseManager {
             eventHandlers: this.#eventHandlers.size
         };
     }
+
+    /**
+     * Handle popup unload
+     * @returns {Promise<void>}
+     */
+    async handleUnload() {
+        try {
+            await this.#eventManager.emit('popup:unload', {
+                timestamp: new Date().toISOString()
+            });
+            this.log(LogLevel.DEBUG, '👋 Popup unloaded');
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: 'handleUnload'
+            });
+        }
+    }
 }
 
-// Export both class and instance
-export { UIManager };
-export const uiManager = UIManager.getInstance(); 
+// Export singleton instance
+export const uiManager = UIManager.getInstance();

@@ -411,9 +411,10 @@ function setupAutoRefresh() {
     }, REFRESH_INTERVAL);
 
     // Cleanup on unload
-    window.addEventListener('unload', () => {
+    window.addEventListener('unload', async () => {
         clearInterval(refreshInterval);
-        managerInstances?.eventManager?.emit('popup:unload', {
+        const eventManager = await registry.get('event');
+        await eventManager.emit('popup:unload', {
             timestamp: new Date().toISOString()
         });
     });
