@@ -20,6 +20,23 @@ export const INTERVAL_KEYS = {
     DATA_FRESHNESS: 'data_freshness_interval'
 };
 
+// Refresh configuration
+export const REFRESH_CONFIG = {
+    STORAGE_KEY: 'refresh_settings',
+    DEFAULT_SETTINGS: {
+        check_frequency: '1m',
+        notification_interval: '5m',
+        full_refresh: '5m',
+        delta_update: '1m'
+    },
+    INTERVALS: {
+        CHECK: 60000,        // 1 minute
+        NOTIFICATION: 300000, // 5 minutes
+        FULL_REFRESH: 300000, // 5 minutes
+        DELTA_UPDATE: 60000   // 1 minute
+    }
+};
+
 // Validate and save interval settings
 export async function saveIntervalSettings(intervals, storageManager) {
     const validatedIntervals = {

@@ -1,7 +1,7 @@
 import { BaseManager } from './BaseManager.js';
-import { CacheManager } from './CacheManager.js';
-import { ErrorHandler } from './ErrorHandler.js';
+import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { LogLevel } from './LogLevel.js';
+import { COUNTER_CONFIG } from '../../config/counter.js';
 
 /**
  * Interface for counter data structure
@@ -21,12 +21,16 @@ import { LogLevel } from './LogLevel.js';
 /**
  * Manager responsible for handling order counters and their states
  */
-export class CounterManager extends BaseManager {
-    /** @type {CounterManager} */
+class CounterManager extends BaseManager {
+    /** @private */
     static #instance = null;
-
-    /** @type {CacheManager} */
-    #cache;
+    static _registry = null;
+    
+    /** @private */
+    #counters = new Map();
+    
+    /** @private */
+    #storageKey = 'counters';
     
     /** @type {string} */
     #currentStoreId;
@@ -44,155 +48,129 @@ export class CounterManager extends BaseManager {
         }
     };
 
+    constructor(registry) {
+        if (CounterManager.#instance) {
+            return CounterManager.#instance;
+        }
+        super(registry, 'CounterManager');
+        CounterManager.#instance = this;
+        CounterManager._registry = registry;
+    }
+
     /**
      * Get singleton instance
      * @returns {CounterManager}
      */
     static getInstance() {
-        if (!CounterManager.#instance) {
-            CounterManager.#instance = new CounterManager({
-                cacheManager: CacheManager.getInstance(),
-                errorHandler: ErrorHandler.getInstance()
-            });
+        if (!CounterManager.#instance && CounterManager._registry) {
+            CounterManager.#instance = new CounterManager(CounterManager._registry);
         }
         return CounterManager.#instance;
     }
 
-    /**
-     * @param {Object} dependencies
-     * @param {CacheManager} dependencies.cacheManager
-     */
-    constructor(dependencies) {
-        super('CounterManager');
-        
-        // Prevent multiple instances
-        if (CounterManager.#instance) {
-            throw new Error('Use CounterManager.getInstance()');
-        }
-        
-        this.#validateDependencies(dependencies);
-        this.#cache = dependencies.cacheManager;
-        
-        CounterManager.#instance = this;
+    static setRegistry(registry) {
+        CounterManager._registry = registry;
     }
 
     /**
-     * Validates constructor dependencies
-     * @param {Object} dependencies
-     * @private
+     * Initialize counter manager
+     * @returns {Promise<boolean>}
      */
-    #validateDependencies(dependencies) {
-        if (!dependencies?.cacheManager) {
-            throw new Error('CacheManager is required for CounterManager');
-        }
-    }
-
-    /**
-     * Updates counters based on provided orders
-     * @param {Array<Object>} orders - Array of order objects to process
-     * @returns {Promise<void>}
-     */
-    async updateCounters(orders) {
+    async _initialize() {
         try {
-            const counts = this.#initializeCounts();
+            this.log(LogLevel.INFO, '🔄 Initializing counter manager...');
             
-            for (const order of orders) {
-                const status = order.status_id?.toString();
-                if (!status) continue;
-                
-                if (status === '5') {
-                    const dateToCheck = order.ready_date || order.modified_at || order.created_at;
-                    const orderDate = new Date(dateToCheck);
-                    const twoWeeksAgo = new Date(Date.now() - this.#config.overdueDays * 24 * 60 * 60 * 1000);
-                    
-                    orderDate < twoWeeksAgo ? counts.OVERDUE++ : counts.READY++;
-                } else if (['1', '2', '3'].includes(status)) {
-                    counts[status]++;
+            // Load existing counters
+            const storage = await this.getDependency('storage');
+            const existingCounters = await storage.get(COUNTER_CONFIG.STORAGE_KEY) || {};
+            this.#counters = new Map(Object.entries(existingCounters));
+            
+            this.log(LogLevel.SUCCESS, '✅ Counter manager initialized');
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+            return false;
+        }
+    }
+
+    async refreshCounters() {
+        try {
+            this.log(LogLevel.INFO, '🔄 Refreshing counters...');
+            
+            const orderManager = await this.getDependency('order');
+            const cacheManager = await this.getDependency('cache');
+            const eventManager = await this.getDependency('event');
+            
+            const orders = await orderManager.getOrders();
+            const counts = this.calculateCounts(orders);
+            
+            await cacheManager.set(this.#config.cacheKey, {
+                counts,
+                metadata: {
+                    initialFetch: true,
+                    lastUpdate: Date.now(),
+                    storeId: this.#currentStoreId
                 }
-            }
+            });
             
-            await this.#cache.set(
-                this.#config.cacheKey, 
-                { counts, metadata: this.#getMetadata() },
-                this.#config.cacheTTL
-            );
-
-            this.log('Counters updated successfully', LogLevel.INFO, { counts });
-        } catch (error) {
-            ErrorHandler.handle(error, 'Error updating counters');
-            throw error;
-        }
-    }
-
-    /**
-     * Gets current counter values
-     * @returns {Promise<CounterCache>}
-     */
-    async getCounters() {
-        try {
-            const cached = await this.#cache.get(this.#config.cacheKey);
-            if (cached) {
-                return cached;
-            }
+            eventManager.emit('counters:updated', counts);
             
-            return {
-                counts: this.#initializeCounts(),
-                metadata: this.#getMetadata(false)
-            };
+            this.log(LogLevel.SUCCESS, '✅ Counters refreshed', { counts });
+            return counts;
         } catch (error) {
-            ErrorHandler.handle(error, 'Error getting counters');
+            this.handleError(error, ErrorType.REFRESH, ErrorSeverity.MEDIUM);
             throw error;
         }
     }
 
-    /**
-     * Invalidates counter cache for current store
-     * @returns {Promise<void>}
-     */
-    async invalidateCounters() {
+    async handleOrdersUpdate(event) {
         try {
-            await this.#cache.remove(this.#config.cacheKey);
-            this.log('Counters cache invalidated', LogLevel.INFO);
+            const { orders } = event;
+            await this.refreshCounters();
         } catch (error) {
-            ErrorHandler.handle(error, 'Error invalidating counters');
-            throw error;
+            this.handleError(error, ErrorType.EVENT, ErrorSeverity.MEDIUM);
         }
     }
 
-    /**
-     * Sets current store ID for counter context
-     * @param {string} storeId
-     */
-    setCurrentStore(storeId) {
-        this.#currentStoreId = storeId;
+    async handleStoreChange(event) {
+        try {
+            const { storeId } = event;
+            this.#currentStoreId = storeId;
+            await this.refreshCounters();
+        } catch (error) {
+            this.handleError(error, ErrorType.EVENT, ErrorSeverity.MEDIUM);
+        }
     }
 
-    /**
-     * Initializes empty counter structure
-     * @returns {Object}
-     * @private
-     */
-    #initializeCounts() {
-        return {
+    calculateCounts(orders) {
+        const counts = {
             '1': 0,
             '2': 0,
             '3': 0,
             'READY': 0,
             'OVERDUE': 0
         };
-    }
 
-    /**
-     * Gets metadata for counter cache
-     * @param {boolean} [initialFetch=true]
-     * @returns {Object}
-     * @private
-     */
-    #getMetadata(initialFetch = true) {
-        return {
-            initialFetch,
-            lastUpdate: Date.now(),
-            storeId: this.#currentStoreId
-        };
+        orders.forEach(order => {
+            if (order.status_id === '5') {
+                const dateToCheck = order.ready_date || order.modified_at || order.created_at;
+                const orderDate = new Date(dateToCheck);
+                const twoWeeksAgo = new Date(Date.now() - this.#config.overdueDays * 24 * 60 * 60 * 1000);
+                
+                if (orderDate < twoWeeksAgo) {
+                    counts.OVERDUE++;
+                } else {
+                    counts.READY++;
+                }
+            } else if (counts.hasOwnProperty(order.status_id)) {
+                counts[order.status_id]++;
+            }
+        });
+
+        return counts;
     }
-} 
+}
+
+// Export both class and instance
+export { CounterManager };
+export const counterManager = CounterManager.getInstance();

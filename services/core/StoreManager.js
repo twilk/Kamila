@@ -1,19 +1,19 @@
 import { BaseManager } from './BaseManager.js';
-import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
-import { LogLevel } from './LogLevel.js';
+import { ErrorType, ErrorSeverity, LogLevel } from '../constants.js';
 import { uiManager } from './UIManager.js';
-import { dataManager } from './DataManager.js';
+import { DataManager } from './DataManager.js';
 import { stores, validateStore, filterStoresByDeliveryMethod } from '../../services/stores.js';
 import { API_CONFIG, sendLogToPopup } from '../../config/api.js';
 import { cacheManager } from './CacheManager.js';
 import { updateUrlParameters } from '../../utils/url.js';
+import { EventManager } from './EventManager.js';
+import { createOrderService } from '../api/OrderService.js';
 
 /**
  * @typedef {Object} Store
- * @property {string} id - ID sklepu
- * @property {string} name - Nazwa sklepu
- * @property {string} [address] - Adres sklepu
- * @property {number} [deliveryId] - ID punktu dostawy
+ * @property {string} id Store ID
+ * @property {string} name Store name
+ * @property {boolean} active Store active status
  */
 
 /**
@@ -24,375 +24,263 @@ import { updateUrlParameters } from '../../utils/url.js';
  */
 
 /**
- * @extends {BaseManager}
- * Manages store selection and caching
+ * Manager for handling store operations and state
+ * @extends BaseManager
  */
-export class StoreManager extends BaseManager {
-    static _instance = null;
+class StoreManager extends BaseManager {
+    static #instance = null;
+    static _registry = null;
+
+    /** @private */
+    #stores = new Map();
+
+    /** @private */
+    #activeStore = null;
+
+    /** @private */
+    #storageKey = 'stores';
+
+    /** @private */
+    #lastSync = 0;
+
+    /** @private */
+    #syncInterval = 5 * 60 * 1000; // 5 minutes
+
+    constructor(registry) {
+        if (StoreManager.#instance) {
+            return StoreManager.#instance;
+        }
+        super(registry, 'store');
+        StoreManager.#instance = this;
+        StoreManager._registry = registry;
+        
+        this.addDependency('storage');
+        this.addDependency('error');
+    }
 
     static getInstance() {
-        if (!StoreManager._instance) {
-            StoreManager._instance = new StoreManager();
+        if (!StoreManager.#instance && StoreManager._registry) {
+            StoreManager.#instance = new StoreManager(StoreManager._registry);
         }
-        return StoreManager._instance;
+        return StoreManager.#instance;
     }
 
-    /** @type {StoreCacheConfig} */
-    static CACHE_CONFIG = {
-        key: 'store_data',
-        expiration: 24 * 60 * 60 * 1000, // 24 hours
-        version: '1.0'
-    };
-
-    constructor() {
-        super('StoreManager');
-        if (StoreManager._instance) {
-            throw new Error('Use StoreManager.getInstance()');
-        }
-
-        /** @type {Store|null} */
-        this._currentStore = null;
-        this._stores = new Map();
-        this._uiManager = null;
-        this._dataManager = null;
-        this._isLoading = false;
-        this._initialized = false;
-        this._initPromise = null;
+    static setRegistry(registry) {
+        StoreManager._registry = registry;
     }
 
     /**
-     * Initialize store manager with optimized loading
+     * Initialize store manager
+     * @protected
      * @returns {Promise<boolean>}
      */
-    async onInitialize() {
-        if (this._initialized) return true;
-        if (this._initPromise) return this._initPromise;
+    async _initialize() {
+        try {
+            // Load stores from storage
+            const storage = await this.getDependency('storage');
+            const data = await storage.get(this.#storageKey);
 
-        this._initPromise = (async () => {
+            if (data?.stores) {
+                for (const [id, store] of Object.entries(data.stores)) {
+                    this.#stores.set(id, store);
+                }
+            }
+
+            if (data?.activeStore) {
+                this.#activeStore = data.activeStore;
+            }
+
+            this.#lastSync = Date.now();
+            
+            // Start sync interval
+            this.#startSync();
+                    
+            return true;
+        } catch (error) {
+            throw new Error(`Failed to initialize StoreManager: ${error.message}`);
+        }
+    }
+
+    /**
+     * Start store sync
+     * @private
+     */
+    #startSync() {
+        setInterval(async () => {
             try {
-                this._isLoading = true;
-                
-                // Get manager instances (moved before store loading)
-                this._uiManager = uiManager;
-                this._dataManager = dataManager;
-
-                // Load stores and last store in parallel
-                const [storesLoaded, lastStoreLoaded] = await Promise.all([
-                    this._loadStores(),
-                    this._loadLastStore()
-                ]);
-
-                if (!storesLoaded) {
-                    throw new Error('Failed to load stores');
-                }
-
-                // Setup UI only after successful data load
-                this._setupStoreSelector();
-
-                this._initialized = true;
-                this.log(LogLevel.SUCCESS, '🏪 Store manager initialized');
-                sendLogToPopup('Store manager initialized', 'success');
-                return true;
+                await this.#syncStores();
             } catch (error) {
-                this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                    method: 'initialize'
-                });
-                sendLogToPopup('Failed to initialize store manager', 'error', error.message);
-                return false;
-            } finally {
-                this._isLoading = false;
-                this._initPromise = null;
+                this.handleError(error, ErrorType.STORE_SYNC, ErrorSeverity.LOW);
             }
-        })();
-
-        return this._initPromise;
+        }, this.#syncInterval);
     }
 
     /**
-     * Load stores with optimized caching
-     * @private
-     * @returns {Promise<boolean>}
-     */
-    async _loadStores() {
-        try {
-            // Initialize stores from static configuration first
-            this._stores.clear();
-            stores.forEach(store => {
-                if (store?.id) {
-                    this._stores.set(store.id, store);
-                }
-            });
-
-            // Try loading from cache in parallel with initialization
-            const cachedData = await this._loadFromCache();
-            if (cachedData) {
-                cachedData.forEach(([id, store]) => {
-                    if (store?.id) {
-                        this._stores.set(id, store);
-                    }
-                });
-            }
-
-            // Update cache only if needed
-            if (!cachedData) {
-                await this._updateCache(Array.from(this._stores.entries()));
-            }
-
-            this.log(LogLevel.DEBUG, '🏪 Stores loaded', {
-                count: this._stores.size,
-                fromCache: !!cachedData
-            });
-            
-            return true;
-        } catch (error) {
-            this.handleError(error, ErrorType.DATA, ErrorSeverity.MEDIUM, {
-                method: '_loadStores'
-            });
-            return false;
-        }
-    }
-
-    /**
-     * Load stores from cache
-     * @private
-     * @returns {Promise<Array|null>}
-     */
-    async _loadFromCache() {
-        try {
-            const { key, expiration, version } = StoreManager.CACHE_CONFIG;
-            const cached = await chrome.storage.local.get(key);
-
-            if (!cached[key]) return null;
-
-            const { data, timestamp, cacheVersion } = cached[key];
-            const age = Date.now() - timestamp;
-
-            // Check expiration and version
-            if (age > expiration || cacheVersion !== version) {
-                return null;
-            }
-
-            return data;
-        } catch (error) {
-            this.handleError(error, ErrorType.CACHE, ErrorSeverity.LOW, {
-                method: '_loadFromCache'
-            });
-            return null;
-        }
-    }
-
-    /**
-     * Update cache with stores data
-     * @private
-     * @param {Array} data - Stores data to cache
-     * @returns {Promise<void>}
-     */
-    async _updateCache(data) {
-        try {
-            const { key, version } = StoreManager.CACHE_CONFIG;
-            await chrome.storage.local.set({
-                [key]: {
-                    data,
-                    timestamp: Date.now(),
-                    cacheVersion: version
-                }
-            });
-
-            this.log(LogLevel.DEBUG, '💾 Stores cache updated');
-        } catch (error) {
-            this.handleError(error, ErrorType.CACHE, ErrorSeverity.LOW, {
-                method: '_updateCache'
-            });
-        }
-    }
-
-    /**
-     * Setup store selector with optimized DOM operations
+     * Sync stores with storage
      * @private
      */
-    _setupStoreSelector() {
+    async #syncStores() {
+        if (Date.now() - this.#lastSync < this.#syncInterval) return;
+
         try {
-            // Create document fragment for better performance
-            const fragment = document.createDocumentFragment();
-            
-            // Add "All stores" option
-            const allStores = stores.find(s => s.id === 'ALL');
-            if (allStores) {
-                const option = document.createElement('option');
-                option.value = allStores.id;
-                option.textContent = allStores.name;
-                option.selected = !this._currentStore;
-                fragment.appendChild(option);
-            }
-
-            // Add remaining stores in batch
-            const sortedStores = Array.from(this._stores.values())
-                .filter(store => store.id !== 'ALL')
-                .sort((a, b) => a.name.localeCompare(b.name));
-
-            sortedStores.forEach(store => {
-                const option = document.createElement('option');
-                option.value = store.id;
-                option.textContent = `${store.name} - ${store.address || ''}`;
-                option.selected = this._currentStore?.id === store.id;
-                fragment.appendChild(option);
+            const storage = await this.getDependency('storage');
+            await storage.set(this.#storageKey, {
+                stores: Object.fromEntries(this.#stores),
+                activeStore: this.#activeStore,
+                lastSync: Date.now()
             });
 
-            // Update DOM once
-            this._uiManager.safeUpdateElement('#store-select', select => {
-                select.innerHTML = '';
-                select.appendChild(fragment);
-                select.disabled = this._isLoading || this._stores.size === 0;
-
-                // Add change handler
-                const existingHandler = select._storeChangeHandler;
-                if (existingHandler) {
-                    select.removeEventListener('change', existingHandler);
-                }
-
-                const handler = async (event) => {
-                    const newStoreId = event.target.value;
-                    await this.changeStore(newStoreId);
-                };
-
-                select._storeChangeHandler = handler;
-                select.addEventListener('change', handler);
+            this.#lastSync = Date.now();
+            
+            // Emit sync event
+            const eventManager = await this.getDependency('event');
+            await eventManager.emit('stores:synced', {
+                timestamp: this.#lastSync,
+                storeCount: this.#stores.size
             });
         } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: '_setupStoreSelector'
-            });
+            throw new Error(`Failed to sync stores: ${error.message}`);
         }
     }
 
     /**
-     * Load last selected store
-     * @private
-     * @returns {Promise<void>}
+     * Add or update a store
+     * @param {Store} store Store object
      */
-    async _loadLastStore() {
-        try {
-            const { lastStore } = await chrome.storage.local.get('lastStore');
-            if (lastStore && this._stores.has(lastStore)) {
-                await this.changeStore(lastStore);
-            }
-        } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
-                method: '_loadLastStore'
-            });
+    async addStore(store) {
+        if (!store?.id || !store?.name) {
+            throw new Error('Invalid store data');
         }
+
+        this.#stores.set(store.id, {
+            ...store,
+            active: store.active ?? true
+        });
+
+        await this.#syncStores();
+
+        // Emit store added/updated event
+        const eventManager = await this.getDependency('event');
+        await eventManager.emit('store:updated', { store });
     }
 
     /**
-     * Change current store
-     * @param {string} storeId - Store ID to change to
-     * @returns {Promise<boolean>}
+     * Remove a store
+     * @param {string} storeId Store ID
      */
-    async changeStore(storeId) {
-        try {
-            // Validate store using the imported function
-            const store = validateStore(storeId);
-            const previousStore = this._currentStore;
-            
-            // Clear cache before changing store
-            await cacheManager.clearAll();
-            
-            // Update current store
-            this._currentStore = store;
-
-            // Update UI
-            this._uiManager.safeUpdateElement('#store-select', select => {
-                select.value = storeId;
-            });
-
-            // Save to storage
-            await chrome.storage.local.set({ lastStore: storeId });
-
-            // Update URL parameters
-            updateUrlParameters({
-                store: storeId,
-                delivery_id: store.id === 'ALL' ? undefined : store.deliveryId
-            });
-
-            // Trigger store change event with more context
-            window.dispatchEvent(new CustomEvent('store:change', {
-                detail: {
-                    previousStore,
-                    currentStore: store,
-                    timestamp: new Date().toISOString()
-                }
-            }));
-
-            // Refresh data for new store
-            if (this._dataManager) {
-                await this._dataManager.refreshData(true);
-            }
-
-            this.log(LogLevel.DEBUG, '🔄 Store changed', { 
-                from: previousStore?.id || 'none',
-                to: store.id,
-                deliveryId: store.deliveryId
-            });
-            
-            sendLogToPopup(`Changed store to: ${store.name}`, 'success');
-            return true;
-        } catch (error) {
-            this.handleError(error, ErrorType.DATA, ErrorSeverity.MEDIUM, {
-                method: 'changeStore',
-                storeId
-            });
-            sendLogToPopup('Failed to change store', 'error', error.message);
-            return false;
+    async removeStore(storeId) {
+        if (!this.#stores.has(storeId)) {
+            throw new Error(`Store ${storeId} not found`);
         }
+
+        const store = this.#stores.get(storeId);
+        this.#stores.delete(storeId);
+
+        if (this.#activeStore === storeId) {
+            this.#activeStore = null;
+        }
+
+        await this.#syncStores();
+
+        // Emit store removed event
+        const eventManager = await this.getDependency('event');
+        await eventManager.emit('store:removed', { storeId, store });
     }
 
     /**
-     * Get filtered stores based on delivery method
-     * @param {string} deliveryMethod - Delivery method to filter by
-     * @returns {Array<Store>}
+     * Get a store by ID
+     * @param {string} storeId Store ID
+     * @returns {Store|null} Store object
      */
-    getFilteredStores(deliveryMethod) {
-        return filterStoresByDeliveryMethod(deliveryMethod);
-    }
-
-    /**
-     * Get current store
-     * @returns {Store|null}
-     */
-    getCurrentStore() {
-        return this._currentStore;
+    getStore(storeId) {
+        return this.#stores.get(storeId) || null;
     }
 
     /**
      * Get all stores
-     * @returns {Map<string, Store>}
+     * @param {Object} [options] Filter options
+     * @param {boolean} [options.activeOnly] Get only active stores
+     * @returns {Store[]} Array of stores
      */
-    getStores() {
-        return new Map(this._stores);
+    getStores(options = {}) {
+        let stores = Array.from(this.#stores.values());
+
+        if (options.activeOnly) {
+            stores = stores.filter(store => store.active);
+        }
+
+        return stores;
     }
 
     /**
-     * Cleanup and dispose
-     * @returns {Promise<void>}
+     * Set active store
+     * @param {string} storeId Store ID
      */
-    async dispose() {
-        try {
-            this._currentStore = null;
-            this._stores.clear();
-            this._uiManager = null;
-            this._dataManager = null;
-            this._isLoading = false;
-
-            await super.dispose();
-            sendLogToPopup('Store manager disposed', 'info');
-        } catch (error) {
-            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH, {
-                method: 'dispose'
-            });
-            sendLogToPopup('Failed to dispose store manager', 'error', error.message);
+    async setActiveStore(storeId) {
+        if (!this.#stores.has(storeId)) {
+            throw new Error(`Store ${storeId} not found`);
         }
+
+        const oldStore = this.#activeStore;
+        this.#activeStore = storeId;
+
+        await this.#syncStores();
+
+        // Emit active store changed event
+        const eventManager = await this.getDependency('event');
+        await eventManager.emit('store:active', {
+            oldStore,
+            newStore: storeId
+        });
+    }
+
+    /**
+     * Get active store
+     * @returns {Store|null} Active store
+     */
+    getActiveStore() {
+        if (!this.#activeStore) return null;
+        return this.getStore(this.#activeStore);
+    }
+
+    /**
+     * Update store status
+     * @param {string} storeId Store ID
+     * @param {boolean} active Active status
+     */
+    async updateStoreStatus(storeId, active) {
+        const store = this.getStore(storeId);
+        if (!store) {
+            throw new Error(`Store ${storeId} not found`);
+        }
+
+        store.active = active;
+        await this.addStore(store);
+    }
+
+    /**
+     * Get store manager stats
+     * @returns {Object} Stats object
+     */
+    getStats() {
+        return {
+            totalStores: this.#stores.size,
+            activeStores: this.getStores({ activeOnly: true }).length,
+            lastSync: this.#lastSync,
+            activeStore: this.#activeStore
+        };
+    }
+
+    /**
+     * Clean up resources
+     * @protected
+     */
+    async _dispose() {
+        await this.#syncStores();
+        this.#stores.clear();
+        this.#activeStore = null;
     }
 }
 
-// Export singleton instance
-export const storeManager = StoreManager.getInstance(); 
+// Export class only
+export { StoreManager };

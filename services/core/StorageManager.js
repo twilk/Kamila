@@ -1,127 +1,64 @@
-import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
-import { 
-    STORAGE_KEYS,
-    QUOTA_WARNING_THRESHOLD,
-    QUOTA_CRITICAL_THRESHOLD,
-    CLEANUP_BATCH_SIZE,
-    LOCK_TIMEOUT
-} from '../../config/storage.js';
 import { BaseManager } from './BaseManager.js';
+import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { LogLevel } from './LogLevel.js';
 
-// Stałe dla buforowania
-const BUFFER_SIZE = 100;
-const BUFFER_FLUSH_INTERVAL = 1000; // 1 sekunda
-const WRITE_BATCH_SIZE = 20;
+const STORAGE_CONFIG = {
+    MAX_ITEMS: 1000,
+    MAX_ITEM_SIZE: 5242880, // 5MB
+    COMPRESSION_THRESHOLD: 1048576, // 1MB
+    CLEANUP_INTERVAL: 3600000, // 1 hour
+    DEFAULT_TTL: 86400000 // 24 hours
+};
 
-// Helper function to get storage info
-async function getStorageInfo() {
-    try {
-        const bytesInUse = await chrome.storage.local.getBytesInUse();
-        const { quotaBytes } = await chrome.storage.local.get('quotaBytes') || { quotaBytes: chrome.storage.local.QUOTA_BYTES };
-        return { bytesInUse, quotaBytes };
-    } catch (error) {
-        console.error('[ERROR] ❌ Error getting storage info:', error);
-        throw error;
-    }
-}
-
-export class StorageManager extends BaseManager {
+/**
+ * Manages chrome.storage operations with compression and cleanup
+ * @extends BaseManager
+ */
+class StorageManager extends BaseManager {
+    /** @private */
     static #instance = null;
-    #locks = new Map();
-    #pendingOperations = new Map();
-    #writeBuffer = new Map();
-    #flushTimer = null;
-    #batchPromises = new Map();
+    static _registry = null;
+    
+    /** @private */
+    #cleanupInterval = null;
+    
+    /** @private */
+    #compressionStats = {
+        totalSaved: 0,
+        compressionRatio: 0,
+        itemsCompressed: 0
+    };
 
-    constructor() {
-        super('StorageManager');
+    constructor(registry) {
         if (StorageManager.#instance) {
             return StorageManager.#instance;
         }
+        super(registry, 'StorageManager');
         StorageManager.#instance = this;
-        this.#initializeBuffer();
+        StorageManager._registry = registry;
+        
+        // Add dependencies
+        this.addDependency('error');
+        this.addDependency('log');
+        this.addDependency('event');
     }
 
-    /**
-     * Initialize write buffer and flush timer
-     * @private
-     */
-    #initializeBuffer() {
-        this.#flushTimer = setInterval(() => {
-            this.#flushBuffer();
-        }, BUFFER_FLUSH_INTERVAL);
-    }
-
-    /**
-     * Flush write buffer to storage
-     * @private
-     */
-    async #flushBuffer() {
-        if (this.#writeBuffer.size === 0) return;
-
+    async _initialize() {
         try {
-            const entries = Array.from(this.#writeBuffer.entries());
-            const batches = [];
+            this.log(LogLevel.INFO, '🔄 Initializing storage manager...');
             
-            // Split into batches
-            for (let i = 0; i < entries.length; i += WRITE_BATCH_SIZE) {
-                const batch = entries.slice(i, i + WRITE_BATCH_SIZE);
-                batches.push(Object.fromEntries(batch));
-            }
-
-            // Process batches
-            for (const batch of batches) {
-                await chrome.storage.local.set(batch);
-            }
-
-            // Clear processed entries
-            entries.forEach(([key]) => this.#writeBuffer.delete(key));
-
-            this.log('✅ Buffer flushed successfully', {
-                entriesCount: entries.length,
-                batchesCount: batches.length
-            });
-        } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.HIGH, {
-                method: '#flushBuffer',
-                bufferSize: this.#writeBuffer.size
-            });
-        }
-    }
-
-    /**
-     * Get singleton instance
-     * @returns {StorageManager}
-     */
-    static getInstance() {
-        if (!StorageManager.#instance) {
-            StorageManager.#instance = new StorageManager();
-        }
-        return StorageManager.#instance;
-    }
-
-    /**
-     * Initialize storage manager
-     * @returns {Promise<boolean>}
-     */
-    async onInitialize() {
-        try {
-            this.log('🔄 Initializing storage manager...');
+            // Start cleanup interval
+            this.#startCleanupInterval();
             
-            // Check storage quota
-            const { bytesInUse, quotaBytes } = await getStorageInfo();
-            const usageRatio = bytesInUse / quotaBytes;
-
-            if (usageRatio > QUOTA_CRITICAL_THRESHOLD) {
-                await this.cleanup();
+            // Verify storage access by trying to write and read a test value
+            try {
+                await chrome.storage.local.set({ '_test': true });
+                await chrome.storage.local.remove('_test');
+            } catch (error) {
+                throw new Error('Storage access verification failed: ' + error.message);
             }
-
-            this.log('✅ Storage manager initialized successfully', {
-                bytesInUse,
-                quotaBytes,
-                usageRatio: (usageRatio * 100).toFixed(2) + '%'
-            });
-
+            
+            this.log(LogLevel.SUCCESS, '✅ Storage manager initialized');
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
@@ -130,254 +67,270 @@ export class StorageManager extends BaseManager {
     }
 
     /**
-     * Get a value from storage with caching
+     * Get singleton instance
+     * @returns {StorageManager}
+     */
+    static getInstance() {
+        if (!StorageManager.#instance && StorageManager._registry) {
+            StorageManager.#instance = new StorageManager(StorageManager._registry);
+        }
+        return StorageManager.#instance;
+    }
+
+    static setRegistry(registry) {
+        StorageManager._registry = registry;
+    }
+
+    /**
+     * Set storage item with optional compression
      * @param {string} key Storage key
-     * @returns {Promise<any>} Stored value
+     * @param {*} value Value to store
+     * @param {Object} [options] Storage options
+     * @param {number} [options.ttl] Time to live in ms
+     * @param {boolean} [options.compress] Whether to compress
+     */
+    async set(key, value, options = {}) {
+        try {
+            const { ttl = STORAGE_CONFIG.DEFAULT_TTL, compress = true } = options;
+            
+            const data = {
+                value,
+                timestamp: Date.now(),
+                ttl,
+                compressed: false
+            };
+
+            // Check size before compression
+            const size = this.#getSize(data);
+            
+            if (size > STORAGE_CONFIG.MAX_ITEM_SIZE) {
+                throw new Error(`Item size (${size}B) exceeds maximum (${STORAGE_CONFIG.MAX_ITEM_SIZE}B)`);
+            }
+
+            // Compress if needed
+            if (compress && size > STORAGE_CONFIG.COMPRESSION_THRESHOLD) {
+                data.value = await this.#compress(value);
+                data.compressed = true;
+                
+                const compressedSize = this.#getSize(data);
+                this.#updateCompressionStats(size, compressedSize);
+            }
+
+            await chrome.storage.local.set({ [key]: data });
+            
+            this.log(LogLevel.DEBUG, `💾 Stored ${key}`, {
+                size,
+                compressed: data.compressed,
+                ttl
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.MEDIUM, {
+                operation: 'set',
+                key
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Get storage item
+     * @param {string} key Storage key
+     * @returns {Promise<*>} Stored value
      */
     async get(key) {
         try {
-            // Check write buffer first
-            if (this.#writeBuffer.has(key)) {
-                return this.#writeBuffer.get(key);
+            const result = await chrome.storage.local.get(key);
+            const data = result[key];
+            
+            if (!data) return null;
+
+            // Check TTL
+            if (this.#isExpired(data)) {
+                await this.remove(key);
+                return null;
             }
 
-            // Check pending operations
-            const pendingOp = this.#pendingOperations.get(key);
-            if (pendingOp) {
-                return pendingOp;
+            // Decompress if needed
+            if (data.compressed) {
+                data.value = await this.#decompress(data.value);
             }
 
-            const promise = chrome.storage.local.get(key)
-                .then(result => result[key]);
-
-            // Cache the promise
-            this.#pendingOperations.set(key, promise);
-
-            const value = await promise;
-            this.#pendingOperations.delete(key);
-
-            return value;
+            return data.value;
         } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.MEDIUM);
-            return null;
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.MEDIUM, {
+                operation: 'get',
+                key
+            });
+            throw error;
         }
     }
 
     /**
-     * Set a value in storage with buffering
+     * Remove storage item
      * @param {string} key Storage key
-     * @param {any} value Value to store
-     * @returns {Promise<boolean>} Success status
-     */
-    async set(key, value) {
-        try {
-            await this.#acquireLock(key);
-
-            // Add to write buffer
-            this.#writeBuffer.set(key, value);
-
-            // Flush if buffer is full
-            if (this.#writeBuffer.size >= BUFFER_SIZE) {
-                await this.#flushBuffer();
-            }
-
-            return true;
-        } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.MEDIUM);
-            return false;
-        } finally {
-            this.#releaseLock(key);
-        }
-    }
-
-    /**
-     * Batch set multiple values
-     * @param {Object} entries Key-value pairs to store
-     * @returns {Promise<boolean>} Success status
-     */
-    async setBatch(entries) {
-        try {
-            const keys = Object.keys(entries);
-            await Promise.all(keys.map(key => this.#acquireLock(key)));
-
-            const batchId = Date.now().toString();
-            const promise = (async () => {
-                try {
-                    // Add all entries to write buffer
-                    Object.entries(entries).forEach(([key, value]) => {
-                        this.#writeBuffer.set(key, value);
-                    });
-
-                    // Flush if buffer is full
-                    if (this.#writeBuffer.size >= BUFFER_SIZE) {
-                        await this.#flushBuffer();
-                    }
-
-                    return true;
-                } finally {
-                    keys.forEach(key => this.#releaseLock(key));
-                    this.#batchPromises.delete(batchId);
-                }
-            })();
-
-            this.#batchPromises.set(batchId, promise);
-            return await promise;
-        } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.HIGH);
-            return false;
-        }
-    }
-
-    /**
-     * Remove a value from storage
-     * @param {string} key Storage key
-     * @returns {Promise<boolean>} Success status
      */
     async remove(key) {
         try {
-            await this.#acquireLock(key);
             await chrome.storage.local.remove(key);
-            return true;
+            this.log(LogLevel.DEBUG, `🗑️ Removed ${key}`);
         } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW);
-            return false;
-        } finally {
-            this.#releaseLock(key);
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
+                operation: 'remove',
+                key
+            });
+            throw error;
         }
     }
 
     /**
      * Clear all storage
-     * @returns {Promise<boolean>} Success status
      */
     async clear() {
         try {
             await chrome.storage.local.clear();
-            return true;
+            this.log(LogLevel.INFO, '🧹 Storage cleared');
         } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.HIGH);
-            return false;
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.HIGH, {
+                operation: 'clear'
+            });
+            throw error;
         }
     }
 
     /**
-     * Clean up storage when approaching quota
-     * @returns {Promise<void>}
+     * Start cleanup interval
+     * @private
+     */
+    #startCleanupInterval() {
+        if (this.#cleanupInterval) {
+            clearInterval(this.#cleanupInterval);
+        }
+
+        this.#cleanupInterval = setInterval(
+            () => this.cleanup(),
+            STORAGE_CONFIG.CLEANUP_INTERVAL
+        );
+
+        this.log(LogLevel.DEBUG, '🔄 Cleanup interval started');
+    }
+
+    /**
+     * Clean up expired items
      */
     async cleanup() {
         try {
-            this.log('🧹 Starting storage cleanup...');
-            
-            const { bytesInUse, quotaBytes } = await getStorageInfo();
-            if (bytesInUse / quotaBytes <= QUOTA_WARNING_THRESHOLD) {
-                this.log('✅ Storage cleanup not needed');
-                return;
-            }
+            const now = Date.now();
+            let removed = 0;
 
-            // Get all keys and their last access time
-            const allData = await chrome.storage.local.get(null);
-            const entries = Object.entries(allData)
-                .filter(([key]) => !this.#isProtectedKey(key))
-                .map(([key, value]) => ({
-                    key,
-                    lastAccess: value?.timestamp || 0,
-                    size: JSON.stringify(value).length
-                }))
-                .sort((a, b) => a.lastAccess - b.lastAccess);
-
-            // Remove oldest entries until under warning threshold
-            let removedCount = 0;
-            for (const entry of entries) {
-                if (bytesInUse / quotaBytes <= QUOTA_WARNING_THRESHOLD) break;
-                
-                await this.remove(entry.key);
-                bytesInUse -= entry.size;
-                removedCount++;
-
-                if (removedCount >= CLEANUP_BATCH_SIZE) {
-                    this.log('⚠️ Reached cleanup batch limit');
-                    break;
+            const data = await chrome.storage.local.get(null);
+            for (const [key, item] of Object.entries(data)) {
+                if (item.ttl && now - item.timestamp > item.ttl) {
+                    await chrome.storage.local.remove(key);
+                    removed++;
                 }
             }
 
-            this.log('✅ Storage cleanup completed', { removedCount });
-        } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.HIGH);
-        }
-    }
-
-    /**
-     * Check if a key is protected from cleanup
-     * @private
-     */
-    #isProtectedKey(key) {
-        const protectedKeys = [
-            STORAGE_KEYS.SELECTED_STORE,
-            STORAGE_KEYS.SELECTED_USER,
-            STORAGE_KEYS.DEBUG_MODE,
-            STORAGE_KEYS.LANGUAGE
-        ];
-        return protectedKeys.includes(key);
-    }
-
-    /**
-     * Acquire a lock for a key
-     * @private
-     */
-    async #acquireLock(key) {
-        const start = Date.now();
-        while (this.#locks.has(key)) {
-            if (Date.now() - start > LOCK_TIMEOUT) {
-                throw new Error(`Lock timeout for key: ${key}`);
+            if (removed > 0) {
+                this.log(LogLevel.INFO, `🧹 Cleaned up ${removed} expired items`);
             }
-            await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (error) {
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
+                operation: 'cleanup'
+            });
         }
-        this.#locks.set(key, Date.now());
     }
 
     /**
-     * Release a lock for a key
+     * Check if item is expired
      * @private
      */
-    #releaseLock(key) {
-        this.#locks.delete(key);
+    #isExpired(data) {
+        return data.timestamp + data.ttl < Date.now();
+    }
+
+    /**
+     * Get size of data in bytes
+     * @private
+     */
+    #getSize(data) {
+        return new Blob([JSON.stringify(data)]).size;
+    }
+
+    /**
+     * Compress data
+     * @private
+     */
+    async #compress(data) {
+        const str = JSON.stringify(data);
+        const bytes = new TextEncoder().encode(str);
+        const compressed = await new Response(
+            new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))
+        ).blob();
+        return await compressed.arrayBuffer();
+    }
+
+    /**
+     * Decompress data
+     * @private
+     */
+    async #decompress(data) {
+        const decompressed = await new Response(
+            new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip'))
+        ).blob();
+        const text = await decompressed.text();
+        return JSON.parse(text);
+    }
+
+    /**
+     * Update compression stats
+     * @private
+     */
+    #updateCompressionStats(originalSize, compressedSize) {
+        const saved = originalSize - compressedSize;
+        this.#compressionStats.totalSaved += saved;
+        this.#compressionStats.itemsCompressed++;
+        this.#compressionStats.compressionRatio = 
+            (this.#compressionStats.totalSaved / 
+             (originalSize * this.#compressionStats.itemsCompressed)) * 100;
+    }
+
+    /**
+     * Get storage stats
+     */
+    async getStats() {
+        try {
+            const items = await chrome.storage.local.get(null);
+            const itemCount = Object.keys(items).length;
+            const totalSize = Object.values(items)
+                .reduce((sum, data) => sum + this.#getSize(data), 0);
+
+            return {
+                itemCount,
+                totalSize,
+                compression: this.#compressionStats,
+                quota: await chrome.storage.local.getBytesInUse(null)
+            };
+        } catch (error) {
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
+                operation: 'getStats'
+            });
+            throw error;
+        }
     }
 
     /**
      * Dispose storage manager
      */
     async dispose() {
-        try {
-            // Clear flush timer
-            if (this.#flushTimer) {
-                clearInterval(this.#flushTimer);
-                this.#flushTimer = null;
-            }
-
-            // Flush remaining buffer
-            await this.#flushBuffer();
-
-            // Wait for pending operations
-            await Promise.all([
-                ...this.#pendingOperations.values(),
-                ...this.#batchPromises.values()
-            ]);
-
-            // Clear maps
-            this.#writeBuffer.clear();
-            this.#pendingOperations.clear();
-            this.#batchPromises.clear();
-            this.#locks.clear();
-
-            await super.dispose();
-        } catch (error) {
-            this.handleError(error, ErrorType.DISPOSE, ErrorSeverity.HIGH);
+        if (this.#cleanupInterval) {
+            clearInterval(this.#cleanupInterval);
+            this.#cleanupInterval = null;
         }
+
+        await super.dispose();
     }
 }
 
-// Export singleton instance
-export const storageManager = StorageManager.getInstance();
-
-// Re-export storage keys for backward compatibility
-export { STORAGE_KEYS }; 
+// Export both class and instance
+export { StorageManager };
+export const storageManager = StorageManager.getInstance(); 

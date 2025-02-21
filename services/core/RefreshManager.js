@@ -1,55 +1,127 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
-import { INTERVALS } from '../../config/intervals.js';
+import { LogLevel } from './LogLevel.js';
+import { INTERVALS, REFRESH_CONFIG } from '../../config/intervals.js';
 
 /**
  * @extends {BaseManager}
  * Manages data refresh intervals and auto-refresh functionality
  */
-export class RefreshManager extends BaseManager {
-    static _instance = null;
+class RefreshManager extends BaseManager {
+    /** @private */
+    static #instance = null;
+    static _registry = null;
 
-    static getInstance() {
-        if (!RefreshManager._instance) {
-            RefreshManager._instance = new RefreshManager();
+    /** @private */
+    #settings;
+
+    /** @private */
+    #intervals = {
+        check: null,
+        notification: null,
+        fullRefresh: null,
+        deltaUpdate: null
+    };
+
+    constructor(registry) {
+        if (RefreshManager.#instance) {
+            return RefreshManager.#instance;
         }
-        return RefreshManager._instance;
+        super(registry, 'RefreshManager');
+        RefreshManager.#instance = this;
+        RefreshManager._registry = registry;
+        
+        // Add dependencies
+        this.addDependency('event');
+        this.addDependency('order');
     }
 
-    constructor() {
-        super('RefreshManager');
-        if (RefreshManager._instance) {
-            throw new Error('Use RefreshManager.getInstance()');
+    static getInstance() {
+        if (!RefreshManager.#instance && RefreshManager._registry) {
+            RefreshManager.#instance = new RefreshManager(RefreshManager._registry);
         }
-        RefreshManager._instance = this;
-        this._intervals = {
-            check: null,
-            notification: null,
-            fullRefresh: null
-        };
-        this._settings = {
-            check_frequency: 'off',
-            notification_interval: 'off',
-            full_refresh: 'off',
-            data_freshness: 'off'
-        };
+        return RefreshManager.#instance;
+    }
+
+    static setRegistry(registry) {
+        RefreshManager._registry = registry;
     }
 
     /**
      * Initialize refresh manager
      * @returns {Promise<boolean>}
      */
-    async onInitialize() {
+    async _initialize() {
         try {
-            await this._loadSettings();
-            this._setupEventListeners();
-            this._applySettings();
+            this.log(LogLevel.INFO, '🔄 Initializing refresh manager...');
+            
+            // Load refresh settings
+            const storage = await this.getDependency('storage');
+            const settings = await storage.get(REFRESH_CONFIG.STORAGE_KEY) || {};
+            this.#settings = { ...REFRESH_CONFIG.DEFAULT_SETTINGS, ...settings };
+            
+            // Set up event listeners
+            this.#setupEventListeners();
+            
+            this.log(LogLevel.SUCCESS, '✅ Refresh manager initialized');
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initialize'
-            });
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
             return false;
+        }
+    }
+
+    async handleRefreshNeeded() {
+        try {
+            this.log(LogLevel.INFO, '🔄 Handling refresh needed event');
+            const [orderManager, eventManager] = await Promise.all([
+                this.getDependency('order'),
+                this.getDependency('event')
+            ]);
+            
+            await orderManager.refreshData();
+            eventManager.emit('refresh:complete');
+        } catch (error) {
+            const eventManager = await this.getDependency('event');
+            this.handleError(error, ErrorType.REFRESH, ErrorSeverity.MEDIUM);
+            eventManager.emit('refresh:error', error);
+        }
+    }
+
+    async handleManualRefresh() {
+        try {
+            this.log(LogLevel.INFO, '🔄 Handling manual refresh request');
+            const [orderManager, eventManager] = await Promise.all([
+                this.getDependency('order'),
+                this.getDependency('event')
+            ]);
+            
+            await orderManager.refreshData(true);
+            eventManager.emit('refresh:complete');
+        } catch (error) {
+            const eventManager = await this.getDependency('event');
+            this.handleError(error, ErrorType.REFRESH, ErrorSeverity.MEDIUM);
+            eventManager.emit('refresh:error', error);
+        }
+    }
+
+    /**
+     * Wait for OrderManager initialization
+     * @private
+     * @returns {Promise<void>}
+     */
+    async #waitForOrderManager(maxAttempts = 10, interval = 1000) {
+        let attempts = 0;
+        const orderManager = await this.getDependency('order');
+        
+        while (!orderManager.isInitialized() && attempts < maxAttempts) {
+            this.log(LogLevel.INFO, `⏳ Waiting for OrderManager (attempt ${attempts + 1}/${maxAttempts})...`);
+            await new Promise(resolve => setTimeout(resolve, interval));
+            attempts++;
+        }
+        
+        if (!orderManager.isInitialized()) {
+            throw new Error('OrderManager initialization timeout');
         }
     }
 
@@ -59,8 +131,8 @@ export class RefreshManager extends BaseManager {
      */
     async _loadSettings() {
         try {
-            const settings = await chrome.storage.local.get(Object.keys(this._settings));
-            this._settings = { ...this._settings, ...settings };
+            const settings = await chrome.storage.local.get(Object.keys(this.#settings));
+            this.#settings = { ...this.#settings, ...settings };
         } catch (error) {
             this.handleError(error, ErrorType.STORAGE, ErrorSeverity.MEDIUM, {
                 method: '_loadSettings'
@@ -72,7 +144,7 @@ export class RefreshManager extends BaseManager {
      * Set up refresh-related event listeners
      * @private
      */
-    _setupEventListeners() {
+    #setupEventListeners() {
         document.querySelectorAll('input[type="radio"]').forEach(radio => {
             radio.addEventListener('change', (e) => this._handleSettingChange(e));
         });
@@ -86,8 +158,8 @@ export class RefreshManager extends BaseManager {
     async _handleSettingChange(event) {
         try {
             const { name, value } = event.target;
-            if (name in this._settings) {
-                this._settings[name] = value;
+            if (name in this.#settings) {
+                this.#settings[name] = value;
                 await chrome.storage.local.set({ [name]: value });
                 this._applySettings();
             }
@@ -102,27 +174,32 @@ export class RefreshManager extends BaseManager {
      * Apply current refresh settings
      * @private
      */
-    _applySettings() {
+    async _applySettings() {
         try {
             // Clear existing intervals
-            Object.values(this._intervals).forEach(interval => {
+            Object.values(this.#intervals).forEach(interval => {
                 if (interval) clearInterval(interval);
             });
 
             // Set up new intervals based on settings
-            if (this._settings.check_frequency !== 'off') {
-                const checkMs = this._getMilliseconds(this._settings.check_frequency);
-                this._intervals.check = setInterval(() => this._performCheck(), checkMs);
+            if (this.#settings.check_frequency !== 'off') {
+                const checkMs = this._getMilliseconds(this.#settings.check_frequency);
+                this.#intervals.check = setInterval(() => this.checkRefresh(), checkMs);
             }
 
-            if (this._settings.notification_interval !== 'off') {
-                const notifyMs = this._getMilliseconds(this._settings.notification_interval);
-                this._intervals.notification = setInterval(() => this._showNotification(), notifyMs);
+            if (this.#settings.notification_interval !== 'off') {
+                const notifyMs = this._getMilliseconds(this.#settings.notification_interval);
+                this.#intervals.notification = setInterval(() => this.notifyRefresh(), notifyMs);
             }
 
-            if (this._settings.full_refresh !== 'off') {
-                const refreshMs = this._getMilliseconds(this._settings.full_refresh);
-                this._intervals.fullRefresh = setInterval(() => this._performFullRefresh(), refreshMs);
+            if (this.#settings.full_refresh !== 'off') {
+                const refreshMs = this._getMilliseconds(this.#settings.full_refresh);
+                this.#intervals.fullRefresh = setInterval(() => this.fullRefresh(), refreshMs);
+            }
+
+            if (this.#settings.delta_update !== 'off') {
+                const deltaMs = this._getMilliseconds(this.#settings.delta_update);
+                this.#intervals.deltaUpdate = setInterval(() => this.deltaUpdate(), deltaMs);
             }
 
             // Update UI
@@ -156,7 +233,7 @@ export class RefreshManager extends BaseManager {
      * @private
      */
     _updateUI() {
-        Object.entries(this._settings).forEach(([name, value]) => {
+        Object.entries(this.#settings).forEach(([name, value]) => {
             const radio = document.querySelector(`input[name="${name}"][value="${value}"]`);
             if (radio) {
                 radio.checked = true;
@@ -168,14 +245,28 @@ export class RefreshManager extends BaseManager {
      * Perform data check
      * @private
      */
-    async _performCheck() {
+    async checkRefresh() {
         try {
-            // Implement check logic
-            const event = new CustomEvent('refresh:check');
-            document.dispatchEvent(event);
+            const [eventManager, orderManager] = await Promise.all([
+                this.getDependency('event'),
+                this.getDependency('order')
+            ]);
+            
+            eventManager.emit('refresh:check');
+            
+            // Check data freshness through OrderManager
+            const orders = orderManager.getCache();
+            if (orders.length > 0) {
+                eventManager.emit('refresh:data-fresh', {
+                    count: orders.length,
+                    timestamp: Date.now()
+                });
+            }
+            
+            this.log(LogLevel.DEBUG, '🔄 Refresh check completed');
         } catch (error) {
             this.handleError(error, ErrorType.REFRESH, ErrorSeverity.LOW, {
-                method: '_performCheck'
+                method: 'checkRefresh'
             });
         }
     }
@@ -184,14 +275,14 @@ export class RefreshManager extends BaseManager {
      * Show notification
      * @private
      */
-    async _showNotification() {
+    async notifyRefresh() {
         try {
-            // Implement notification logic
-            const event = new CustomEvent('refresh:notify');
-            document.dispatchEvent(event);
+            const eventManager = await this.getDependency('event');
+            eventManager.emit('refresh:notify');
+            this.log(LogLevel.DEBUG, '🔔 Refresh notification sent');
         } catch (error) {
-            this.handleError(error, ErrorType.REFRESH, ErrorSeverity.LOW, {
-                method: '_showNotification'
+            this.handleError(error, ErrorType.NOTIFICATION, ErrorSeverity.LOW, {
+                method: 'notifyRefresh'
             });
         }
     }
@@ -200,15 +291,63 @@ export class RefreshManager extends BaseManager {
      * Perform full data refresh
      * @private
      */
-    async _performFullRefresh() {
+    async fullRefresh() {
         try {
-            // Implement full refresh logic
-            const event = new CustomEvent('refresh:full');
-            document.dispatchEvent(event);
-        } catch (error) {
-            this.handleError(error, ErrorType.REFRESH, ErrorSeverity.MEDIUM, {
-                method: '_performFullRefresh'
+            this.log(LogLevel.INFO, '🔄 Starting full refresh...');
+            
+            const [eventManager, orderManager] = await Promise.all([
+                this.getDependency('event'),
+                this.getDependency('order')
+            ]);
+            
+            eventManager.emit('refresh:full-start');
+            
+            // Perform full refresh through OrderManager
+            await orderManager.refreshData();
+            
+            eventManager.emit('refresh:full-complete', {
+                timestamp: Date.now()
             });
+            
+            this.log(LogLevel.SUCCESS, '✅ Full refresh completed');
+        } catch (error) {
+            const eventManager = await this.getDependency('event');
+            this.handleError(error, ErrorType.REFRESH, ErrorSeverity.MEDIUM, {
+                method: 'fullRefresh'
+            });
+            eventManager.emit('refresh:full-error', { error });
+        }
+    }
+
+    /**
+     * Perform delta update
+     * @private
+     */
+    async deltaUpdate() {
+        try {
+            this.log(LogLevel.INFO, '🔄 Starting delta update...');
+            
+            const [eventManager, orderManager] = await Promise.all([
+                this.getDependency('event'),
+                this.getDependency('order')
+            ]);
+            
+            eventManager.emit('refresh:delta-start');
+            
+            // Perform delta update through OrderManager
+            await orderManager.fetchDeltaUpdates();
+            
+            eventManager.emit('refresh:delta-complete', {
+                timestamp: Date.now()
+            });
+            
+            this.log(LogLevel.SUCCESS, '✅ Delta update completed');
+        } catch (error) {
+            const eventManager = await this.getDependency('event');
+            this.handleError(error, ErrorType.REFRESH, ErrorSeverity.LOW, {
+                method: 'deltaUpdate'
+            });
+            eventManager.emit('refresh:delta-error', { error });
         }
     }
 
@@ -217,7 +356,7 @@ export class RefreshManager extends BaseManager {
      * @returns {Object} Current settings
      */
     getSettings() {
-        return { ...this._settings };
+        return { ...this.#settings };
     }
 
     /**
@@ -227,10 +366,10 @@ export class RefreshManager extends BaseManager {
      */
     async updateSetting(name, value) {
         try {
-            if (name in this._settings) {
-                this._settings[name] = value;
+            if (name in this.#settings) {
+                this.#settings[name] = value;
                 await chrome.storage.local.set({ [name]: value });
-                this._applySettings();
+                await this._applySettings();
             }
         } catch (error) {
             this.handleError(error, ErrorType.REFRESH, ErrorSeverity.LOW, {
@@ -248,7 +387,7 @@ export class RefreshManager extends BaseManager {
     async dispose() {
         try {
             // Clear all intervals
-            Object.values(this._intervals).forEach(interval => {
+            Object.values(this.#intervals).forEach(interval => {
                 if (interval) clearInterval(interval);
             });
 
@@ -266,5 +405,6 @@ export class RefreshManager extends BaseManager {
     }
 }
 
-// Export singleton instance
+// Export both class and instance
+export { RefreshManager };
 export const refreshManager = RefreshManager.getInstance(); 

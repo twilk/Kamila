@@ -1,60 +1,77 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { LogLevel } from './LogLevel.js';
-import { eventManager } from './EventManager.js';
 import { EventType } from './EventType.js';
+import { LANGUAGE_CONFIG } from '../../config/language.js';
 
 /**
  * @extends {BaseManager}
  * Manages language settings and translations
  */
-export class LanguageManager extends BaseManager {
+class LanguageManager extends BaseManager {
+    /** @private */
     static #instance = null;
+    static _registry = null;
+
+    /** @private */
+    #settings;
+
+    /** @private */
+
     #currentLanguage = 'polish';
     #translations = {};
     #supportedLanguages = ['polish', 'english', 'ukrainian'];
-    #eventManager = null;
+    #isReady = false;
 
-    constructor() {
+    constructor(registry) {
         if (LanguageManager.#instance) {
             return LanguageManager.#instance;
         }
-        super('LanguageManager');
+        super(registry, 'LanguageManager');
         LanguageManager.#instance = this;
+        LanguageManager._registry = registry;
         
         // Add EventManager dependency
-        this.addDependency(eventManager);
+        this.addDependency('event');
     }
 
     static getInstance() {
-        if (!LanguageManager.#instance) {
-            LanguageManager.#instance = new LanguageManager();
+        if (!LanguageManager.#instance && LanguageManager._registry) {
+            LanguageManager.#instance = new LanguageManager(LanguageManager._registry);
         }
         return LanguageManager.#instance;
+    }
+
+    static setRegistry(registry) {
+        LanguageManager._registry = registry;
     }
 
     /**
      * Initialize language manager
      * @returns {Promise<boolean>}
      */
-    async onInitialize() {
+    async _initialize() {
         try {
-            // Get EventManager instance
-            this.#eventManager = eventManager;
-
-            await this.#loadLanguagePreference();
-            await this.#loadTranslations();
+            this.log(LogLevel.INFO, '🔄 Initializing language manager...');
+            
+            // Load language settings
+            const storage = await this.getDependency('storage');
+            const settings = await storage.get(LANGUAGE_CONFIG.STORAGE_KEY) || {};
+            this.#settings = { ...LANGUAGE_CONFIG.DEFAULT_SETTINGS, ...settings };
+            
+            // Set up event listeners
             this.#setupEventListeners();
-            await this.updateUI();
             
             this.log(LogLevel.SUCCESS, '✅ Language manager initialized');
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initialize'
-            });
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
             return false;
         }
+    }
+
+    isReady() {
+        return this.#isReady;
     }
 
     /**
@@ -103,28 +120,66 @@ export class LanguageManager extends BaseManager {
                 method: '_loadTranslations',
                 language: this.#currentLanguage
             });
-            // Set empty translations to prevent errors
             this.#translations = {};
         }
     }
 
     /**
-     * Set up language switcher event listeners
+     * Set up event listeners
      * @private
      */
-    #setupEventListeners() {
-        if (this.#eventManager) {
-            // Listen for language change events from other parts of the app
-            this.#eventManager.on(EventType.LANGUAGE_CHANGED, async (eventData) => {
-                // Handle both event.detail and direct data format
-                const language = eventData?.detail?.language || eventData?.language;
-                
+    async #setupEventListeners() {
+        try {
+            const eventManager = await this.getDependency('event');
+            
+            // Listen for language events
+            await eventManager.on('language:change', async (event) => {
+                const language = event?.detail?.language || event?.language;
                 if (language && language !== this.#currentLanguage) {
                     await this.setLanguage(language);
                 }
             });
 
+            // Listen for UI update events
+            await eventManager.on('ui:ready', this.updateUI.bind(this));
+            await eventManager.on('orders:updated', this.updateOrderTranslations.bind(this));
+            
+            // Load initial language
+            await this.#loadLanguagePreference();
+            await this.#loadTranslations();
+            
             this.log(LogLevel.DEBUG, '🌍 Language event listeners set up');
+        } catch (error) {
+            this.handleError(error, ErrorType.EVENT_LISTENER, ErrorSeverity.HIGH, {
+                method: '#setupEventListeners'
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Update order-related translations in UI
+     * @private
+     */
+    async updateOrderTranslations() {
+        try {
+            // Update status labels
+            document.querySelectorAll('[data-order-status]').forEach(element => {
+                const status = element.dataset.orderStatus;
+                const key = `leadStatuses.${status}`;
+                element.textContent = this.translate(key);
+            });
+
+            // Update notification texts
+            document.querySelectorAll('[data-order-notification]').forEach(element => {
+                const type = element.dataset.orderNotification;
+                const key = `notifications.${type}`;
+                element.textContent = this.translate(key);
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: 'updateOrderTranslations'
+            });
         }
     }
 
@@ -171,15 +226,17 @@ export class LanguageManager extends BaseManager {
                 element.placeholder = this.translate(key);
             });
 
-            // Emit language changed event with proper format
-            if (this.#eventManager) {
-                this.#eventManager.emit(EventType.LANGUAGE_CHANGED, {
-                    detail: {
-                        language: this.#currentLanguage,
-                        timestamp: new Date().toISOString()
-                    }
-                });
-            }
+            // Update order translations
+            await this.updateOrderTranslations();
+
+            // Emit language changed event
+            const eventManager = await this.getDependency('event');
+            await eventManager.emit(EventType.LANGUAGE_CHANGED, {
+                detail: {
+                    language: this.#currentLanguage,
+                    timestamp: new Date().toISOString()
+                }
+            });
         } catch (error) {
             this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
                 method: 'updateUI'
@@ -234,7 +291,7 @@ export class LanguageManager extends BaseManager {
      */
     translate(key, params = {}) {
         try {
-            let text = this.#translations[key]?.message || key;
+            let text = this.#translations[key]?.message || this.#translations[key] || key;
 
             // Replace parameters
             Object.entries(params).forEach(([param, value]) => {
@@ -257,8 +314,9 @@ export class LanguageManager extends BaseManager {
      */
     async dispose() {
         try {
-            if (this.#eventManager) {
-                this.#eventManager.removeAllDelegates();
+            const eventManager = this.getDependency('event');
+            if (eventManager) {
+                eventManager.removeAllDelegates();
             }
             await super.dispose();
         } catch (error) {
@@ -269,5 +327,6 @@ export class LanguageManager extends BaseManager {
     }
 }
 
-// Export singleton instance
+// Export both class and instance
+export { LanguageManager };
 export const languageManager = LanguageManager.getInstance(); 

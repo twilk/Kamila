@@ -29,131 +29,284 @@ const MANAGER_GROUPS = {
 };
 
 /**
+ * @typedef {Object} LoadingState
+ * @property {string} id - Loading state ID
+ * @property {string} message - Loading message
+ * @property {number} progress - Progress percentage (0-100)
+ * @property {boolean} isBlocking - Whether this state blocks UI
+ * @property {number} startTime - Start timestamp
+ * @property {number} [endTime] - End timestamp
+ * @property {string} [error] - Error message if failed
+ */
+
+/**
  * @extends {BaseManager}
  * Manages initial loading screen and progress indicators during app initialization
  */
 export class InitialLoadingManager extends BaseManager {
-    static _instance = null;
+    /** @private */
+    static #instance = null;
+    /** @private */
+    static _registry = null;
 
-    // Private fields
+    /** @private */
     #container = null;
+    /** @private */
     #progressBar = null;
+    /** @private */
     #progressLabel = null;
+    /** @private */
     #statusText = null;
+    /** @private */
     #loadingTime = null;
+    /** @private */
     #startTime = null;
+    /** @private */
     #totalSteps = 0;
+    /** @private */
     #currentStep = 0;
+    /** @private */
     #isVisible = false;
+    /** @private */
     #minLoadingTime = 1500; // Minimum loading screen display time
+    /** @private */
     #translations = LOADING_TRANSLATIONS;
+    /** @private */
     #isLoading = false;
+    /** @private */
     #loadingText = '';
+    /** @private */
     #loadingProgress = 0;
+    /** @private */
     #loadingTotal = 0;
+    /** @private */
     #progressSteps = null;
+    /** @private */
     #wordsLoader = null;
+    /** @private */
     #truckLoader = null;
+    /** @private */
+    #loadingStates = new Map();
+    /** @private */
+    #loadingPromise = null;
+    /** @private */
+    #loadingResolve = null;
+    /** @private */
+    #loadingReject = null;
+    /** @private */
+    #completedSteps = 0;
+    /** @private */
+    #progress = 0;
+    /** @private */
+    #eventManager = null;
+    /** @private */
+    #total = 0;
 
-    static getInstance() {
-        if (!InitialLoadingManager._instance) {
-            InitialLoadingManager._instance = new InitialLoadingManager();
+    constructor(registry) {
+        if (InitialLoadingManager.#instance) {
+            return InitialLoadingManager.#instance;
         }
-        return InitialLoadingManager._instance;
+        super(registry, 'LoadingManager');
+        InitialLoadingManager.#instance = this;
+        InitialLoadingManager._registry = registry;
+        
+        // Add dependencies
+        this.addDependency('event');
     }
 
-    constructor() {
-        super('InitialLoadingManager');
-        if (InitialLoadingManager._instance) {
-            throw new Error('Use InitialLoadingManager.getInstance()');
+    static getInstance() {
+        if (!InitialLoadingManager.#instance && InitialLoadingManager._registry) {
+            InitialLoadingManager.#instance = new InitialLoadingManager(InitialLoadingManager._registry);
         }
-        // Add dependency on OperationProgressManager
-        this.addDependency(operationProgressManager);
+        return InitialLoadingManager.#instance;
+    }
+
+    static setRegistry(registry) {
+        if (!registry) {
+            throw new Error('Registry is required');
+        }
+        InitialLoadingManager._registry = registry;
     }
 
     /**
      * Initialize loading manager
-     * @returns {Promise<void>}
+     * @returns {Promise<boolean>}
      */
-    async onInitialize() {
+    async _initialize() {
         try {
-            // Initialize loading state
-            this.#isLoading = false;
-            this.#loadingText = '';
-            this.#loadingProgress = 0;
-            this.#loadingTotal = 0;
+            this.log(LogLevel.INFO, '🔄 Initializing loading manager...');
+            
+            // Start loading sequence
+            await this.startLoading(10); // Set total steps based on number of critical managers
+            
+            // Show initial loading message
+            this.updateProgress(1, 'Initializing core services...');
+            
+            // Get required dependencies
+            const [eventManager, storageManager] = await Promise.all([
+                this.getDependency('event'),
+                this.getDependency('storage')
+            ]);
 
-            // Initialize loading UI
-            await this.#createLoadingScreen();
+            // Validate required dependencies
+            if (!eventManager?.isInitialized()) {
+                throw new Error('EventManager must be initialized');
+            }
+            if (!storageManager?.isInitialized()) {
+                throw new Error('StorageManager must be initialized');
+            }
 
-            // Initialize progress manager
-            await operationProgressManager.initialize();
+            // Update progress for core services
+            this.updateProgress(2, 'Core services initialized');
 
-            this.log(LogLevel.SUCCESS, '⚡ Loading manager initialized');
+            // Initialize UI components
+            this.updateProgress(3, 'Loading UI components...');
+            
+            // Initialize data layer
+            this.updateProgress(5, 'Loading data layer...');
+            
+            // Initialize features
+            this.updateProgress(7, 'Loading features...');
+            
+            // Final checks
+            this.updateProgress(9, 'Performing final checks...');
+            
+            // Complete loading
+            await this.finishLoading();
+            
+            this.log(LogLevel.SUCCESS, '✅ Loading manager initialized');
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initialize'
-            });
+            await this.finishLoading(true); // Show error state
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
             return false;
         }
     }
 
     /**
-     * Create loading screen elements
+     * Start loading sequence
+     * @param {number} totalSteps Total number of loading steps
+     */
+    async startLoading(totalSteps) {
+        try {
+            this.#total = totalSteps;
+            this.#progress = 0;
+            this.#isVisible = true;
+            
+            // Create or update loading UI
+            const loadingElement = document.querySelector('.loading-container') || this.#createLoadingElement();
+            loadingElement.style.display = 'flex';
+            
+            // Initialize progress bar
+            const progressBar = loadingElement.querySelector('.progress-bar');
+            const progressText = loadingElement.querySelector('.progress-text');
+            
+            if (progressBar) {
+                progressBar.style.width = '0%';
+                progressBar.setAttribute('aria-valuenow', '0');
+            }
+            
+            if (progressText) {
+                progressText.textContent = 'Starting initialization...';
+            }
+            
+            this.log(LogLevel.INFO, '🚀 Started loading sequence', { totalSteps });
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM);
+        }
+    }
+
+    /**
+     * Update loading progress
+     * @param {number} step Current step
+     * @param {string} status Status message
+     */
+    async updateProgress(step, status = '') {
+        try {
+            this.#progress = step;
+            const percentage = Math.round((step / this.#total) * 100);
+            
+            const loadingElement = document.querySelector('.loading-container');
+            if (!loadingElement) return;
+            
+            const progressBar = loadingElement.querySelector('.progress-bar');
+            const progressText = loadingElement.querySelector('.progress-text');
+            
+            if (progressBar) {
+                progressBar.style.width = `${percentage}%`;
+                progressBar.setAttribute('aria-valuenow', percentage.toString());
+            }
+            
+            if (progressText && status) {
+                progressText.textContent = status;
+            }
+            
+            this.log(LogLevel.DEBUG, `📊 Loading progress: ${percentage}%`, { step, status });
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW);
+        }
+    }
+
+    /**
+     * Finish loading sequence
+     * @param {boolean} isError Whether loading failed
+     */
+    async finishLoading(isError = false) {
+        try {
+            const loadingElement = document.querySelector('.loading-container');
+            if (!loadingElement) return;
+            
+            const progressBar = loadingElement.querySelector('.progress-bar');
+            const progressText = loadingElement.querySelector('.progress-text');
+            
+            if (progressBar) {
+                progressBar.style.width = '100%';
+                progressBar.classList.toggle('error', isError);
+            }
+            
+            if (progressText) {
+                progressText.textContent = isError ? 'Failed to initialize' : 'Initialization complete';
+            }
+            
+            // Fade out loading screen
+            loadingElement.style.opacity = '0';
+            await new Promise(resolve => setTimeout(resolve, 500));
+            loadingElement.style.display = 'none';
+            
+            this.#isVisible = false;
+            this.log(LogLevel.INFO, isError ? '❌ Loading failed' : '✅ Loading complete');
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW);
+        }
+    }
+
+    /**
+     * Create loading UI element
      * @private
      */
-    async #createLoadingScreen() {
-        try {
-            const container = document.querySelector('.loading-container');
-            if (!container) {
-                throw new Error('Loading container not found in popup.html');
-            }
-
-            // Create main structure
-            const loaderContainer = document.createElement('div');
-            loaderContainer.className = 'loader-container';
-
-            // 1. Create Truck Loader
-            const truckLoader = this.#createTruckLoader();
-            
-            // 2. Create Progress Bar
-            const progressBar = this.#createProgressBar();
-            
-            // 3. Create Words Loader
-            const wordsLoader = this.#createWordsLoader();
-
-            // Add all loaders to container
-            loaderContainer.appendChild(truckLoader);
-            loaderContainer.appendChild(progressBar);
-            loaderContainer.appendChild(wordsLoader);
-            
-            // Clear and add new content
-            container.innerHTML = '';
-            container.appendChild(loaderContainer);
-
-            // Store references
-            this.#container = container;
-            this.#progressBar = progressBar.querySelector('.load');
-            this.#progressLabel = progressBar.querySelector('.loader-text');
-            this.#progressSteps = progressBar.querySelector('.progress-steps');
-            this.#wordsLoader = wordsLoader;
-            this.#truckLoader = truckLoader;
-
-            // Initialize progress steps
-            this.#createProgressSteps();
-
-            // Ensure proper classes
-            container.classList.remove('d-none', 'fade-out');
-            container.style.display = 'flex';
-            container.style.opacity = '1';
-
-            return container;
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.HIGH, {
-                method: '#createLoadingScreen'
-            });
-        }
+    #createLoadingElement() {
+        const element = document.createElement('div');
+        element.className = 'loading-container';
+        element.innerHTML = `
+            <div class="loading-content">
+                <div class="loading-icon">
+                    <div class="truck-container">
+                        <div class="truck">
+                            <div class="truck-body"></div>
+                            <div class="truck-cabin"></div>
+                            <div class="wheel"></div>
+                            <div class="wheel"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="progress">
+                    <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <div class="progress-text">Starting initialization...</div>
+            </div>
+        `;
+        document.body.appendChild(element);
+        return element;
     }
 
     /**
@@ -244,240 +397,95 @@ export class InitialLoadingManager extends BaseManager {
     }
 
     /**
-     * Start loading screen with specified number of steps
-     * @param {number} totalSteps Number of loading steps
+     * Clean up resources
+     * @protected
      */
-    async startLoading(totalSteps) {
+    async _dispose() {
         try {
-            if (this.#isVisible) {
-                this.log(LogLevel.WARN, '⚠️ Loading screen already visible');
-                return;
-            }
-
-            this.#isVisible = true;
-            this.#startTime = performance.now();
-            this.#totalSteps = totalSteps;
-            this.#currentStep = 0;
-
-            // Show loading screen with fade-in animation
-            if (this.#container) {
-                this.#container.classList.remove('hidden', 'fade-out');
-                this.#container.classList.add('fade-in');
-                this.log(LogLevel.INFO, '🎬 Opening loading screen');
-                this.emit('loading:start', { totalSteps });
-            }
-
-            // Start progress tracking
-            operationProgressManager.startTask('Inicjalizacja aplikacji', totalSteps);
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: 'startLoading',
-                totalSteps
-            });
-        }
-    }
-
-    /**
-     * Update loading progress
-     * @param {number} step Current step
-     * @param {string} status Status message
-     */
-    async updateProgress(step, status = '') {
-        try {
-            if (!this.#isVisible || !this.#container) return;
-
-            this.#currentStep = Math.min(step, this.#totalSteps);
-            const percentage = Math.max(0, Math.min(100, (this.#currentStep / Math.max(1, this.#totalSteps)) * 100));
-
-            // Update progress bar
-            if (this.#progressBar) {
-                this.#progressBar.classList.remove('d-none');
-                this.#progressBar.style.width = `${percentage}%`;
-                this.#progressBar.setAttribute('aria-valuenow', percentage);
-            }
-
-            // Update status text
-            if (this.#statusText) {
-                this.#statusText.textContent = status;
-            }
-
-            // Update percentage text
-            if (this.#progressLabel) {
-                this.#progressLabel.textContent = `${Math.round(percentage)}%`;
-            }
-
-            // Update progress steps
-            this.#createProgressSteps();
-
-            // Update progress manager
-            operationProgressManager.updateTask(1, status);
-
-            this.emit('loading:progress', { 
-                step, 
-                totalSteps: this.#totalSteps, 
-                percentage, 
-                status 
-            });
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: 'updateProgress',
-                step,
-                status
-            });
-        }
-    }
-
-    /**
-     * Get translated status word based on description
-     * @private
-     * @param {string} description
-     * @returns {string}
-     */
-    _getCurrentStatusWord(description) {
-        // Extract status from description
-        const status = Object.keys(STATUS_TRANSLATIONS).find(key => 
-            description.toLowerCase().includes(key)
-        );
-        
-        return STATUS_TRANSLATIONS[status] || STATUS_TRANSLATIONS['loading'];
-    }
-
-    /**
-     * Finish loading and hide loading screen
-     * @param {boolean} isError Whether there was an error during initialization
-     */
-    async finishLoading(isError = false) {
-        try {
-            if (!this.#isVisible) {
-                this.log(LogLevel.WARN, '⚠️ Loading screen already closed');
-                return;
-            }
-
-            // Calculate remaining minimum time
-            const currentTime = performance.now();
-            const elapsedTime = currentTime - this.#startTime;
-            const remainingTime = Math.max(0, this.#minLoadingTime - elapsedTime);
-
-            if (remainingTime > 0) {
-                this.log(LogLevel.INFO, `⏳ Waiting for minimum loading time: ${remainingTime}ms`);
-                await new Promise(resolve => setTimeout(resolve, remainingTime));
-            }
-
-            // Update final state
-            if (this.#progressBar) {
-                this.#progressBar.style.width = '100%';
-                this.#progressBar.setAttribute('aria-valuenow', 100);
-                this.#progressBar.classList.add(isError ? 'error' : 'success');
-            }
-
-            // Update progress manager
-            if (isError) {
-                operationProgressManager.setError('Błąd inicjalizacji');
-            } else {
-                operationProgressManager.setSuccess('Inicjalizacja zakończona');
-            }
-
-            // Start fade-out animation
-            if (this.#container) {
-                this.#container.classList.remove('fade-in');
-                this.#container.classList.add('fade-out');
-
-                // Wait for animation to complete
-                await new Promise((resolve) => {
-                    const onTransitionEnd = () => {
-                        this.#container.removeEventListener('transitionend', onTransitionEnd);
-                        this.#container.classList.add('hidden');
-                        this.#container.style.display = 'none'; // Force hide
-                        resolve();
-                    };
-                    
-                    this.#container.addEventListener('transitionend', onTransitionEnd, { once: true });
-                    
-                    // Fallback if animation doesn't complete
-                    setTimeout(() => {
-                        this.#container.removeEventListener('transitionend', onTransitionEnd);
-                        this.#container.classList.add('hidden');
-                        this.#container.style.display = 'none'; // Force hide
-                        resolve();
-                    }, 500);
-                });
-
-                // Reset state
-                this.#cleanup();
-                this.emit('loading:finish', { isError });
-                this.log(LogLevel.SUCCESS, '✨ Loading screen closed successfully');
-            }
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: 'finishLoading',
-                isError
-            });
-            // Force cleanup even on error
-            this.#cleanup();
-            if (this.#container) {
-                this.#container.style.display = 'none';
-                this.#container.classList.add('hidden');
-            }
-        }
-    }
-
-    /**
-     * Clean up loading screen state
-     * @private
-     */
-    #cleanup() {
-        this.#isVisible = false;
-        this.#startTime = null;
-        this.#currentStep = 0;
-        this.#totalSteps = 0;
-        
-        if (this.#container) {
-            this.#container.style.opacity = '0';
-            this.#container.style.display = 'none';
-        }
-        
-        if (this.#progressBar) {
-            this.#progressBar.style.width = '0%';
-            this.#progressBar.setAttribute('aria-valuenow', 0);
-            this.#progressBar.classList.remove('success', 'error');
-        }
-        
-        if (this.#statusText) {
-            this.#statusText.textContent = '';
-        }
-        
-        if (this.#progressLabel) {
-            this.#progressLabel.textContent = '0%';
-        }
-    }
-
-    /**
-     * Cleanup and dispose
-     * @returns {Promise<void>}
-     */
-    async dispose() {
-        try {
-            if (this.#container) {
-                this.#container.style.display = 'none';
-                this.#isVisible = false;
-            }
+            this.log(LogLevel.INFO, '🔄 Disposing loading manager...');
+            
+            // Clear all loading states
+            this.#loadingStates.clear();
+            this.#completedSteps = 0;
+            this.#totalSteps = 0;
+            this.#isLoading = false;
+            
+            // Clear UI elements
             this.#container = null;
             this.#progressBar = null;
             this.#progressLabel = null;
             this.#statusText = null;
-            this.#loadingTime = null;
-
-            // Hide progress manager
-            operationProgressManager.hide();
-
+            this.#wordsLoader = null;
+            this.#truckLoader = null;
+            
+            // Clear loading promise
+            this.#loadingPromise = null;
+            this.#loadingResolve = null;
+            this.#loadingReject = null;
+            
+            // Unsubscribe from events
+            if (this.#eventManager?.isInitialized()) {
+                await this.#eventManager.off('loading:start');
+                await this.#eventManager.off('loading:end');
+                await this.#eventManager.off('manager:initializing');
+                await this.#eventManager.off('manager:initialized');
+                await this.#eventManager.off('manager:failed');
+            }
+            
             await super.dispose();
+            this.log(LogLevel.SUCCESS, '✅ Loading manager disposed');
         } catch (error) {
-            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH, {
-                method: 'dispose'
+            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.MEDIUM, {
+                method: '_dispose'
             });
         }
     }
+
+    /**
+     * Handle error with retry logic
+     * @private
+     */
+    async #handleError(error, type, severity, context = {}) {
+        try {
+            const errorHandler = await this.getDependency('error');
+            if (errorHandler?.isInitialized()) {
+                await errorHandler.handle(error, type, severity, {
+                    manager: 'LoadingManager',
+                    ...context
+                });
+            } else {
+                console.error('[LoadingManager] Error:', error);
+            }
+        } catch (handlingError) {
+            console.error('[LoadingManager] Failed to handle error:', handlingError);
+            console.error('Original error:', error);
+        }
+    }
+
+    /** @private */
+    #handleLoadingStart(event) {
+        const { id, total } = event.data;
+        this.#loadingStates.set(id, { current: 0, total });
+        this.#updateProgress();
+    }
+    
+    /** @private */
+    #handleLoadingEnd(event) {
+        const { id } = event.data;
+        this.#loadingStates.delete(id);
+        this.#updateProgress();
+    }
+    
+    /** @private */
+    #updateProgress() {
+        const total = Array.from(this.#loadingStates.values())
+            .reduce((sum, state) => sum + state.total, 0);
+        const current = Array.from(this.#loadingStates.values())
+            .reduce((sum, state) => sum + state.current, 0);
+        
+        this.#progress = total > 0 ? (current / total) * 100 : 0;
+    }
 }
 
-// Export singleton instance
+// Export instance only
 export const loadingManager = InitialLoadingManager.getInstance(); 

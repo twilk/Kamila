@@ -1,5 +1,19 @@
 # 📋 Orders Counter Fix Work Plan
 
+## 🔄 Current Task: Manager Import Standardization
+- [x] Fix imports in background.js to use standardized Instance suffixes
+  - [x] logManagerInstance
+  - [x] eventManagerInstance
+  - [x] storageManagerInstance
+  - [x] cacheManagerInstance
+  - [x] alarmManagerInstance
+  - [x] messageManagerInstance
+  - [x] storeManagerInstance
+  - [x] operationProgressManagerInstance
+  - [x] notificationManagerInstance
+  - [x] counterManagerInstance
+  - [x] errorHandlerInstance
+
 ## 🎯 Overview
 This work plan outlines the steps to fix specific issues in the orders counter system while maintaining the current optimized architecture. The focus is on ensuring proper data flow and fixing counter inconsistencies without compromising the system's modern features.
 
@@ -125,126 +139,4 @@ This work plan outlines the steps to fix specific issues in the orders counter s
 
 ### Phase 3: Cache Enhancement (Week 2)
 - [ ] **3.1 Add Version Control**
-  ```javascript
-  const CACHE_CONFIG = {
-      version: '1.0',
-      validateVersion: (cached) => 
-          cached?.version === CACHE_CONFIG.version,
-      upgradeData: async (oldData) => ({
-          ...oldData,
-          version: CACHE_CONFIG.version
-      })
-  };
   ```
-- [ ] **3.2 Optimize Cache Operations**
-  ```javascript
-  async #updateCache(data) {
-      const cached = {
-          version: CACHE_CONFIG.version,
-          timestamp: Date.now(),
-          data: data,
-          checksum: await this.#calculateChecksum(data)
-      };
-      await this.storage.set({ orderCache: cached });
-  }
-  ```
-- [ ] **3.3 Add Integrity Checks**
-  ```javascript
-  async validateCache(cached) {
-      if (!cached) return false;
-      return (
-          CACHE_CONFIG.validateVersion(cached) &&
-          await this.#verifyChecksum(cached) &&
-          this.#isNotExpired(cached)
-      );
-  }
-  ```
-
-### Phase 4: Monitoring & Reliability (Week 2-3)
-- [ ] **4.1 Add Performance Tracking**
-  ```javascript
-  class MetricsManager extends BaseManager {
-      trackOperation(name, duration, metadata = {}) {
-          this.metrics.push({
-              name,
-              duration,
-              timestamp: Date.now(),
-              ...metadata
-          });
-      }
-  }
-  ```
-- [ ] **4.2 Enhance Error Tracking**
-  ```javascript
-  class ErrorTracker extends BaseManager {
-      async captureError(error, context) {
-          const trace = await this.#getStackTrace(error);
-          await this.#logError({
-              error,
-              context,
-              trace,
-              timestamp: Date.now()
-          });
-      }
-  }
-  ```
-- [ ] **4.3 Add Health Checks**
-  ```javascript
-  class HealthMonitor extends BaseManager {
-      async checkHealth() {
-          return {
-              cache: await this.#checkCacheHealth(),
-              counters: await this.#verifyCounters(),
-              memory: await this.#getMemoryUsage(),
-              performance: await this.#getPerformanceMetrics()
-          };
-      }
-  }
-  ```
-
-## 🔍 Testing Strategy
-
-### Unit Tests
-- [ ] Data merging logic
-- [ ] Status validation
-- [ ] Counter calculations
-- [ ] Cache operations
-
-### Integration Tests
-- [ ] API to cache flow
-- [ ] Cache to UI updates
-- [ ] Counter consistency
-- [ ] Error recovery
-
-### Performance Tests
-- [ ] Cache hit ratios
-- [ ] Update latency
-- [ ] Memory usage
-- [ ] UI responsiveness
-
-## 📈 Success Metrics
-1. **Performance**
-   - Maintain <16ms UI response time
-   - Improve cache hit ratio to >90%
-   - Keep memory usage under 20MB
-
-2. **Reliability**
-   - Zero counter inconsistencies
-   - 100% status mapping accuracy
-   - Successful error recovery
-
-3. **Data Quality**
-   - Complete data merging
-   - Accurate delta updates
-   - Consistent cache state
-
-## 📅 Timeline
-- **Week 1**: Data Flow & Counter Accuracy
-- **Week 2**: Cache Enhancement & Monitoring Setup
-- **Week 3**: Testing & Performance Optimization
-
-## 🎯 Next Steps
-1. Begin Phase 1 implementation
-2. Set up monitoring tools
-3. Implement automated tests
-4. Schedule performance review 

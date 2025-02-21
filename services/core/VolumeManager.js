@@ -1,12 +1,13 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { LogLevel } from './LogLevel.js';
+import { VOLUME_CONFIG } from '../../config/volume.js';
 
 /**
  * @extends {BaseManager}
  * Manages sound volume and mute state
  */
-export class VolumeManager extends BaseManager {
+class VolumeManager extends BaseManager {
     /** @private */
     static #instance = null;
 
@@ -16,43 +17,52 @@ export class VolumeManager extends BaseManager {
     /** @private */
     #isMuted = false;
 
+    /** @private */
+    static _registry = null;
+
+    /** @private */
+    #settings;
+
     /**
      * Get singleton instance
      * @returns {VolumeManager}
      */
     static getInstance() {
-        if (!VolumeManager.#instance) {
-            VolumeManager.#instance = new VolumeManager();
+        if (!VolumeManager.#instance && VolumeManager._registry) {
+            VolumeManager.#instance = new VolumeManager(VolumeManager._registry);
         }
         return VolumeManager.#instance;
     }
 
-    constructor() {
-        super('VolumeManager');
+    constructor(registry) {
         if (VolumeManager.#instance) {
-            throw new Error('Use VolumeManager.getInstance()');
+            return VolumeManager.#instance;
         }
+        super(registry, 'VolumeManager');
         VolumeManager.#instance = this;
+        VolumeManager._registry = registry;
     }
 
     /**
      * Initialize volume manager
      * @returns {Promise<boolean>}
      */
-    async onInitialize() {
+    async _initialize() {
         try {
+            this.log(LogLevel.INFO, '🔄 Initializing volume manager...');
+            
             // Load volume settings
-            await this.#loadSettings();
-
+            const storage = await this.getDependency('storage');
+            const settings = await storage.get(VOLUME_CONFIG.STORAGE_KEY) || {};
+            this.#settings = { ...VOLUME_CONFIG.DEFAULT_SETTINGS, ...settings };
+            
             // Set up event listeners
             this.#setupEventListeners();
-
-            this.log(LogLevel.SUCCESS, '🔊 Volume manager initialized');
+            
+            this.log(LogLevel.SUCCESS, '✅ Volume manager initialized');
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initialize'
-            });
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
             return false;
         }
     }
@@ -183,7 +193,12 @@ export class VolumeManager extends BaseManager {
             });
         }
     }
+
+    static setRegistry(registry) {
+        VolumeManager._registry = registry;
+    }
 }
 
-// Export singleton instance
+// Export both class and instance
+export { VolumeManager };
 export const volumeManager = VolumeManager.getInstance(); 

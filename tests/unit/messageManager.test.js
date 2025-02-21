@@ -1,14 +1,15 @@
 import { MessageManager } from '../../services/core/MessageManager.js';
 import { ErrorHandler } from '../../services/core/ErrorHandler.js';
-import { i18n } from '../../services/i18n.js';
+import { languageManager } from '../../services/core/LanguageManager.js';
 
 // Mock dependencies
 jest.mock('../../services/core/ErrorHandler.js');
-jest.mock('../../services/i18n.js');
+jest.mock('../../services/core/LanguageManager.js');
 
 describe('MessageManager', () => {
     let messageManager;
     let mockContainer;
+    const mockTranslation = 'Translated message';
 
     beforeEach(() => {
         // Reset mocks
@@ -21,6 +22,7 @@ describe('MessageManager', () => {
 
         // Initialize manager
         messageManager = MessageManager.getInstance();
+        languageManager.translate.mockReset();
     });
 
     afterEach(() => {
@@ -52,8 +54,7 @@ describe('MessageManager', () => {
         });
 
         it('should show message with correct type and text', async () => {
-            const mockTranslation = 'Test message';
-            i18n.translate.mockReturnValue(mockTranslation);
+            languageManager.translate.mockReturnValue(mockTranslation);
 
             await messageManager.showMessage({
                 type: 'info',
@@ -67,10 +68,9 @@ describe('MessageManager', () => {
 
         it('should handle different message types', async () => {
             const types = ['error', 'warning', 'info', 'success'];
-            const mockTranslation = 'Test message';
-            i18n.translate.mockReturnValue(mockTranslation);
 
             for (const type of types) {
+                languageManager.translate.mockReturnValue(mockTranslation);
                 await messageManager.showMessage({ type, key: 'test.key' });
                 const message = document.querySelector(`.message.${type}`);
                 expect(message).toBeTruthy();
@@ -148,7 +148,7 @@ describe('MessageManager', () => {
         });
 
         it('should handle show message errors', async () => {
-            i18n.translate.mockImplementation(() => {
+            languageManager.translate.mockImplementation(() => {
                 throw new Error('Mock translation error');
             });
 
@@ -198,5 +198,17 @@ describe('MessageManager', () => {
                 expect.objectContaining({ method: 'dispose' })
             );
         });
+    });
+
+    test('should show error message', () => {
+        languageManager.translate.mockReturnValue(mockTranslation);
+        messageManager.showError('test.error');
+        expect(languageManager.translate).toHaveBeenCalledWith('test.error');
+    });
+
+    test('should show success message', () => {
+        languageManager.translate.mockReturnValue(mockTranslation);
+        messageManager.showSuccess('test.success');
+        expect(languageManager.translate).toHaveBeenCalledWith('test.success');
     });
 }); 

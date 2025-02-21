@@ -2,7 +2,7 @@ import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { LogLevel } from './LogLevel.js';
 import { storageManager } from './StorageManager.js';
-import { eventManager } from './EventManager.js';
+import { EventManager } from './EventManager.js';
 import { refreshManager } from './RefreshManager.js';
 import { alarmManager } from './AlarmManager.js';
 import { notificationManager } from './NotificationManager.js';
@@ -64,22 +64,39 @@ const DEFAULT_SETTINGS = {
 
 // Walidatory dla ustawień
 const SETTINGS_VALIDATORS = {
-    [SETTINGS_KEYS.THEME]: (value) => ['light', 'dark'].includes(value),
-    [SETTINGS_KEYS.LANGUAGE]: (value) => ['pl', 'en'].includes(value),
+    [SETTINGS_KEYS.THEME]: (value) => ['light', 'dark', 'system'].includes(value),
+    [SETTINGS_KEYS.LANGUAGE]: (value) => typeof value === 'string' && value.length === 2,
     [SETTINGS_KEYS.NOTIFICATIONS]: (value) => {
         return typeof value === 'object' &&
-               typeof value.enabled === 'boolean' &&
-               typeof value.sound === 'boolean' &&
-               typeof value.desktop === 'boolean';
+            typeof value.enabled === 'boolean' &&
+            typeof value.sound === 'boolean' &&
+            typeof value.desktop === 'boolean' &&
+            typeof value.limits === 'object' &&
+            typeof value.limits.perMinute === 'number' &&
+            typeof value.limits.perHour === 'number' &&
+            typeof value.limits.perDay === 'number';
     },
-    [SETTINGS_KEYS.REFRESH_INTERVAL]: (value) => {
-        return typeof value === 'number' && value >= 30000 && value <= 3600000;
-    },
+    [SETTINGS_KEYS.REFRESH_INTERVAL]: (value) => typeof value === 'number' && value >= 1000,
     [SETTINGS_KEYS.DEBUG_MODE]: (value) => typeof value === 'boolean',
     [SETTINGS_KEYS.STORE_ID]: (value) => typeof value === 'string',
     [SETTINGS_KEYS.ALARM_INTERVALS]: (value) => {
         return typeof value === 'object' &&
-               Object.values(value).every(v => typeof v === 'number' && v > 0);
+            typeof value.checkNotifications === 'number' &&
+            typeof value.fetchData === 'number' &&
+            typeof value.checkOrders === 'number' &&
+            typeof value.checkNewOrders === 'number';
+    },
+    [SETTINGS_KEYS.UI_CONFIG]: (value) => {
+        return typeof value === 'object' &&
+            typeof value.compactMode === 'boolean' &&
+            typeof value.showCounts === 'boolean' &&
+            typeof value.enableAnimations === 'boolean';
+    },
+    [SETTINGS_KEYS.CACHE_CONFIG]: (value) => {
+        return typeof value === 'object' &&
+            typeof value.enabled === 'boolean' &&
+            typeof value.ttl === 'number' &&
+            typeof value.maxSize === 'number';
     }
 };
 
@@ -87,7 +104,7 @@ const SETTINGS_VALIDATORS = {
  * Manages application settings with validation and persistence
  * @extends {BaseManager}
  */
-export class SettingsManager extends BaseManager {
+class SettingsManager extends BaseManager {
     static #instance = null;
     #settings = new Map();
     #settingsListeners = new Map();
@@ -96,13 +113,16 @@ export class SettingsManager extends BaseManager {
     #initialized = false;
     #version = SETTINGS_VERSION;
     #migrationNeeded = false;
+    static _registry = null;
+    #storage = null;
 
-    constructor() {
+    constructor(registry) {
         if (SettingsManager.#instance) {
-            throw new Error('Use SettingsManager.getInstance()');
+            return SettingsManager.#instance;
         }
-        super('SettingsManager');
+        super(registry, 'SettingsManager');
         SettingsManager.#instance = this;
+        SettingsManager._registry = registry;
         
         // Inicjalizacja walidatorów i domyślnych wartości
         Object.entries(SETTINGS_VALIDATORS).forEach(([key, validator]) => {
@@ -112,39 +132,55 @@ export class SettingsManager extends BaseManager {
     }
 
     static getInstance() {
-        if (!SettingsManager.#instance) {
-            SettingsManager.#instance = new SettingsManager();
+        if (!SettingsManager.#instance && SettingsManager._registry) {
+            SettingsManager.#instance = new SettingsManager(SettingsManager._registry);
         }
         return SettingsManager.#instance;
+    }
+
+    static setRegistry(registry) {
+        SettingsManager._registry = registry;
     }
 
     /**
      * Initialize settings manager and set up integrations
      * @returns {Promise<boolean>}
      */
-    async onInitialize() {
+    async _initialize() {
         try {
-            if (this.#initialized) {
-                return true;
-            }
-
             this.log(LogLevel.INFO, '🔄 Initializing settings manager...');
 
-            // Wczytaj ustawienia z storage
-            await this.#loadSettings();
+            // Get storage dependency
+            const storage = await this.getDependency('storage');
+            if (!storage?.isInitialized()) {
+                throw new Error('Storage manager must be initialized');
+            }
 
-            // Ustaw domyślne wartości dla brakujących ustawień
+            // Store storage dependency
+            this.#storage = storage;
+
+            // Initialize storage if needed
+            if (!this.#storage) {
+                throw new Error('Storage dependency not initialized');
+            }
+
+            // Load settings from storage
+            const storedSettings = await this.#storage.get('settings');
+            if (storedSettings) {
+                for (const [key, value] of Object.entries(storedSettings)) {
+                    this.#settings.set(key, value);
+                }
+            }
+
+            // Set default values for missing settings
             for (const [key, defaultValue] of this.#defaultValues.entries()) {
                 if (!this.#settings.has(key)) {
                     this.#settings.set(key, defaultValue);
                 }
             }
 
-            // Skonfiguruj integracje z innymi managerami
-            await this.#setupManagerIntegrations();
-
-            // Zapisz kompletne ustawienia
-            await this.#saveSettings();
+            // Save complete settings
+            await this.#storage.set('settings', Object.fromEntries(this.#settings));
 
             this.#initialized = true;
             this.log(LogLevel.SUCCESS, '✅ Settings manager initialized');
@@ -164,19 +200,19 @@ export class SettingsManager extends BaseManager {
     async #setupManagerIntegrations() {
         try {
             // Integracja z RefreshManager
-            this.addListener(SETTINGS_KEYS.REFRESH_INTERVAL, (value) => {
+            this.on(SETTINGS_KEYS.REFRESH_INTERVAL, (value) => {
                 refreshManager.updateSetting('check_frequency', value);
             });
 
             // Integracja z AlarmManager
-            this.addListener(SETTINGS_KEYS.ALARM_INTERVALS, (value) => {
+            this.on(SETTINGS_KEYS.ALARM_INTERVALS, (value) => {
                 Object.entries(value).forEach(([alarmName, interval]) => {
                     alarmManager.updateAlarmInterval(alarmName, interval);
                 });
             });
 
             // Integracja z NotificationManager
-            this.addListener(SETTINGS_KEYS.NOTIFICATIONS, (value) => {
+            this.on(SETTINGS_KEYS.NOTIFICATIONS, (value) => {
                 notificationManager.updateConfig({
                     enabled: value.enabled,
                     sound: value.sound,
@@ -186,31 +222,31 @@ export class SettingsManager extends BaseManager {
             });
 
             // Integracja z LanguageManager
-            this.addListener(SETTINGS_KEYS.LANGUAGE, (value) => {
+            this.on(SETTINGS_KEYS.LANGUAGE, (value) => {
                 languageManager.setLanguage(value);
             });
 
             // Integracja z UI (theme)
-            this.addListener(SETTINGS_KEYS.THEME, (value) => {
+            this.on(SETTINGS_KEYS.THEME, (value) => {
                 document.documentElement.setAttribute('data-theme', value);
-                eventManager.emit('theme:changed', { theme: value });
+                EventManager.emit('theme:changed', { theme: value });
             });
 
             // Integracja z Debug Mode
-            this.addListener(SETTINGS_KEYS.DEBUG_MODE, (value) => {
+            this.on(SETTINGS_KEYS.DEBUG_MODE, (value) => {
                 if (value) {
                     this.log(LogLevel.DEBUG, '🐛 Debug mode enabled');
                 }
-                eventManager.emit('debug:changed', { enabled: value });
+                EventManager.emit('debug:changed', { enabled: value });
             });
 
             // Integracja z Store ID
-            this.addListener(SETTINGS_KEYS.STORE_ID, (value) => {
-                eventManager.emit('store:changed', { storeId: value });
+            this.on(SETTINGS_KEYS.STORE_ID, (value) => {
+                EventManager.emit('store:changed', { storeId: value });
             });
 
             // Integracja z Cache Config
-            this.addListener(SETTINGS_KEYS.CACHE_CONFIG, (value) => {
+            this.on(SETTINGS_KEYS.CACHE_CONFIG, (value) => {
                 storageManager.updateCacheConfig(value);
             });
 
@@ -274,27 +310,17 @@ export class SettingsManager extends BaseManager {
     }
 
     /**
-     * Add setting change listener
-     * @param {string} key Setting key
-     * @param {Function} listener Listener function
+     * Subscribe to setting changes
+     * @param {string} key - Setting key
+     * @param {Function} listener - Change listener
      */
-    addListener(key, listener) {
+    on(key, listener) {
         if (!this.#settingsListeners.has(key)) {
             this.#settingsListeners.set(key, new Set());
         }
         this.#settingsListeners.get(key).add(listener);
-    }
-
-    /**
-     * Remove setting change listener
-     * @param {string} key Setting key
-     * @param {Function} listener Listener function
-     */
-    removeListener(key, listener) {
-        const listeners = this.#settingsListeners.get(key);
-        if (listeners) {
-            listeners.delete(listener);
-        }
+        
+        this.log(LogLevel.DEBUG, `📌 Added listener for setting: ${key}`);
     }
 
     /**
@@ -347,27 +373,17 @@ export class SettingsManager extends BaseManager {
      */
     async #saveSettings() {
         try {
-            // Przygotuj dane do zapisu
-            const data = {
+            await storageManager.set(STORAGE_KEY, {
                 settings: Object.fromEntries(this.#settings),
-                version: this.#version,
-                timestamp: Date.now()
-            };
-
-            // Zapisz w storage
-            await storageManager.set(STORAGE_KEY, data);
-
-            // Emituj event o zapisie
-            this.emit('settings:saved', {
-                timestamp: data.timestamp,
                 version: this.#version
             });
-
-            this.log(LogLevel.DEBUG, '💾 Settings saved successfully');
+            
+            this.log(LogLevel.DEBUG, '💾 Settings saved');
         } catch (error) {
             this.handleError(error, ErrorType.STORAGE, ErrorSeverity.MEDIUM, {
                 method: '#saveSettings'
             });
+            throw error;
         }
     }
 
@@ -531,8 +547,7 @@ export class SettingsManager extends BaseManager {
     }
 }
 
-// Export singleton instance
-export const settingsManager = SettingsManager.getInstance();
-
-// Export settings keys for convenience
-export { SETTINGS_KEYS }; 
+// Export both class and instance
+export { SETTINGS_KEYS };
+export { SettingsManager };
+export const settingsManager = SettingsManager.getInstance(); 

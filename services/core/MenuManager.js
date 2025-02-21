@@ -1,9 +1,10 @@
 import { BaseManager, InitState } from './BaseManager.js';
 import { EventType, ErrorType, ErrorSeverity, LogLevel } from './EventType.js';
 import { UIManager } from './UIManager.js';
-import { UserCardService } from '../userCard.js';
+import { UserManager } from './UserManager.js';
+import { EventManager } from './EventManager.js';
 
-// Stałe dla zdarzeń
+// Constants for events
 const EVENTS = {
     TAB_CHANGED: 'menu:tabChanged',
     TAB_SHOW: 'menu:tabShow',
@@ -13,7 +14,7 @@ const EVENTS = {
     USER_CHANGED: 'menu:userChanged'
 };
 
-// Stałe dla selektorów
+// Constants for selectors
 const SELECTORS = {
     TAB: '.menu .link[data-bs-toggle="tab"]',
     TAB_PANE: '.tab-pane',
@@ -21,7 +22,7 @@ const SELECTORS = {
     USER_SELECT: '#user-select'
 };
 
-// Stałe dla klawiszy
+// Constants for keys
 const KEYS = {
     LEFT: 'ArrowLeft',
     RIGHT: 'ArrowRight',
@@ -35,95 +36,186 @@ const KEYS = {
  * Manages menu interactions and tab switching
  */
 export class MenuManager extends BaseManager {
-    static _instance = null;
-    #activeTab = null;
-    #activeStore = null;
-    #uiManager = null;
-    #tabInstances = null;
-    #storeData = new Map();
-    #tabs = [];
+    /** @private */
+    static #instance = null;
+    static _registry = null;
 
-    constructor() {
-        if (MenuManager._instance) {
-            throw new Error('Use MenuManager.getInstance()');
+    /** @private */
+    #activeTab = null;
+    /** @private */
+    #settings = null;
+    /** @private */
+    #eventManager = null;
+    /** @private */
+    #storeManager = null;
+    /** @private */
+    #themeManager = null;
+    /** @private */
+    #activeStore = null;
+    /** @private */
+    #storeData = new Map();
+    /** @private */
+    #tabs = [];
+    /** @private */
+    #setupEventListeners = async () => {
+        try {
+            // Get event manager dependency
+            this.#eventManager = await this.getDependency('event');
+            
+            // Listen for menu events
+            await this.#eventManager.on('menu:tabChanged', async (event) => {
+                const { tabId } = event;
+                await this.handleTabChange(tabId);
+            });
+            
+            await this.#eventManager.on('menu:ready', async () => {
+                await this.initializeMenu();
+            });
+            
+            // Initialize menu
+            await this.initializeMenu();
+            
+            this.log(LogLevel.SUCCESS, '✅ Menu event listeners initialized');
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.EVENT_LISTENER, ErrorSeverity.HIGH);
+            return false;
         }
-        super('MenuManager');
-        MenuManager._instance = this;
-        this.addDependency(UIManager.getInstance());
-        this.#uiManager = null;
-        this.#activeTab = null;
-        this.#activeStore = null;
-        this.#tabInstances = null;
-        this.#storeData = new Map();
-        this.log(LogLevel.INFO, '🎯 MenuManager instance created');
+    };
+
+    constructor(registry) {
+        if (MenuManager.#instance) {
+            return MenuManager.#instance;
+        }
+        super(registry, 'MenuManager');
+        MenuManager.#instance = this;
+        
+        // Add dependencies
+        this.addDependency('event');
+        this.addDependency('store');
+        this.addDependency('theme');
     }
 
     /**
-     * Get the singleton instance
+     * Get singleton instance
      * @returns {MenuManager}
      */
     static getInstance() {
-        if (!MenuManager._instance) {
-            MenuManager._instance = new MenuManager();
+        const registry = BaseManager.getRegistry();
+        if (!MenuManager.#instance && registry) {
+            MenuManager.#instance = new MenuManager(registry);
         }
-        return MenuManager._instance;
+        return MenuManager.#instance;
     }
 
     /**
-     * Initialize the menu manager
+     * Set registry for all instances
+     * @param {ManagerRegistry} registry Manager registry
+     */
+    static setRegistry(registry) {
+        BaseManager.setRegistry(registry);
+    }
+
+    /**
+     * Initialize menu manager
      * @returns {Promise<boolean>}
      */
-    async onInitialize() {
+    async _initialize() {
         try {
-            if (this.isInitialized()) {
-                this.log(LogLevel.WARNING, '⚠️ MenuManager already initialized');
-                return true;
-            }
-
-            // Get and verify UIManager
-            this.#uiManager = this.getDependency('UIManager');
-            if (!this.#uiManager) {
-                throw new Error('UIManager dependency not found');
-            }
-
-            // Wait for UIManager to be ready
-            if (!this.#uiManager.isInitialized()) {
-                this.log(LogLevel.INFO, '⏳ Waiting for UIManager to initialize...');
-                await this.#uiManager.waitForReady();
-            }
-
-            // Restore states
-            await Promise.all([
-                this.#restoreTabState(),
-                this.#restoreStoreState()
-            ]);
-
-            // Initialize menu items
-            await this.#initializeMenuItems();
-
-            // Setup store-related event listeners
-            this.#setupStoreEventListeners();
-
-            // Emit menu ready event
-            window.dispatchEvent(new CustomEvent(EVENTS.MENU_READY));
+            this.log(LogLevel.INFO, '🔄 Initializing menu manager...');
             
-            this.log(LogLevel.SUCCESS, '📋 Menu manager initialized');
+            // Get dependencies
+            this.#eventManager = await this.getDependency('event');
+            this.#storeManager = await this.getDependency('store');
+            this.#themeManager = await this.getDependency('theme');
+            
+            // Set up event listeners
+            await this.#setupEventListeners();
+            
+            this.log(LogLevel.SUCCESS, '✅ Menu manager initialized');
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initialize'
-            });
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
             return false;
         }
     }
 
     /**
-     * Setup store-related event listeners
+     * Initialize menu
      * @private
      */
-    #setupStoreEventListeners() {
-        window.addEventListener('menu:storeChanged', this.#handleStoreChange.bind(this));
-        window.addEventListener('menu:dataUpdated', this.#handleDataUpdate.bind(this));
+    async initializeMenu() {
+        try {
+            // Get all menu items
+            const menuItems = document.querySelectorAll(SELECTORS.TAB);
+            
+            // Add click handlers
+            menuItems.forEach(item => {
+                item.addEventListener('click', async (event) => {
+                    event.preventDefault();
+                    const tabId = item.getAttribute('data-tab-id');
+                    if (tabId) {
+                        await this.handleTabChange(tabId);
+                    }
+                });
+            });
+            
+            // Set initial active tab
+            const activeTab = document.querySelector(SELECTORS.ACTIVE_TAB);
+            if (activeTab) {
+                const tabId = activeTab.getAttribute('data-tab-id');
+                if (tabId) {
+                    await this.handleTabChange(tabId);
+                }
+            }
+            
+            this.log(LogLevel.DEBUG, '🔄 Menu initialized');
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
+                method: 'initializeMenu'
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Handle tab change
+     * @private
+     */
+    async handleTabChange(tabId) {
+        try {
+            // Hide all tab panes
+            const panes = document.querySelectorAll(SELECTORS.TAB_PANE);
+            panes.forEach(pane => pane.classList.remove('active', 'show'));
+            
+            // Show selected pane
+            const selectedPane = document.querySelector(`#${tabId}`);
+            if (selectedPane) {
+                selectedPane.classList.add('active', 'show');
+            }
+            
+            // Update active tab
+            const tabs = document.querySelectorAll(SELECTORS.TAB);
+            tabs.forEach(tab => {
+                if (tab.getAttribute('data-tab-id') === tabId) {
+                    tab.classList.add('active');
+                } else {
+                    tab.classList.remove('active');
+                }
+            });
+            
+            // Emit event
+            const eventManager = await this.getDependency('event');
+            await eventManager.emit('menu:tabChanged', { tabId });
+            
+            this.log(LogLevel.DEBUG, '🔄 Tab changed', { tabId });
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
+                method: 'handleTabChange',
+                tabId
+            });
+            throw error;
+        }
     }
 
     /**
@@ -243,8 +335,8 @@ export class MenuManager extends BaseManager {
             // Initialize menu tabs
             await this.#initializeTabs();
 
-            // Setup store-related event listeners
-            this.#setupStoreEventListeners();
+            // Setup event listeners
+            await this.#setupEventListeners();
 
             return true;
         } catch (error) {
@@ -361,62 +453,6 @@ export class MenuManager extends BaseManager {
     }
 
     /**
-     * Handle tab change
-     * @private
-     * @param {HTMLElement} targetTab - The tab element that was clicked
-     */
-    async _handleTabChange(targetTab) {
-        try {
-            const targetId = targetTab.getAttribute('href');
-            if (!targetId) return;
-
-            const previousTab = this.#activeTab;
-            this.#activeTab = targetId;
-            
-            // Update active states for menu links
-            const menuLinks = document.querySelectorAll(SELECTORS.TAB);
-            menuLinks.forEach(link => {
-                const linkHref = link.getAttribute('href');
-                link.classList.toggle('active', linkHref === targetId);
-                // Update ARIA states
-                link.setAttribute('aria-selected', linkHref === targetId);
-                link.setAttribute('tabindex', linkHref === targetId ? '0' : '-1');
-            });
-
-            // Update active states for tab panes
-            const tabPanes = document.querySelectorAll(SELECTORS.TAB_PANE);
-            tabPanes.forEach(pane => {
-                const isTargetPane = pane.id === targetId.substring(1);
-                pane.classList.toggle('show', isTargetPane);
-                pane.classList.toggle('active', isTargetPane);
-            });
-
-            // Save state to storage
-            await this.#saveTabState();
-
-            this.log(LogLevel.SUCCESS, `✅ Tab switch completed`, {
-                from: previousTab,
-                to: targetId,
-                activeTabsCount: document.querySelectorAll(`${SELECTORS.TAB}.active`).length
-            });
-
-            // Emit tab change event
-            window.dispatchEvent(new CustomEvent(EVENTS.TAB_CHANGED, {
-                detail: {
-                    previousTab,
-                    currentTab: targetId,
-                    timestamp: new Date().toISOString()
-                }
-            }));
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: '_handleTabChange',
-                targetId: targetTab?.getAttribute('href')
-            });
-        }
-    }
-
-    /**
      * Wait for Bootstrap to be available
      * @private
      * @returns {Promise<void>}
@@ -486,170 +522,65 @@ export class MenuManager extends BaseManager {
             await this.#saveStoreState();
             this.log(LogLevel.INFO, `📍 Active store set to ${storeId}`);
         } catch (error) {
-            this.handleError(error, ErrorType.DATA, ErrorSeverity.MEDIUM, {
-                method: 'setActiveStore',
-                storeId
-            });
+            this.handleError(error, ErrorType.DATA, ErrorSeverity.MEDIUM);
         }
     }
 
-    /**
-     * Clear store data
-     * @param {string} storeId
-     */
-    clearStoreData(storeId) {
+    async #loadInitialState() {
         try {
-            this.#storeData.delete(storeId);
-            this.log(LogLevel.INFO, `🧹 Cleared data for store ${storeId}`);
-        } catch (error) {
-            this.handleError(error, ErrorType.DATA, ErrorSeverity.LOW, {
-                method: 'clearStoreData',
-                storeId
-            });
-        }
-    }
-
-    /**
-     * Clear all store data
-     */
-    clearAllStoreData() {
-        try {
-            this.#storeData.clear();
-            this.log(LogLevel.INFO, '🧹 Cleared all store data');
-        } catch (error) {
-            this.handleError(error, ErrorType.DATA, ErrorSeverity.MEDIUM, {
-                method: 'clearAllStoreData'
-            });
-        }
-    }
-
-    /**
-     * Clean up resources
-     */
-    dispose() {
-        try {
-            this.log(LogLevel.INFO, '🧹 Starting MenuManager cleanup');
-
-            // Remove event listeners from tabs
-            if (this.#tabs) {
-                this.#tabs.forEach(tab => {
-                    if (tab.element && tab.clickHandler) {
-                        tab.element.removeEventListener('click', tab.clickHandler);
-                    }
-                    if (tab.instance) {
-                        tab.instance.dispose();
-                    }
-                });
+            const storeManager = await this.getDependency('store');
+            const activeStore = storeManager.getActiveStore();
+            
+            if (activeStore) {
+                await this.setActiveStore(activeStore.id);
             }
-            this.log(LogLevel.DEBUG, '✅ Tab instances disposed');
 
-            // Clear tab references
-            this.#tabs = [];
-            this.#activeTab = null;
-
-            super.dispose();
-            this.log(LogLevel.SUCCESS, '✨ MenuManager disposed successfully');
+            this.log(LogLevel.INFO, '✅ Initial state loaded');
         } catch (error) {
-            this.log(LogLevel.ERROR, `❌ MenuManager disposal failed: ${error.message}`);
-            this.handleError(error, ErrorType.CLEANUP, ErrorSeverity.LOW, {
-                method: 'dispose'
-            });
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
         }
     }
 
-    /**
-     * Initialize user selector
-     * @private
-     */
     async #initializeUserSelector() {
         try {
-            const userSelect = document.querySelector(SELECTORS.USER_SELECT);
+            const userManager = await this.getDependency('user');
+            const eventManager = await this.getDependency('event');
+
+            if (!userManager?.isInitialized()) {
+                throw new Error('UserManager must be initialized');
+            }
+
+            const userSelect = document.querySelector('#userSelect');
             if (!userSelect) {
                 this.log(LogLevel.WARNING, '⚠️ User selector not found');
                 return;
             }
 
-            // Verify UserCardService is available
-            if (typeof UserCardService === 'undefined') {
-                throw new Error('UserCardService is not available');
-            }
-
             // Initialize user selector
-            this.log(LogLevel.INFO, '⏳ Initializing user selector...');
-            await UserCardService.initializeUserSelector();
+            await userManager.initializeUserSelector();
 
             // Listen for user changes
             userSelect.addEventListener('change', async (e) => {
                 try {
                     const selectedId = e.target.value;
-                    const success = await UserCardService.setCurrentUser(selectedId);
+                    const success = await userManager.setCurrentUser(selectedId);
                     
                     if (success) {
-                        window.dispatchEvent(new CustomEvent(EVENTS.USER_CHANGED, {
-                            detail: {
-                                userId: selectedId,
-                                timestamp: new Date().toISOString()
-                            }
-                        }));
+                        eventManager.emit('user:change', {
+                            userId: selectedId,
+                            timestamp: new Date().toISOString()
+                        });
                         this.log(LogLevel.SUCCESS, `✅ User changed to: ${selectedId}`);
                     }
                 } catch (error) {
-                    this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
-                        method: 'userSelect.onChange',
-                        details: error.message
-                    });
+                    this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM);
                 }
             });
 
             this.log(LogLevel.SUCCESS, '✅ User selector initialized');
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.MEDIUM, {
-                method: 'initializeUserSelector',
-                details: error.message
-            });
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.MEDIUM);
         }
     }
-
-    /**
-     * Restore active tab
-     * @private
-     */
-    async #restoreActiveTab() {
-        try {
-            if (!this.#activeTab) {
-                this.log(LogLevel.DEBUG, '⏭️ No active tab to restore');
-                return;
-            }
-            
-            const activeTabElement = document.querySelector(`${SELECTORS.TAB}[href="${this.#activeTab}"]`);
-            if (!activeTabElement) {
-                this.log(LogLevel.WARNING, `⚠️ Active tab element not found: ${this.#activeTab}`);
-                return;
-            }
-
-            // Create new tab instance for activation
-            const tab = new bootstrap.Tab(activeTabElement);
-            tab.show();
-            
-            this.log(LogLevel.INFO, `🔄 Restored active tab: ${this.#activeTab}`);
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: '#restoreActiveTab',
-                activeTab: this.#activeTab
-            });
-        }
-    }
-
-    /**
-     * Check if element is active
-     * @param {HTMLElement} elem - Element to check
-     * @returns {boolean}
-     * @private
-     */
-    _elemIsActive(elem) {
-        if (!elem) return false;
-        return elem.classList.contains('active') || 
-               elem.getAttribute('aria-selected') === 'true' ||
-               elem.getAttribute('data-active') === 'true';
-    }
-} 
+}
+export const menuManager = MenuManager.getInstance(); 

@@ -1,28 +1,30 @@
 import { BaseManager } from './BaseManager.js';
-import { ErrorType, ErrorSeverity, LogLevel } from './EventType.js';
-import { uiManager } from './UIManager.js';
-import { eventManager } from './EventManager.js';
-import { environment } from './environment.js';
+import { ErrorType, ErrorSeverity, LogLevel } from '../constants.js';
+
+const STATUS_CONFIG = {
+    UPDATE_INTERVAL: 30 * 1000, // 30 seconds
+    NOTIFICATION_COOLDOWN: 5 * 60 * 1000, // 5 minutes
+    MAX_NOTIFICATIONS: 5
+};
 
 /**
  * @typedef {Object} OrderCounts
- * @property {number} '1' - Liczba zamówień w statusie submitted
- * @property {number} '2' - Liczba zamówień w statusie confirmed
- * @property {number} '3' - Liczba zamówień w statusie accepted
- * @property {number} 'READY' - Liczba zamówień gotowych do odbioru
- * @property {number} 'OVERDUE' - Liczba zamówień przeterminowanych
+ * @property {number} '1' - New orders
+ * @property {number} '2' - Confirmed orders
+ * @property {number} '3' - Accepted orders
+ * @property {number} 'READY' - Ready orders
+ * @property {number} 'OVERDUE' - Overdue orders
  */
 
 /**
  * @typedef {Object} StatusMapType
- * @property {string} submitted - Status dla nowych zamówień
- * @property {string} confirmed - Status dla potwierdzonych zamówień
- * @property {string} accepted - Status dla zaakceptowanych zamówień
- * @property {string} ready - Status dla zamówień gotowych
- * @property {string} overdue - Status dla zamówień przeterminowanych
+ * @property {string} submitted - Status for new orders
+ * @property {string} confirmed - Status for confirmed orders
+ * @property {string} accepted - Status for accepted orders
+ * @property {string} ready - Status for ready orders
+ * @property {string} overdue - Status for overdue orders
  */
 
-// Constants
 /** @type {StatusMapType} */
 export const STATUS_MAP = {
     submitted: '1',
@@ -32,12 +34,22 @@ export const STATUS_MAP = {
     overdue: 'OVERDUE'
 };
 
+// Development mode detection
+const isDevelopment = () => {
+    try {
+        return !chrome.runtime.getManifest().update_url;
+    } catch (e) {
+        return false;
+    }
+};
+
 /**
- * @extends {BaseManager}
- * Manages application status, health checks and order counters
+ * Manager for handling application status and notifications
+ * @extends BaseManager
  */
-export class StatusManager extends BaseManager {
+class StatusManager extends BaseManager {
     static #instance = null;
+    static _registry = null;
     #services = {
         api: false,
         auth: false,
@@ -48,85 +60,119 @@ export class StatusManager extends BaseManager {
     #pendingUIUpdates = new Set();
     #baseUrl = 'https://darwina.pl/api';
     #dataManager = null;
+    #currentCounts = null;
+    #uiUpdateTimeout = null;
+    #uiUpdateDelay = 100; // ms
+    #status = {
+        online: true,
+        initialized: false,
+        error: null,
+        orderCounts: {
+            '1': 0,
+            '2': 0,
+            '3': 0,
+            'READY': 0,
+            'OVERDUE': 0
+        },
+        lastUpdate: null
+    };
+    #lastNotification = null;
+    #notificationCount = 0;
+    #previousCounts = null;
 
-    constructor() {
+    constructor(registry) {
         if (StatusManager.#instance) {
-            throw new Error('Use StatusManager.getInstance()');
+            return StatusManager.#instance;
         }
-        super('StatusManager');
+        super(registry, 'StatusManager');
         StatusManager.#instance = this;
+        StatusManager._registry = registry;
         
-        // Add dependencies
-        this.addDependency(uiManager);
-        this.addDependency(eventManager);
+        this.addDependency('event');
+        this.addDependency('store');
     }
 
-    /**
-     * Get singleton instance
-     * @returns {StatusManager}
-     */
     static getInstance() {
-        if (!StatusManager.#instance) {
-            StatusManager.#instance = new StatusManager();
+        if (!StatusManager.#instance && StatusManager._registry) {
+            StatusManager.#instance = new StatusManager(StatusManager._registry);
         }
         return StatusManager.#instance;
     }
 
+    static setRegistry(registry) {
+        StatusManager._registry = registry;
+    }
+
     /**
      * Initialize status manager
+     * @protected
      * @returns {Promise<boolean>}
      */
-    async onInitialize() {
+    async _initialize() {
         try {
-            this.log(LogLevel.INFO, '🚀 Starting initialization of StatusManager');
+            this.log(LogLevel.INFO, '🔄 Initializing status manager...');
+            
+            // Add dependencies
+            this.addDependency('ui');
+            this.addDependency('event');
             
             // Get dependencies
-            const eventManager = this.getDependency('EventManager');
-            if (!eventManager?.isInitialized()) {
-                throw new Error('EventManager must be initialized');
+            const eventManager = await this.getDependency('event');
+            
+            if (!eventManager?.isReady()) {
+                throw new Error('EventManager must be ready');
             }
 
-            // Import DataManager dynamically to avoid circular dependency
-            const { dataManager } = await import('./DataManager.js');
-            this.#dataManager = dataManager;
-            
-            if (!this.#dataManager?.isInitialized()) {
-                throw new Error('DataManager must be initialized');
-            }
-
-            // Setup event listeners
-            eventManager.on('ui:ready', () => this.#processPendingUIUpdates());
-            eventManager.on('service:status', ({ service, status }) => this.updateStatus(service, status));
-            
-            // Listen for store changes to update order counts
-            eventManager.on('store:change', async ({ storeId }) => {
-                try {
-                    // Load fresh data when store changes
-                    await this.#dataManager.loadAndUpdateData(true);
-                } catch (error) {
-                    this.handleError(error, ErrorType.EVENT, ErrorSeverity.LOW, {
-                        method: 'onStoreChange',
-                        storeId
-                    });
-                }
-            });
+            // Setup event listeners first
+            await eventManager.on('ui:ready', () => this.#processPendingUIUpdates());
+            await eventManager.on('service:status', ({ service, status }) => this.updateStatus(service, status));
+            await eventManager.on('store:change', this.#handleStoreChange.bind(this));
             
             // Start with initial status check
             await this.checkAllServices();
             
-            // Load initial data
-            await this.#dataManager.loadAndUpdateData(true);
+            // Initialize data manager connection after basic setup
+            const dataManager = await this.getDependency('data');
             
             // Setup periodic checks
             this.#startPeriodicChecks();
+
+            // Setup online/offline listeners
+            window.addEventListener('online', () => this.#handleOnlineStatus(true));
+            window.addEventListener('offline', () => this.#handleOnlineStatus(false));
+
+            // Start status updates
+            this.#startStatusUpdates();
+
+            // Set initial online status
+            this.#status.online = navigator.onLine;
+            this.#status.initialized = true;
 
             this.log(LogLevel.SUCCESS, '✨ Status manager initialized');
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'onInitialize'
+                method: '_initialize'
             });
             return false;
+        }
+    }
+
+    /**
+     * Handle store change event
+     * @private
+     */
+    async #handleStoreChange({ storeId }) {
+        try {
+            // Only attempt data operations if DataManager is available
+            if (this.#dataManager?.isInitialized()) {
+                await this.#dataManager.loadAndUpdateData(true);
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.EVENT, ErrorSeverity.LOW, {
+                method: '#handleStoreChange',
+                storeId
+            });
         }
     }
 
@@ -146,7 +192,7 @@ export class StatusManager extends BaseManager {
 
         // If status changed, emit event
         if (oldStatus !== status) {
-            eventManager.emit('status:change', {
+            managers.eventManager.emit('status:change', {
                 service,
                 status,
                 previous: oldStatus
@@ -173,7 +219,7 @@ export class StatusManager extends BaseManager {
      */
     async #tryProcessUIUpdates() {
         try {
-            const ui = this.getDependency('UIManager');
+            const ui = managers.uiManager;
             if (ui?.isInitialized()) {
                 await this.#processPendingUIUpdates();
             }
@@ -190,7 +236,7 @@ export class StatusManager extends BaseManager {
      */
     async #processPendingUIUpdates() {
         try {
-            const uiManager = this.getDependency('UIManager');
+            const uiManager = managers.uiManager;
             if (!uiManager?.isInitialized()) {
                 return;
             }
@@ -277,20 +323,36 @@ export class StatusManager extends BaseManager {
 
     /**
      * Clean up resources
+     * @protected
      */
-    async dispose() {
+    async _dispose() {
         if (this.#updateInterval) {
             clearInterval(this.#updateInterval);
             this.#updateInterval = null;
         }
         this.#pendingUIUpdates.clear();
-        await super.dispose();
+        await super._dispose();
+        window.removeEventListener('online', this.#handleOnlineStatus);
+        window.removeEventListener('offline', this.#handleOnlineStatus);
+        this.#status = {
+            online: false,
+            initialized: false,
+            error: null,
+            orderCounts: {
+                '1': 0,
+                '2': 0,
+                '3': 0,
+                'READY': 0,
+                'OVERDUE': 0
+            },
+            lastUpdate: null
+        };
     }
 
     // Private service check methods...
     async #checkApiStatus() {
         try {
-            if (environment.isDevelopment) {
+            if (isDevelopment()) {
                 return true;
             }
 
@@ -382,188 +444,223 @@ export class StatusManager extends BaseManager {
     }
 
     /**
-     * Update order counts with atomic operations and validation
-     * @param {Object} counts - Order counts by status
-     * @returns {Promise<void>}
+     * Update order counts and notify if needed
+     * @param {OrderCounts} counts New order counts
      */
     async updateOrderCounts(counts) {
-        const lockKey = 'orderCountsLock';
         try {
-            // Get dependencies
-            const eventManager = this.getDependency('EventManager');
-            const uiManager = this.getDependency('UIManager');
+            // Store previous counts for comparison
+            this.#previousCounts = { ...this.#status.orderCounts };
 
-            if (!eventManager?.isInitialized() || !uiManager?.isInitialized()) {
-                throw new Error('Required managers not initialized');
-            }
+            // Update counts
+            this.#status.orderCounts = counts;
+            this.#status.lastUpdate = Date.now();
 
-            // Acquire lock
-            const lock = await this.#acquireLock(lockKey);
-            if (!lock) {
-                throw new Error('Failed to acquire lock for counter update');
-            }
+            // Check for significant changes
+            await this.#checkForSignificantChanges();
 
-            try {
-                // Validate counts
-                const validatedCounts = await this.#validateCounts(counts);
-                
-                // Get current counts from storage
-                const { orderCounts: currentCounts = {} } = await chrome.storage.local.get('orderCounts');
-                
-                // Create snapshot for rollback
-                const snapshot = { ...currentCounts };
-
-                try {
-                    // Update storage atomically
-                    await chrome.storage.local.set({ orderCounts: validatedCounts });
-
-                    // Queue UI updates
-                    Object.entries(validatedCounts).forEach(([status, count]) => {
-                        const elementId = `count-${status}`;
-                        this.#pendingUIUpdates.add({
-                            elementId,
-                            value: count,
-                            type: 'count',
-                            previousValue: currentCounts[status]
-                        });
-                    });
-
-                    // Process UI updates if possible
-                    if (uiManager.isInitialized()) {
-                        await this.#processPendingUIUpdates();
-                    }
-
-                    // Emit event with updated counts and changes
-                    const changes = this.#calculateChanges(currentCounts, validatedCounts);
-                    eventManager.emit('orders:counts-updated', { 
-                        counts: validatedCounts,
-                        changes,
-                        timestamp: Date.now()
-                    });
-
-                    this.log(LogLevel.DEBUG, '📊 Order counts updated', { 
-                        counts: validatedCounts,
-                        changes 
-                    });
-                } catch (error) {
-                    // Rollback on error
-                    await chrome.storage.local.set({ orderCounts: snapshot });
-                    throw error;
-                }
-            } finally {
-                // Release lock
-                await this.#releaseLock(lockKey);
-            }
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
-                method: 'updateOrderCounts',
-                counts
+            // Emit status update event
+            const event = await this.getDependency('event');
+            await event.emit('status:updated', {
+                type: 'orders',
+                counts,
+                timestamp: this.#status.lastUpdate
             });
-            throw error;
+        } catch (error) {
+            this.handleError(error, ErrorType.STATUS_UPDATE, ErrorSeverity.MEDIUM);
         }
     }
 
     /**
-     * Validate counter values
+     * Check for significant changes in order counts
      * @private
-     * @param {Object} counts - Counts to validate
-     * @returns {Promise<Object>} Validated counts
      */
-    async #validateCounts(counts) {
-        const validCounts = {};
-        const validStatuses = Object.values(STATUS_MAP);
+    async #checkForSignificantChanges() {
+        if (!this.#previousCounts) return;
 
-        for (const [status, count] of Object.entries(counts)) {
-            // Validate status
-            if (!validStatuses.includes(status)) {
-                this.log(LogLevel.WARNING, `⚠️ Invalid status: ${status}`);
-                continue;
-            }
+        const notification = await this.getDependency('notification');
+        const now = Date.now();
 
-            // Validate count
-            const numCount = parseInt(count, 10);
-            if (isNaN(numCount) || numCount < 0) {
-                this.log(LogLevel.WARNING, `⚠️ Invalid count for ${status}: ${count}`);
-                validCounts[status] = 0;
-            } else {
-                validCounts[status] = numCount;
-            }
+        // Check notification cooldown
+        if (this.#lastNotification && 
+            now - this.#lastNotification < STATUS_CONFIG.NOTIFICATION_COOLDOWN) {
+            return;
         }
 
-        // Ensure all statuses have a value
-        validStatuses.forEach(status => {
-            if (!(status in validCounts)) {
-                validCounts[status] = 0;
-            }
+        // Check notification limit
+        if (this.#notificationCount >= STATUS_CONFIG.MAX_NOTIFICATIONS) {
+            return;
+        }
+
+        // Check for new orders
+        const newOrders = this.#status.orderCounts['1'] - this.#previousCounts['1'];
+        if (newOrders > 0) {
+            await notification.show(
+                'New Orders',
+                `You have ${newOrders} new order${newOrders > 1 ? 's' : ''}!`,
+                { type: 'info' }
+            );
+            this.#lastNotification = now;
+            this.#notificationCount++;
+        }
+
+        // Check for overdue orders
+        const overdueOrders = this.#status.orderCounts['OVERDUE'] - this.#previousCounts['OVERDUE'];
+        if (overdueOrders > 0) {
+            await notification.show(
+                'Overdue Orders',
+                `You have ${overdueOrders} new overdue order${overdueOrders > 1 ? 's' : ''}!`,
+                { type: 'warning' }
+            );
+            this.#lastNotification = now;
+            this.#notificationCount++;
+        }
+
+        // Reset notification count periodically
+        if (now - this.#lastNotification > STATUS_CONFIG.NOTIFICATION_COOLDOWN) {
+            this.#notificationCount = 0;
+        }
+    }
+
+    /**
+     * Get current status
+     * @returns {Object} Current status
+     */
+    getStatus() {
+        return {
+            ...this.#status,
+            uptime: this.getMetrics().uptime
+        };
+    }
+
+    /**
+     * Get order counts
+     * @returns {OrderCounts} Current order counts
+     */
+    getOrderCounts() {
+        return { ...this.#status.orderCounts };
+    }
+
+    /**
+     * Check if system is online
+     * @returns {boolean} Online status
+     */
+    isOnline() {
+        return this.#status.online;
+    }
+
+    /**
+     * Get last error
+     * @returns {Error|null} Last error
+     */
+    getLastError() {
+        return this.#status.error;
+    }
+
+    /**
+     * Set error status
+     * @param {Error} error Error object
+     */
+    async setError(error) {
+        this.#status.error = error;
+        
+        // Emit error event
+        const event = await this.getDependency('event');
+        await event.emit('status:error', {
+            error,
+            timestamp: Date.now()
+        });
+    }
+
+    /**
+     * Clear error status
+     */
+    async clearError() {
+        this.#status.error = null;
+        
+        // Emit error cleared event
+        const event = await this.getDependency('event');
+        await event.emit('status:error-cleared', {
+            timestamp: Date.now()
+        });
+    }
+
+    /**
+     * Handle online/offline status change
+     * @private
+     */
+    async #handleOnlineStatus(online) {
+        this.#status.online = online;
+        
+        // Emit online status event
+        const event = await this.getDependency('event');
+        await event.emit('status:online', {
+            online,
+            timestamp: Date.now()
         });
 
-        return validCounts;
+        // Show notification
+        if (!online) {
+            const notification = await this.getDependency('notification');
+            await notification.show('Offline Mode', 'Working in offline mode. Some features may be limited.', {
+                type: 'warning',
+                duration: 0 // Persistent until back online
+            });
+        }
     }
 
     /**
-     * Calculate changes between old and new counts
+     * Start status update interval
      * @private
-     * @param {Object} oldCounts - Previous counts
-     * @param {Object} newCounts - New counts
-     * @returns {Object} Changes object
      */
-    #calculateChanges(oldCounts, newCounts) {
-        const changes = {};
-        Object.entries(newCounts).forEach(([status, count]) => {
-            const oldCount = oldCounts[status] || 0;
-            if (count !== oldCount) {
-                changes[status] = {
-                    previous: oldCount,
-                    current: count,
-                    delta: count - oldCount
-                };
+    #startStatusUpdates() {
+        if (this.#updateInterval) {
+            clearInterval(this.#updateInterval);
+        }
+
+        this.#updateInterval = setInterval(
+            () => this.#updateStatus(),
+            STATUS_CONFIG.UPDATE_INTERVAL
+        );
+    }
+
+    /**
+     * Update status
+     * @private
+     */
+    async #updateStatus() {
+        try {
+            // Check if we need to show notifications
+            await this.#checkForSignificantChanges();
+
+            // Emit status update event
+            const event = await this.getDependency('event');
+            await event.emit('status:updated', {
+                type: 'periodic',
+                status: this.getStatus(),
+                timestamp: Date.now()
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.STATUS_UPDATE, ErrorSeverity.LOW);
+        }
+    }
+
+    /**
+     * Get status manager metrics
+     * @returns {Object} Metrics object
+     */
+    getMetrics() {
+        return {
+            ...super.getMetrics(),
+            status: {
+                uptime: Date.now() - this._startTime,
+                lastUpdate: this.#status.lastUpdate,
+                notificationCount: this.#notificationCount,
+                online: this.#status.online
             }
-        });
-        return changes;
-    }
-
-    /**
-     * Acquire lock for atomic operations
-     * @private
-     * @param {string} key - Lock key
-     * @returns {Promise<boolean>} Whether lock was acquired
-     */
-    async #acquireLock(key) {
-        try {
-            const lockData = {
-                [key]: {
-                    timestamp: Date.now(),
-                    owner: crypto.randomUUID()
-                }
-            };
-            await chrome.storage.local.set(lockData);
-            return true;
-        } catch (error) {
-            this.handleError(error, ErrorType.LOCK, ErrorSeverity.LOW, {
-                method: '#acquireLock',
-                key
-            });
-            return false;
-        }
-    }
-
-    /**
-     * Release lock
-     * @private
-     * @param {string} key - Lock key
-     * @returns {Promise<void>}
-     */
-    async #releaseLock(key) {
-        try {
-            await chrome.storage.local.remove(key);
-        } catch (error) {
-            this.handleError(error, ErrorType.LOCK, ErrorSeverity.LOW, {
-                method: '#releaseLock',
-                key
-            });
-        }
+        };
     }
 }
 
-// Export singleton instance
-export const statusManager = StatusManager.getInstance(); 
+// Export class only
+export { StatusManager }; 

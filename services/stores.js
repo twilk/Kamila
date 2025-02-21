@@ -24,11 +24,10 @@ export const stores = [
     { id: 'RAC', name: 'RAC', address: 'Woronicza - Racjonalizacji 7', deliveryId: 76, drwn: 'RAC - Racjonalizacji 7' },
     { id: 'RAY', name: 'RAY', address: 'Bemowo Chrzanów - Rayskiego 11', deliveryId: 77, drwn: 'RAY - Rayskiego 11' },
     { id: 'RKW', name: 'RKW', address: 'Puławska - Rakowiecka 1/3', deliveryId: 78, drwn: 'RKW - Rakowiecka 1/3' },
-    { id: 'RP', name: 'RP', address: 'Aleja Rzeczypospolitej 12', deliveryId: 79, drwn: 'RP - Rzeczypospolitej 12' },
     { id: 'SIK', name: 'SIK', address: 'Stegny - Sikorskiego 9b', deliveryId: 80, drwn: 'SIK - Sikorskiego 9B' },
     { id: 'STO', name: 'STO', address: 'Stokłosy - Al. KEN 95', deliveryId: 81, drwn: 'STO - Aleja KEN 95' },
     { id: 'WDK', name: 'WDK', address: 'Centrum - Widok 19', deliveryId: 82, drwn: 'WDK - Widok 19' },
-    { id: 'WIL', name: 'WIL', address: 'Miasteczko Wilanów - Aleja Rzeczypospolitej 12', deliveryId: 83, drwn: 'WIL - Aleja Wilanowska 103' },
+    { id: 'WIL', name: 'WIL', address: 'Przy Dolince - Aleja Wilanowska 103', deliveryId: 83, drwn: 'WIL - Aleja Wilanowska 103' },
     { id: 'ŻEL', name: 'ŻEL', address: 'Wola - Żelazna 67', deliveryId: 84, drwn: 'ZEL - Zelazna 67' }
 ];
 
@@ -44,46 +43,62 @@ export const isPickupDelivery = (deliveryMethod) => {
  * @throws {Error} If store validation fails
  */
 export const processOrder = (order) => {
-    if (!order) {
-        throw new Error('Order is required');
-    }
-
-    // Validate store
-    const store = validateStore(order.store_id);
-
-    // Handle ALL stores case
-    if (store.id === 'ALL') {
-        throw new Error('Cannot process order with ALL stores selection');
-    }
-
-    // Process based on delivery method
-    if (isPickupDelivery(order.delivery_method)) {
-        // For pickup delivery, set pickup location in comment
-        order.client_comment = order.client_comment || '';
-        if (!order.client_comment.includes(store.address)) {
-            order.client_comment = order.client_comment
-                ? `${order.client_comment}\nPunkt odbioru: ${store.address}`
-                : `Punkt odbioru: ${store.address}`;
+    try {
+        // 1. Validate order and check required conditions
+        if (!order) {
+            throw new Error('Order is required');
         }
-        order.delivery_id = DELIVERY_IDS.PICKUP;
-    } else {
-        // For other delivery methods, use store's delivery ID
-        if (!store.deliveryId) {
-            throw new Error(`Store ${store.id} does not have a delivery ID configured`);
+
+        // Check for status_id = 1 (Submitted) and delivery_id = 3 (Initial pickup)
+        if (order.status_id !== '1') {
+            return order; // Skip if not a submitted order
         }
-        order.delivery_id = store.deliveryId;
+
+        if (order.delivery_id !== 3) {
+            return order; // Skip if not initial pickup delivery
+        }
+
+        // 2. Extract store address from client comment
+        const commentPattern = /PUNKT ODBIORU:\s*([^\n]+)/i;
+        const match = order.client_comment?.match(commentPattern);
         
-        // Clear pickup-related comments if present
-        if (order.client_comment && order.client_comment.includes('Punkt odbioru:')) {
-            order.client_comment = order.client_comment
-                .split('\n')
-                .filter(line => !line.includes('Punkt odbioru:'))
-                .join('\n')
-                .trim();
+        if (!match || !match[1]) {
+            return order; // Skip if no valid store address pattern found
         }
+
+        const extractedAddress = match[1].trim();
+
+        // Normalize addresses for comparison
+        const normalizeAddress = (addr) => addr.toLowerCase().replace(/\s+/g, ' ').trim();
+        const normalizedExtracted = normalizeAddress(extractedAddress);
+
+        // 3. Find matching store from the address
+        const matchingStore = stores.find(store => {
+            if (store.id === 'ALL' || !store.address) return false;
+            const normalizedStoreAddr = normalizeAddress(store.address);
+            return normalizedStoreAddr === normalizedExtracted || 
+                   normalizedExtracted.includes(normalizedStoreAddr) ||
+                   normalizedStoreAddr.includes(normalizedExtracted);
+        });
+
+        if (!matchingStore) {
+            console.warn(`[WARNING] ⚠️ Nie znaleziono sklepu dla adresu: ${extractedAddress}`, {
+                normalized: normalizedExtracted,
+                availableStores: stores.map(s => ({id: s.id, normalized: s.address ? normalizeAddress(s.address) : null}))
+            });
+            return order; // Skip if no matching store found
+        }
+
+        // 4. Update delivery_id to the matching store's deliveryId
+        if (matchingStore.deliveryId) {
+            order.delivery_id = matchingStore.deliveryId;
+        }
+
+        return order;
+    } catch (error) {
+        console.error('Error processing order:', error);
+        return order; // Return original order unchanged in case of error
     }
-    
-    return order;
 };
 
 // Funkcja filtrująca sklepy dla wybranej metody dostawy

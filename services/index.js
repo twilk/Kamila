@@ -6,42 +6,23 @@ export { MenuManager } from './core/MenuManager.js';
 // Types
 export { EventType, ErrorType, ErrorSeverity, LogLevel } from './core/EventType.js';
 
-// Core managers and instances
-export {
-    managers,
-    errorHandler,
-    eventManager,
-    initializationManager,
-    loadingManager,
-    connectionManager,
-    cacheManager,
-    uiManager,
-    themeManager,
-    menuManager,
-    debugManager,
-    volumeManager,
-    updateManager,
-    refreshManager,
-    dataManager,
-    storeManager,
-    statusManager,
-    userManager,
-    languageManager,
-    settingsManager,
-    messageManager,
-    operationProgressManager,
-    counterManager
-} from './core/managers.js';
+// Core managers
+export { getAPIManager, getDataManager, getStatusManager, getStoreManager, getLogManager } from './core/managers.js';
+export { loadingManager } from './core/LoadingManager.js';
+export { connectionManager } from './core/ConnectionManager.js';
+export { cacheManager } from './core/CacheManager.js';
+export { uiManager } from './core/UIManager.js';
+export { themeManager } from './core/ThemeManager.js';
+export { menuManager } from './core/MenuManager.js';
+export { languageManager } from './core/LanguageManager.js';
+export { debugManager } from './core/DebugManager.js';
+export { operationProgressManager } from './core/OperationProgressManager.js';
+export { counterManager } from './core/CounterManager.js';
+export { messageManager } from './core/MessageManager.js';
 
 // API services
 export { APIManager, apiManager } from './api/index.js';
 export { OrderService } from './api/OrderService.js';
 
-// User services
-import { UserCardService } from './userCard.js';
-export const userCardService = UserCardService.getInstance();
-export { UserCardService };
-
-// Utilities
-export { i18n } from './i18n.js';
+// Store configuration
 export { stores } from './stores.js';

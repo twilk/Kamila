@@ -8,7 +8,37 @@ class ErrorHandlerCore {
     #errors = [];
     #maxErrors = 100;
     #name = 'ErrorHandler';
+    #eventQueue = [];
+    #isEventManagerReady = false;
+    #isInitialized = false;
+    #registry = null;
+    #handleGlobalError = null;
+    #handleUnhandledRejection = null;
     
+    constructor(registry) {
+        if (!registry) {
+            throw new Error('Registry is required');
+        }
+        this.#registry = registry;
+        
+        // Bind handlers
+        this.#handleGlobalError = this.handleGlobalError.bind(this);
+        this.#handleUnhandledRejection = this.handleUnhandledRejection.bind(this);
+        
+        // Set up error listeners immediately
+        this.setupErrorListeners();
+    }
+
+    setupErrorListeners() {
+        // Remove existing listeners if any
+        window.removeEventListener('error', this.#handleGlobalError);
+        window.removeEventListener('unhandledrejection', this.#handleUnhandledRejection);
+        
+        // Add listeners
+        window.addEventListener('error', this.#handleGlobalError);
+        window.addEventListener('unhandledrejection', this.#handleUnhandledRejection);
+    }
+
     /**
      * Log a message with the specified level
      * @param {LogLevel} level Log level
@@ -54,51 +84,57 @@ class ErrorHandlerCore {
      * @param {ErrorSeverity} severity Error severity
      * @param {Object} [context] Additional context
      */
-    handle(error, type = ErrorType.RUNTIME, severity = ErrorSeverity.HIGH, context = {}) {
-        const errorInfo = {
-            timestamp: new Date().toISOString(),
-            type,
-            severity,
-            message: error.message,
-            stack: error.stack,
-            context: {
-                ...context,
-                url: window.location.href,
-                userAgent: navigator.userAgent
+    async handle(error, type = ErrorType.UNKNOWN, severity = ErrorSeverity.MEDIUM, context = {}) {
+        try {
+            // Log error immediately
+            this.log(LogLevel.ERROR, error.message, {
+                type,
+                severity,
+                context,
+                stack: error.stack
+            });
+
+            // Store error
+            const errorData = {
+                message: error.message,
+                type,
+                severity,
+                context,
+                timestamp: new Date().toISOString()
+            };
+            
+            this.#errors.push(errorData);
+            if (this.#errors.length > this.#maxErrors) {
+                this.#errors.shift();
             }
-        };
 
-        // Log error with appropriate level based on severity
-        const logLevel = severity === ErrorSeverity.HIGH ? LogLevel.ERROR :
-                        severity === ErrorSeverity.MEDIUM ? LogLevel.WARN :
-                        LogLevel.INFO;
+            // Try to emit if EventManager is ready
+            try {
+                const eventManager = await this.#registry?.get('event');
+                if (eventManager?.isInitialized()) {
+                    await eventManager.emit('app:error', errorData);
+                } else {
+                    this.#eventQueue.push({
+                        event: 'app:error',
+                        data: errorData
+                    });
+                }
+            } catch {
+                // Silently queue if EventManager not available
+                this.#eventQueue.push({
+                    event: 'app:error',
+                    data: errorData
+                });
+            }
 
-        this.log(logLevel, `[${type}] ${errorInfo.message}`, {
-            error,
-            context: errorInfo.context,
-            severity
-        });
-        
-        // Store error
-        this.#errors.unshift(errorInfo);
-        
-        // Trim errors array if needed
-        if (this.#errors.length > this.#maxErrors) {
-            this.#errors = this.#errors.slice(0, this.#maxErrors);
+            // Handle based on severity
+            if (severity === ErrorSeverity.HIGH) {
+                await this.#handleHighSeverityError(error, type, context);
+            }
+        } catch (handlingError) {
+            console.error('Error in error handler:', handlingError);
+            console.error('Original error:', error);
         }
-        
-        // Store in chrome.storage for persistence
-        chrome.storage.local.set({
-            errors: this.#errors
-        }).catch(storageError => {
-            console.error('Failed to store error:', storageError);
-        });
-        
-        // Emit error event with type and severity
-        const errorEvent = new CustomEvent('app:error', {
-            detail: errorInfo
-        });
-        window.dispatchEvent(errorEvent);
     }
     
     /**
@@ -125,8 +161,8 @@ class ErrorHandlerCore {
      * @param {number} colno Column number
      * @param {Error} error Error object
      */
-    handleGlobalError(message, source, lineno, colno, error) {
-        this.handle(
+    async handleGlobalError(message, source, lineno, colno, error) {
+        return this.handle(
             error || new Error(message),
             ErrorType.RUNTIME,
             ErrorSeverity.HIGH,
@@ -138,88 +174,134 @@ class ErrorHandlerCore {
      * Handle unhandled promise rejection
      * @param {PromiseRejectionEvent} event Rejection event
      */
-    handleUnhandledRejection(event) {
-        this.handle(
+    async handleUnhandledRejection(event) {
+        return this.handle(
             event.reason,
             ErrorType.RUNTIME,
             ErrorSeverity.HIGH,
             { source: 'unhandledrejection' }
         );
     }
+
+    #handleHighSeverityError(error, type, context) {
+        // Implementation of handling high severity error
+    }
+
+    /**
+     * Process queued events when EventManager becomes ready
+     */
+    async processEventQueue() {
+        if (this.#eventQueue.length === 0) return;
+
+        try {
+            const eventManager = await this.#registry.get('event');
+            if (!eventManager?.isInitialized()) return;
+
+            this.#isEventManagerReady = true;
+            
+            while (this.#eventQueue.length > 0) {
+                const { event, data } = this.#eventQueue.shift();
+                await eventManager.emit(event, data);
+            }
+        } catch (error) {
+            console.error('Failed to process event queue:', error);
+        }
+    }
+
+    getHandlers() {
+        return {
+            globalError: this.#handleGlobalError,
+            unhandledRejection: this.#handleUnhandledRejection
+        };
+    }
 }
 
 /**
  * Error handler manager that integrates with the manager system
  */
-export class ErrorHandler extends BaseManager {
+class ErrorHandler extends BaseManager {
     static #instance = null;
-    #core;
+    #core = null;
     
-    constructor() {
-        super('ErrorHandler');
+    constructor(registry = null) {
         if (ErrorHandler.#instance) {
             return ErrorHandler.#instance;
         }
+        super(registry, 'error');
         ErrorHandler.#instance = this;
-        this.#core = new ErrorHandlerCore();
+        
+        // Create core only on first instantiation
+        this.#core = new ErrorHandlerCore(registry);
     }
-    
-    /**
-     * Get singleton instance
-     * @returns {ErrorHandler}
-     */
+
     static getInstance() {
         if (!ErrorHandler.#instance) {
-            ErrorHandler.#instance = new ErrorHandler();
+            throw new Error('ErrorHandler not initialized');
         }
         return ErrorHandler.#instance;
     }
 
-    /**
-     * Initialize error handler
-     * @returns {Promise<boolean>}
-     */
-    async onInitialize() {
+    static createInstance(registry) {
+        if (!registry) {
+            throw new Error('Registry is required');
+        }
+        if (!ErrorHandler.#instance) {
+            ErrorHandler.#instance = new ErrorHandler(registry);
+        }
+        return ErrorHandler.#instance;
+    }
+
+    async _initialize() {
         try {
             this.log(LogLevel.INFO, '🔄 Initializing error handler...');
-            // Initialize error storage and listeners
-            window.onerror = this.#core.handleGlobalError.bind(this.#core);
-            window.onunhandledrejection = this.#core.handleUnhandledRejection.bind(this.#core);
             
-            this.log(LogLevel.SUCCESS, '✅ Initialized successfully');
+            // Process any queued events
+            await this.#core.processEventQueue();
+            
+            this.log(LogLevel.SUCCESS, '✅ Error handler initialized');
             return true;
         } catch (error) {
-            console.error('[ErrorHandler] Failed to initialize:', error);
+            console.error('Failed to initialize error handler:', error);
             return false;
         }
     }
 
-    // Delegate core error handling methods
-    handle(...args) { return this.#core.handle(...args); }
+    // Delegate methods to core
+    async handle(...args) { return this.#core.handle(...args); }
     getErrors() { return this.#core.getErrors(); }
     clearErrors() { return this.#core.clearErrors(); }
     log(...args) { return this.#core.log(...args); }
+    processEventQueue() { return this.#core.processEventQueue(); }
 
-    /**
-     * Dispose error handler
-     */
     async dispose() {
         try {
-            this.log(LogLevel.INFO, '🔄 Disposing error handler...');
+            const handlers = this.#core.getHandlers();
+            // Clean up event listeners
+            window.removeEventListener('error', handlers.globalError);
+            window.removeEventListener('unhandledrejection', handlers.unhandledRejection);
             
-            // Remove event listeners
-            window.onerror = null;
-            window.onunhandledrejection = null;
-            
-            // Clear errors
-            this.#core.clearErrors();
+            this.#core = null;
+            ErrorHandler.#instance = null;
             
             await super.dispose();
-            this.log(LogLevel.SUCCESS, '✅ Disposed successfully');
         } catch (error) {
-            console.error('[ErrorHandler] Failed to dispose:', error);
+            console.error('Error disposing error handler:', error);
         }
+    }
+
+    _setupGlobalHandlers() {
+        window.onerror = (msg, url, line, col, error) => {
+            this.handle(error || new Error(msg));
+            return true;
+        };
+        
+        window.onunhandledrejection = (event) => {
+            this.handle(event.reason);
+            return true;
+        };
     }
 }
 
-export const errorHandler = ErrorHandler.getInstance(); 
+// Export only createInstance
+export { ErrorHandler };
+export const createErrorHandler = ErrorHandler.createInstance; 

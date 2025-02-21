@@ -1,19 +1,40 @@
 import { checkApiStatus, checkAuthStatus, checkOrdersStatus, checkCacheStatus } from './api.js';
-import { DataManager } from './dataManager.js';
-import { i18n } from './i18n.js';
-import { LanguageManager } from './languageManager.js';
-import { EventManager } from './eventManager.js';
+import { 
+    getDataManager,
+    getErrorHandler,
+    getEventManager,
+    getLanguageManager
+} from './core/managers.js';
 
-// Inicjalizacja DataManager dla testów
-const dataManager = DataManager.getInstance();
+// Initialize managers
+const dataManager = getDataManager();
+const errorHandler = getErrorHandler();
+const eventManager = getEventManager();
+const languageManager = getLanguageManager();
+
+// Don't create new instance, use the one from managers
+// const testDataManager = DataManager.getInstance();
 
 // Zastępujemy funkcję processOrders z background.js
 async function processOrders(orders) {
-    return await dataManager.processOrders(orders);
+    try {
+        // Wait for dataManager to be ready
+        if (!dataManager.isInitialized()) {
+            const ready = await dataManager.waitForReady();
+            if (!ready) {
+                throw new Error('DataManager failed to initialize');
+            }
+        }
+        
+        return await dataManager.processOrderCounts(orders);
+    } catch (error) {
+        console.error('Error processing orders:', error);
+        throw error;
+    }
 }
 
 // Test runner service for integration tests
-export class TestRunner {
+class TestRunner {
     static #instance = null;
 
     constructor() {
@@ -28,53 +49,38 @@ export class TestRunner {
             total: 0,
             current: 0
         };
-        this.tests = {
-            i18n: [
-                {
-                    name: 'getCurrentLanguage',
-                    description: 'Get Current Language',
-                    run: async () => {
-                        const currentLang = i18n.getCurrentLanguage();
-                        if (!currentLang) {
-                            throw new Error('Current language is not set');
-                        }
-                        return true;
-                    }
-                },
-                {
-                    name: 'languageSync',
-                    description: 'Language Synchronization',
-                    run: async () => {
-                        const eventManager = EventManager.getInstance();
-                        const languageManager = LanguageManager.getInstance();
-                        await languageManager.handleLanguageChange({ lang: 'english' });
-                        
-                        const i18nLang = i18n.getCurrentLanguage();
-                        const managerLang = languageManager.getCurrentLanguage();
-                        
-                        if (i18nLang !== managerLang || i18nLang !== 'english') {
-                            throw new Error('Language synchronization failed');
-                        }
-                        return true;
-                    }
-                },
-                {
-                    name: 'translationLoading',
-                    description: 'Translation Loading',
-                    run: async () => {
-                        await i18n.waitForTranslations();
-                        if (!i18n.translationsLoaded || Object.keys(i18n.translations).length === 0) {
-                            throw new Error('Translations not loaded properly');
-                        }
-                        return true;
-                    }
-                }
-            ],
-            // ... existing tests ...
-        };
+        
+        // Initialize tests as an array
+        this.tests = [];
+
+        // Add language tests
+        this.registerTest('Current Language', async () => {
+            const currentLang = languageManager.getCurrentLanguage();
+            if (!(currentLang === 'polish' || currentLang === 'english')) {
+                throw new Error(`Invalid language: ${currentLang}`);
+            }
+            return true;
+        });
+
+        this.registerTest('Language Sync', async () => {
+            const managerLang = languageManager.getCurrentLanguage();
+            if (managerLang !== 'english') {
+                throw new Error(`Language mismatch: ${managerLang} vs english`);
+            }
+            return true;
+        });
+
+        this.registerTest('Translation Loading', async () => {
+            await languageManager.initialize();
+            if (!languageManager.isInitialized()) {
+                throw new Error('Translations not loaded');
+            }
+            return true;
+        });
+
         this.running = false;
 
-        // Rejestruj testy podczas inicjalizacji
+        // Register other tests
         this.registerTests();
     }
 
@@ -321,5 +327,6 @@ export class TestRunner {
     }
 }
 
-// Create singleton instance
+// Export both the class and singleton instance
+export { TestRunner };
 export default TestRunner.getInstance(); 

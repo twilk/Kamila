@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title data-i18n="appTitle">Kamila</title>
+    <title data-i18n="app.title">Kamila</title>
     <link href="lib/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
@@ -28,7 +28,7 @@
                 </div>
                 <div class="road"></div>
             </div>
-            <div class="initialization-text" data-i18n="initialization">Inicjalizacja</div>
+            <div class="initialization-text" data-i18n="app.initialization">Inicjalizacja</div>
         </div>
     </div>
 
@@ -73,8 +73,8 @@
                 <!-- Side Panel -->
                 <div id="side-panel">
                     <div class="store-selector">
-                        <select id="store-select" class="form-select form-select-sm" data-i18n-placeholder="selectStore">
-                            <!-- Lista sklepów będzie generowana dynamicznie z stores.js -->
+                        <select id="store-select" class="form-select form-select-sm" aria-label="Store selector">
+                            <option value="" disabled selected data-i18n="stores.select">Select store...</option>
                         </select>
                         <button id="refresh-store-data" class="btn btn-sm btn-outline-secondary" data-i18n="interface.refreshData">
                             <i class="bi bi-arrow-clockwise"></i>
@@ -185,27 +185,14 @@
                     </div>
 
                     <div class="tab-pane" id="settings">
-                        <!-- <div class="settings-section py-2">
-                            <div class="form-group mb-0">
-                                <select id="user-select" class="form-select form-select-sm" data-i18n-placeholder="selectUser">
-                                    <option value="" data-i18n="noUserSelected">Wybierz użytkownika</option>
-                                </select>
-                            </div>
-                        </div> -->
-                        
                         <div class="settings-section">
                             <!-- Control Bar -->
                             <div class="control-bar">
-                                <!-- Ustawienia użytkownika -->
-                            <!-- <div class="settings-section mb-4"> -->
-                                <!-- <h6 data-i18n="userSettings">Ustawienia użytkownika</h6> -->
-                                <div class="user-selector">
-                                    <label for="user-select" class="form-label" data-i18n="selectUser">Wybierz użytkownika:</label>
+                                <div class="user-selector mb-3">
                                     <select id="user-select" class="form-select form-select-sm">
-                                        <option value="" data-i18n="noUserSelected">Wybierz użytkownika</option>
+                                        <option value="" selected data-i18n="selectUser">Wybierz użytkownika</option>
                                     </select>
                                 </div>
-                            <!-- </div> -->
                                 <div class="control-group">
                                     <label class="switch" title="Toggle theme">
                                         <span class="sun">

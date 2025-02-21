@@ -1,4 +1,4 @@
-import { handleLanguageChange } from '../../services/languageManager.js';
+import { languageManager } from '../../services/core/LanguageManager.js';
 import testRunner from '../../services/testRunner.js';
 
 // Register translation tests
@@ -16,36 +16,41 @@ testRunner.registerTest('Language Change: Polish to English', async () => {
         </div>
     `;
 
+    // Initialize language manager
+    await languageManager.initialize();
+
     // Initial state check - Polish
     const testPanelLabel = document.querySelector('[data-i18n="testPanel"]');
     const runTestsLabel = document.querySelector('[data-i18n="runAllTests"]');
     
-    if (testPanelLabel.textContent !== 'Panel testów' || 
-        runTestsLabel.textContent !== 'Uruchom testy') {
+    if (testPanelLabel.textContent !== languageManager.translate('testPanel') || 
+        runTestsLabel.textContent !== languageManager.translate('runAllTests')) {
         throw new Error('Initial Polish labels not set correctly');
     }
 
-    // Trigger language change to English
-    await handleLanguageChange({ 
-        target: { getAttribute: () => 'english' }
-    });
+    // Change language to English
+    await languageManager.setLanguage('english');
+    await languageManager.updateUI();
 
     // Check if labels changed to English
-    if (testPanelLabel.textContent !== 'Test Panel' || 
-        runTestsLabel.textContent !== 'Run Tests') {
+    if (testPanelLabel.textContent !== languageManager.translate('testPanel') || 
+        runTestsLabel.textContent !== languageManager.translate('runAllTests')) {
         throw new Error('Labels did not change to English correctly');
     }
 });
 
 testRunner.registerTest('Language Persistence Test', async () => {
-    // Change to English
-    await handleLanguageChange({ 
-        target: { getAttribute: () => 'english' }
-    });
+    // Initialize language manager
+    await languageManager.initialize();
 
-    // Check localStorage
-    if (localStorage.getItem('language') !== 'english') {
-        throw new Error('Language preference not saved to localStorage');
+    // Change to English
+    await languageManager.setLanguage('english');
+    await languageManager.updateUI();
+
+    // Check storage
+    const storedLang = await chrome.storage.local.get('language');
+    if (storedLang.language !== 'english') {
+        throw new Error('Language preference not saved to storage');
     }
 
     // Reload page simulation
@@ -61,18 +66,17 @@ testRunner.registerTest('Language Persistence Test', async () => {
         </div>
     `;
 
-    // Initialize with stored language
-    const storedLang = localStorage.getItem('language');
-    await handleLanguageChange({ 
-        target: { getAttribute: () => storedLang }
-    });
+    // Create new instance to test persistence
+    const newManager = new LanguageManager();
+    await newManager.initialize();
+    await newManager.updateUI();
 
     // Check if labels are in English
     const testPanelLabel = document.querySelector('[data-i18n="testPanel"]');
     const runTestsLabel = document.querySelector('[data-i18n="runAllTests"]');
     
-    if (testPanelLabel.textContent !== 'Test Panel' || 
-        runTestsLabel.textContent !== 'Run Tests') {
+    if (testPanelLabel.textContent !== newManager.translate('testPanel') || 
+        runTestsLabel.textContent !== newManager.translate('runAllTests')) {
         throw new Error('Labels not restored to English after reload');
     }
 }); 

@@ -1,13 +1,16 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { LogLevel } from './LogLevel.js';
+import { OPERATION_PROGRESS_CONFIG } from '../../config/progress.js';
 
 /**
  * @extends {BaseManager}
  * Manages progress indicators and loading states for ongoing operations
  */
-export class OperationProgressManager extends BaseManager {
+class OperationProgressManager extends BaseManager {
     static #instance = null;
+    static #registry = null;
+
     #progressBar = null;
     #progressText = null;
     #progressContainer = null;
@@ -17,29 +20,48 @@ export class OperationProgressManager extends BaseManager {
     #progress = 0;
     #total = 0;
     #text = '';
+    #settings;
+
+    constructor(registry) {
+        super(registry, 'OperationProgressManager');
+        if (OperationProgressManager.#instance) {
+            return OperationProgressManager.#instance;
+        }
+        OperationProgressManager.#instance = this;
+        OperationProgressManager.#registry = registry;
+    }
 
     static getInstance() {
-        if (!OperationProgressManager.#instance) {
-            OperationProgressManager.#instance = new OperationProgressManager();
+        if (!OperationProgressManager.#instance && OperationProgressManager.#registry) {
+            OperationProgressManager.#instance = new OperationProgressManager(OperationProgressManager.#registry);
         }
         return OperationProgressManager.#instance;
     }
 
-    constructor() {
-        super('OperationProgressManager');
-        if (OperationProgressManager.#instance) {
-            throw new Error('Use OperationProgressManager.getInstance()');
-        }
+    static setRegistry(registry) {
+        OperationProgressManager.#registry = registry;
     }
 
-    async onInitialize() {
+    /**
+     * Initialize operation progress manager
+     * @returns {Promise<boolean>}
+     */
+    async _initialize() {
         try {
-            this.#ensureProgressElements();
+            this.log(LogLevel.INFO, '🔄 Initializing operation progress manager...');
+            
+            // Load operation progress settings
+            const storage = await this.getDependency('storage');
+            const settings = await storage.get(OPERATION_PROGRESS_CONFIG.STORAGE_KEY) || {};
+            this.#settings = { ...OPERATION_PROGRESS_CONFIG.DEFAULT_SETTINGS, ...settings };
+            
+            // Set up event listeners
+            await this.#setupEventListeners();
+            
+            this.log(LogLevel.SUCCESS, '✅ Operation progress manager initialized');
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initialize'
-            });
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
             return false;
         }
     }
@@ -274,7 +296,35 @@ export class OperationProgressManager extends BaseManager {
             });
         }
     }
+
+    /**
+     * Set up event listeners
+     * @private
+     */
+    async #setupEventListeners() {
+        try {
+            const eventManager = await this.getDependency('event');
+            
+            // Listen for progress events
+            await eventManager.on('progress:start', this.startTask.bind(this));
+            await eventManager.on('progress:update', this.updateTask.bind(this));
+            await eventManager.on('progress:complete', this.setSuccess.bind(this));
+            await eventManager.on('progress:error', this.setError.bind(this));
+            await eventManager.on('progress:warning', this.setWarning.bind(this));
+            
+            // Ensure progress elements exist
+            this.#ensureProgressElements();
+            
+            this.log(LogLevel.DEBUG, '🔄 Progress event listeners set up');
+        } catch (error) {
+            this.handleError(error, ErrorType.EVENT_LISTENER, ErrorSeverity.HIGH, {
+                method: '#setupEventListeners'
+            });
+            throw error;
+        }
+    }
 }
 
-// Export singleton instance
+// Export both class and instance
+export { OperationProgressManager };
 export const operationProgressManager = OperationProgressManager.getInstance(); 

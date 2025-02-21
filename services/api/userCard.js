@@ -4,6 +4,10 @@ import { ErrorType, ErrorSeverity } from '../core/ErrorTypes.js';
 const apiManager = APIManager.getInstance();
 
 export class UserCardService extends APIManager {
+    /** @private */
+    #settings;
+    /** @private */
+
     constructor() {
         super();
         this.setBaseUrl('https://darwina.pl/api');
@@ -61,5 +65,29 @@ export class UserCardService extends APIManager {
             settings: data.settings || {},
             lastActive: data.last_active ? new Date(data.last_active) : null
         };
+    }
+
+    /**
+     * Initialize user card service
+     * @returns {Promise<boolean>}
+     */
+    async _initialize() {
+        try {
+            this.log(LogLevel.INFO, '🔄 Initializing user card service...');
+            
+            // Load user card settings
+            const storage = await this.getDependency('storage');
+            const settings = await storage.get(USER_CARD_CONFIG.STORAGE_KEY) || {};
+            this.#settings = { ...USER_CARD_CONFIG.DEFAULT_SETTINGS, ...settings };
+            
+            // Set up event listeners
+            this.#setupEventListeners();
+            
+            this.log(LogLevel.SUCCESS, '✅ User card service initialized');
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+            return false;
+        }
     }
 } 

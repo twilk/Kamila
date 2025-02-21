@@ -1,58 +1,93 @@
-import { i18n } from '../../services/i18n.js';
-import { LanguageManager } from '../../services/languageManager.js';
-import { EventManager } from '../../services/eventManager.js';
+import { languageManager } from '../../services/core/LanguageManager.js';
 
-describe('I18n Service', () => {
-    let eventManager;
-    let languageManager;
-
-    beforeEach(async () => {
-        // Clear storage and reset state
-        await chrome.storage.local.clear();
-        eventManager = new EventManager();
-        languageManager = new LanguageManager(eventManager);
-        await i18n.init();
+describe('LanguageManager', () => {
+    beforeEach(() => {
+        // Reset language manager before each test
+        languageManager.reset();
     });
 
-    describe('getCurrentLanguage', () => {
-        it('should return current language', () => {
-            expect(i18n.getCurrentLanguage()).toBe('polish');
+    describe('initialization', () => {
+        test('should initialize with default language', async () => {
+            await languageManager.initialize();
+            expect(languageManager.getCurrentLanguage()).toBe('polish');
+            expect(languageManager.isInitialized()).toBe(true);
         });
 
-        it('should be synchronized with LanguageManager', async () => {
-            await languageManager.handleLanguageChange({ lang: 'english' });
-            expect(i18n.getCurrentLanguage()).toBe('english');
+        test('should load translations for default language', async () => {
+            await languageManager.initialize();
+            expect(languageManager.translate('app.title')).toBeDefined();
+            expect(languageManager.translate('app.title')).not.toBe('app.title');
+        });
+    });
+
+    describe('language switching', () => {
+        test('should change language', async () => {
+            await languageManager.initialize();
+            await languageManager.setLanguage('english');
             expect(languageManager.getCurrentLanguage()).toBe('english');
         });
-    });
 
-    describe('waitForTranslations', () => {
-        it('should wait for translations to load', async () => {
-            await i18n.waitForTranslations();
-            expect(i18n.translationsLoaded).toBe(true);
-            expect(Object.keys(i18n.translations).length).toBeGreaterThan(0);
-        });
-
-        it('should not reload translations if already loaded', async () => {
-            const spy = jest.spyOn(i18n, 'loadTranslations');
-            await i18n.waitForTranslations();
-            expect(spy).not.toHaveBeenCalled();
-            spy.mockRestore();
+        test('should persist language preference', async () => {
+            await languageManager.initialize();
+            await languageManager.setLanguage('english');
+            
+            // Create new instance to test persistence
+            const newManager = new LanguageManager();
+            await newManager.initialize();
+            expect(newManager.getCurrentLanguage()).toBe('english');
         });
     });
 
-    describe('Language synchronization', () => {
-        it('should emit event on language change', async () => {
-            const spy = jest.spyOn(eventManager, 'emit');
-            await languageManager.handleLanguageChange({ lang: 'english' });
-            expect(spy).toHaveBeenCalledWith('languageChanged', { language: 'english' });
-            spy.mockRestore();
+    describe('translation handling', () => {
+        test('should handle missing translations', () => {
+            expect(languageManager.translate('nonexistent.key')).toBe('nonexistent.key');
         });
 
-        it('should handle invalid language gracefully', async () => {
-            const result = await languageManager.handleLanguageChange({ lang: 'invalid' });
-            expect(result).toBe(false);
-            expect(i18n.getCurrentLanguage()).toBe('polish');
+        test('should handle translation with parameters', async () => {
+            await languageManager.initialize();
+            const translated = languageManager.translate('statusChangeFormat', {
+                status: 'Test',
+                previous: 5,
+                current: 10
+            });
+            expect(translated).toContain('Test');
+            expect(translated).toContain('5');
+            expect(translated).toContain('10');
+        });
+    });
+
+    describe('UI updates', () => {
+        beforeEach(() => {
+            document.body.innerHTML = `
+                <div data-i18n="app.title">Test</div>
+                <div data-i18n="app.welcome">Welcome</div>
+                <input data-i18n-placeholder="queryPlaceholder" placeholder="Old">
+                <button data-i18n-tooltip="buttonTooltip" title="Old">Button</button>
+            `;
+        });
+
+        test('should update UI elements with translations', async () => {
+            await languageManager.initialize();
+            await languageManager.updateUI();
+
+            const titleElement = document.querySelector('[data-i18n="app.title"]');
+            expect(titleElement.textContent).not.toBe('Test');
+        });
+
+        test('should update placeholders', async () => {
+            await languageManager.initialize();
+            await languageManager.updateUI();
+
+            const input = document.querySelector('[data-i18n-placeholder]');
+            expect(input.placeholder).not.toBe('Old');
+        });
+
+        test('should update tooltips', async () => {
+            await languageManager.initialize();
+            await languageManager.updateUI();
+
+            const button = document.querySelector('[data-i18n-tooltip]');
+            expect(button.title).not.toBe('Old');
         });
     });
 }); 

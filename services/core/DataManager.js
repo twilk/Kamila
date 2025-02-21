@@ -1,8 +1,6 @@
 import { BaseManager } from './BaseManager.js';
-import { ErrorType, ErrorSeverity, LogLevel } from './EventType.js';
-import { statusManager } from './StatusManager.js';
-import { eventManager } from './EventManager.js';
-import { errorHandler } from './ErrorHandler.js';
+import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { LogLevel } from './LogLevel.js';
 
 /**
  * @typedef {Object} CacheConfig
@@ -18,74 +16,110 @@ import { errorHandler } from './ErrorHandler.js';
  * @property {number} retryAttempts - Liczba prób ponowienia
  */
 
+const DATA_CONFIG = {
+    CACHE_TTL: 5 * 60 * 1000, // 5 minutes
+    SYNC_INTERVAL: 60 * 1000, // 1 minute
+    BATCH_SIZE: 100,
+    MAX_RETRIES: 3
+};
+
 /**
- * @extends {BaseManager}
- * Manages data operations and caching
+ * Manager for handling data operations and state
+ * @extends BaseManager
  */
-export class DataManager extends BaseManager {
+class DataManager extends BaseManager {
+    /** @private */
     static #instance = null;
+    static _registry = null;
 
-    // Private fields
-    #statusManager = null;
-    #refreshTimer = null;
+    /** @private */
+    #pendingChanges = new Map();
+
+    /** @private */
+    #processing = false;
+
+    /** @private */
+    #lastSync = 0;
+
+    /** @private */
     #isRefreshing = false;
-    #lastUpdate = null;
-    #cache = null;
-    #baseUrl = 'https://darwina.pl/api';
 
-    constructor() {
+    /** @private */
+    #metrics = {
+        syncAttempts: 0,
+        refreshAttempts: 0,
+        errors: []
+    };
+
+    constructor(registry) {
         if (DataManager.#instance) {
             return DataManager.#instance;
         }
-        super('DataManager');
+        super(registry, 'DataManager');
         DataManager.#instance = this;
+        DataManager._registry = registry;
+        
+        // Add dependencies as strings
+        this.addDependency('event');
+        this.addDependency('store');
+        this.addDependency('api');
+        this.addDependency('cache');
     }
 
+    /**
+     * Get singleton instance
+     * @returns {DataManager}
+     */
     static getInstance() {
-        if (!DataManager.#instance) {
-            DataManager.#instance = new DataManager();
+        if (!DataManager.#instance && DataManager._registry) {
+            DataManager.#instance = new DataManager(DataManager._registry);
         }
         return DataManager.#instance;
     }
 
-    /** @type {CacheConfig} */
-    static CACHE_CONFIG = {
-        key: 'orders_data',
-        expiration: 5 * 60 * 1000, // 5 minut
-        version: '1.0'
-    };
-
-    /** @type {RefreshConfig} */
-    static REFRESH_CONFIG = {
-        interval: 30 * 1000, // 30 sekund
-        forceRefresh: false,
-        retryAttempts: 3
-    };
+    /**
+     * Set registry for all instances
+     * @param {ManagerRegistry} registry Manager registry
+     */
+    static setRegistry(registry) {
+        DataManager._registry = registry;
+    }
 
     /**
      * Initialize data manager
      * @returns {Promise<boolean>}
      */
-    async onInitialize() {
+    async _initialize() {
         try {
-            // Get status manager instance
-            this.#statusManager = statusManager;
-
-            // Load initial data
-            await this.loadAndUpdateData(true);
-
-            // Setup refresh timer
-            this.#setupRefreshTimer();
+            // Get dependencies
+            const eventManager = await this.getDependency('event');
+            const storeManager = await this.getDependency('store');
+            const apiManager = await this.getDependency('api');
+            const cacheManager = await this.getDependency('cache');
             
-            // Setup event listeners
-            this.#setupEventListeners();
+            if (!eventManager?.isInitialized()) {
+                throw new Error('EventManager must be initialized');
+            }
 
-            this.log(LogLevel.SUCCESS, '✨ Data manager initialized');
+            if (!storeManager?.isInitialized()) {
+                throw new Error('StoreManager must be initialized');
+            }
+
+            if (!apiManager?.isInitialized()) {
+                throw new Error('APIManager must be initialized');
+            }
+
+            if (!cacheManager?.isInitialized()) {
+                throw new Error('CacheManager must be initialized');
+            }
+
+            // Setup event listeners
+            await this.#setupEventListeners();
+
+            this.log(LogLevel.SUCCESS, '✅ Data manager initialized');
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initialize'
-            });
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
             return false;
         }
     }
@@ -94,482 +128,128 @@ export class DataManager extends BaseManager {
      * Setup event listeners
      * @private
      */
-    #setupEventListeners() {
-        // Listen for manual refresh requests
-        window.addEventListener('data:refresh', async () => {
-            await this.loadAndUpdateData(true);
-        });
-
-        // Listen for store changes
-        window.addEventListener('store:change', async () => {
-            await this.loadAndUpdateData(true);
-        });
+    async #setupEventListeners() {
+        try {
+            const eventManager = await this.getDependency('event');
+            eventManager.subscribe('data:refresh', this.refreshData.bind(this));
+            eventManager.subscribe('store:change', this.handleStoreChange.bind(this));
+        } catch (error) {
+            this.handleError(error, ErrorType.EVENT_LISTENER, ErrorSeverity.HIGH);
+        }
     }
 
     /**
-     * Setup refresh timer
+     * Handle store change event
      * @private
      */
-    #setupRefreshTimer() {
-        if (this.#refreshTimer) {
-            clearInterval(this.#refreshTimer);
+    async handleStoreChange(event) {
+        try {
+            const { newStore } = event;
+            await this.refreshData({ forceRefresh: true });
+        } catch (error) {
+            this.handleError(error, ErrorType.STORE_CHANGE, ErrorSeverity.MEDIUM);
         }
-
-        this.#refreshTimer = setInterval(async () => {
-            await this.loadAndUpdateData();
-        }, DataManager.REFRESH_CONFIG.interval);
     }
 
     /**
-     * Load and update data
-     * @param {boolean} [forceRefresh=false] - Whether to force refresh
-     * @returns {Promise<boolean>}
+     * Refresh data
+     * @param {Object} options Refresh options
+     * @returns {Promise<void>}
      */
-    async loadAndUpdateData(forceRefresh = false) {
+    async refreshData(options = {}) {
+        if (this.#isRefreshing) {
+            this.log(LogLevel.WARN, '⚠️ Data refresh already in progress');
+            return;
+        }
+
+        this.#isRefreshing = true;
+        this.log(LogLevel.INFO, '🔄 Starting data refresh...');
+
         try {
-            if (this.#isRefreshing) {
-                this.log(LogLevel.DEBUG, '🔄 Data refresh already in progress');
-                return false;
-            }
+            const eventManager = await this.getDependency('event');
+            await eventManager.emit('data:refresh-start');
 
-            this.#isRefreshing = true;
+            // Get dependencies
+            const storeManager = await this.getDependency('store');
+            const apiManager = await this.getDependency('api');
+            const cacheManager = await this.getDependency('cache');
 
-            // Check cache first
-            const cachedData = await this.#loadFromCache();
+            const activeStore = storeManager.getActiveStore();
             
-            // Determine if we need delta or full update
-            let data;
-            if (cachedData && !forceRefresh) {
-                // Get delta updates since last cache update
-                const deltaUpdates = await this.#fetchDeltaUpdates(cachedData.timestamp);
-                if (deltaUpdates) {
-                    // Merge delta with cached data
-                    data = await this.#mergeData(cachedData.data, deltaUpdates);
-                    this.log(LogLevel.DEBUG, '🔄 Merged delta updates with cache');
+            // Fetch data
+            const response = await apiManager.get('/data', {
+                params: {
+                    storeId: activeStore?.id
                 }
-            }
-
-            // If no delta updates or force refresh, get full data
-            if (!data) {
-                data = await this.#fetchData();
-                this.log(LogLevel.DEBUG, '📥 Fetched full data');
-            }
-
-            if (!data) return false;
-
-            // Validate data
-            if (!this.#validateData(data)) {
-                throw new Error('Invalid data format');
-            }
-
-            // Update cache with merged/new data
-            await this.#updateCache({
-                data,
-                timestamp: Date.now()
             });
 
-            // Update UI
-            await this.#updateData(data);
+            // Process and cache data
+            await this.#processData(response.data);
 
-            this.log(LogLevel.DEBUG, '✅ Data updated successfully');
-            return true;
+            // Emit success event
+            await eventManager.emit('data:refresh-success', {
+                timestamp: Date.now(),
+                storeId: activeStore?.id
+            });
+
+            this.log(LogLevel.SUCCESS, '✅ Data refresh complete');
         } catch (error) {
-            this.handleError(error, ErrorType.DATA, ErrorSeverity.MEDIUM, {
-                method: 'loadAndUpdateData',
-                forceRefresh
-            });
-            return false;
+            this.handleError(error, ErrorType.DATA_REFRESH, ErrorSeverity.HIGH);
+            const eventManager = await this.getDependency('event');
+            await eventManager.emit('data:refresh-error', error);
         } finally {
             this.#isRefreshing = false;
         }
     }
 
     /**
-     * Load data from cache
+     * Process and cache data
      * @private
-     * @returns {Promise<Object|null>}
      */
-    async #loadFromCache() {
+    async #processData(data) {
         try {
-            const { key, expiration, version } = DataManager.CACHE_CONFIG;
-            const cached = await chrome.storage.local.get(key);
-
-            if (!cached[key]) return null;
-
-            const { data, timestamp, cacheVersion } = cached[key];
-            const age = Date.now() - timestamp;
-
-            // Check expiration and version
-            if (age > expiration || cacheVersion !== version) {
-                return null;
-            }
-
-            return { data, timestamp };
-        } catch (error) {
-            this.handleError(error, ErrorType.CACHE, ErrorSeverity.LOW, {
-                method: '#loadFromCache'
+            const cacheManager = await this.getDependency('cache');
+            await cacheManager.set('data', data, {
+                ttl: DATA_CONFIG.CACHE_TTL
             });
-            return null;
+
+            const eventManager = await this.getDependency('event');
+            await eventManager.emit('data:cache-cleared');
+            this.log(LogLevel.INFO, '🧹 Cache cleared successfully');
+        } catch (error) {
+            this.handleError(error, ErrorType.CACHE, ErrorSeverity.MEDIUM);
+            throw error;
         }
     }
 
     /**
-     * Update cache with new data
-     * @private
-     * @param {Object} data - Data to cache
-     * @returns {Promise<void>}
+     * Get metrics
+     * @returns {Object} Metrics object
      */
-    async #updateCache(data) {
-        try {
-            const { key, version } = DataManager.CACHE_CONFIG;
-            await chrome.storage.local.set({
-                [key]: {
-                    data,
-                    timestamp: data.timestamp,
-                    cacheVersion: version
-                }
-            });
-
-            this.log(LogLevel.DEBUG, '💾 Cache updated');
-        } catch (error) {
-            this.handleError(error, ErrorType.CACHE, ErrorSeverity.LOW, {
-                method: '#updateCache'
-            });
-        }
-    }
-
-    /**
-     * Fetch fresh data from API
-     * @private
-     * @returns {Promise<Object|null>}
-     */
-    async #fetchData() {
-        try {
-            // W trybie development/offline zwracamy testowe dane
-            if (!navigator.onLine || this._environment.isDevelopment) {
-                return this.#getTestData();
-            }
-
-            const response = await fetch('https://darwina.pl/api/orders', {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': await this.#getAuthToken()
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error(`API request failed: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            this.handleError(error, ErrorType.API, ErrorSeverity.MEDIUM, {
-                method: '#fetchData'
-            });
-            return null;
-        }
-    }
-
-    /**
-     * Get auth token
-     * @private
-     * @returns {Promise<string>}
-     */
-    async #getAuthToken() {
-        try {
-            const { token } = await chrome.storage.local.get('token');
-            return token || '';
-        } catch (error) {
-            this.handleError(error, ErrorType.AUTH, ErrorSeverity.HIGH, {
-                method: '#getAuthToken'
-            });
-            return '';
-        }
-    }
-
-    /**
-     * Validate data format
-     * @private
-     * @param {Object} data - Data to validate
-     * @returns {boolean}
-     */
-    #validateData(data) {
-        try {
-            if (!data || typeof data !== 'object') return false;
-            if (!Array.isArray(data.orders)) return false;
-            
-            // Validate order format
-            return data.orders.every(order => (
-                order &&
-                typeof order === 'object' &&
-                typeof order.id === 'string' &&
-                typeof order.status === 'string'
-            ));
-        } catch (error) {
-            this.handleError(error, ErrorType.VALIDATION, ErrorSeverity.LOW, {
-                method: '#validateData'
-            });
-            return false;
-        }
-    }
-
-    /**
-     * Update data in UI
-     * @private
-     * @param {Object} data - Data to update
-     * @returns {Promise<void>}
-     */
-    async #updateData(data) {
-        try {
-            // Calculate order counts
-            const counts = this._calculateOrderCounts(data.orders);
-
-            // Update status manager
-            await this.#statusManager.updateOrderCounts(counts);
-
-            // Update last update time
-            this.#lastUpdate = Date.now();
-
-            this.log(LogLevel.DEBUG, '📊 Order counts updated', { counts });
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: '#updateData'
-            });
-        }
-    }
-
-    /**
-     * Calculate order counts by status
-     * @private
-     * @param {Array} orders - Orders array
-     * @returns {Object}
-     */
-    _calculateOrderCounts(orders) {
-        const counts = {
-            '1': 0,
-            '2': 0,
-            '3': 0,
-            'READY': 0,
-            'OVERDUE': 0
-        };
-
-        this.log(LogLevel.DEBUG, '📊 Starting order count calculation', { totalOrders: orders.length });
-
-        orders.forEach(order => {
-            const originalStatus = order.status;
-            const mappedStatus = this.#statusManager.constructor.mapStatus(order.status);
-            
-            this.log(LogLevel.DEBUG, '🔄 Processing order status', {
-                orderId: order.id,
-                originalStatus,
-                mappedStatus
-            });
-
-            if (mappedStatus in counts) {
-                counts[mappedStatus]++;
-                this.log(LogLevel.DEBUG, '✅ Incremented counter', {
-                    status: mappedStatus,
-                    newCount: counts[mappedStatus]
-                });
-            } else {
-                this.log(LogLevel.WARN, '⚠️ Unmapped status encountered', {
-                    orderId: order.id,
-                    originalStatus,
-                    mappedStatus
-                });
-            }
-        });
-
-        this.log(LogLevel.INFO, '📈 Final order counts', { counts });
-        return counts;
-    }
-
-    /**
-     * Get test data for development
-     * @private
-     * @returns {Object}
-     */
-    #getTestData() {
+    getMetrics() {
         return {
-            orders: [
-                { id: '1', status: 'submitted' },
-                { id: '2', status: 'confirmed' },
-                { id: '3', status: 'accepted' },
-                { id: '4', status: 'ready' },
-                { id: '5', status: 'overdue' }
-            ]
+            ...this.#metrics,
+            lastSync: this.#lastSync,
+            pendingChanges: this.#pendingChanges.size,
+            isProcessing: this.#processing,
+            isRefreshing: this.#isRefreshing
         };
     }
 
     /**
-     * Get last update timestamp
-     * @returns {number|null}
-     */
-    getLastUpdate() {
-        return this.#lastUpdate;
-    }
-
-    /**
-     * Cleanup and dispose
-     * @returns {Promise<void>}
+     * Clean up resources
      */
     async dispose() {
         try {
-            if (this.#refreshTimer) {
-                clearInterval(this.#refreshTimer);
-                this.#refreshTimer = null;
-            }
-
+            this.#pendingChanges.clear();
+            this.#processing = false;
             this.#isRefreshing = false;
-            this.#lastUpdate = null;
-            this.#statusManager = null;
-
             await super.dispose();
         } catch (error) {
-            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH, {
-                method: 'dispose'
-            });
-        }
-    }
-
-    /**
-     * Refresh data with optional configuration
-     * @param {Object} options - Refresh options
-     * @param {boolean} [options.force=false] - Force refresh ignoring cache
-     * @param {string} [options.storeId='ALL'] - Store ID to refresh data for
-     * @returns {Promise<boolean>} Success status
-     */
-    async refreshData(options = {}) {
-        try {
-            if (this.#isRefreshing) {
-                this.log('🔄 Refresh already in progress, skipping', LogLevel.DEBUG);
-                return false;
-            }
-
-            this.#isRefreshing = true;
-            this.log('🔄 Starting data refresh...', LogLevel.INFO);
-
-            // Emit refresh start event
-            eventManager.emit('data:refresh-start');
-
-            // Load and update data
-            const success = await this.loadAndUpdateData(options.force);
-            
-            if (success) {
-                this.#lastUpdate = Date.now();
-                this.log('✅ Data refresh completed successfully', LogLevel.INFO);
-                
-                // Update status manager
-                await statusManager.updateOrderCounts(this._calculateOrderCounts(this.#cache.data));
-                
-                // Emit refresh success event
-                eventManager.emit('data:refresh-success');
-            } else {
-                this.log('❌ Data refresh failed', LogLevel.ERROR);
-                // Emit refresh error event
-                eventManager.emit('data:refresh-error');
-            }
-
-            return success;
-        } catch (error) {
-            this.handleError(error, ErrorType.DATA_REFRESH, ErrorSeverity.HIGH);
-            // Emit refresh error event
-            eventManager.emit('data:refresh-error', error);
-            return false;
-        } finally {
-            this.#isRefreshing = false;
-        }
-    }
-
-    /**
-     * Fetch delta updates from API
-     * @private
-     * @param {number} lastUpdate - Timestamp of last update
-     * @returns {Promise<Object|null>}
-     */
-    async #fetchDeltaUpdates(lastUpdate) {
-        try {
-            if (!navigator.onLine || this._environment.isDevelopment) {
-                return null;
-            }
-
-            const response = await fetch(`${this.#baseUrl}/orders`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': await this.#getAuthToken()
-                },
-                params: {
-                    modified_from: lastUpdate
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error(`API request failed: ${response.status}`);
-            }
-
-            const data = await response.json();
-            this.log(LogLevel.DEBUG, '📥 Fetched delta updates', {
-                count: data.orders?.length || 0,
-                since: new Date(lastUpdate).toISOString()
-            });
-
-            return data;
-        } catch (error) {
-            this.handleError(error, ErrorType.API, ErrorSeverity.LOW, {
-                method: '#fetchDeltaUpdates',
-                lastUpdate
-            });
-            return null;
-        }
-    }
-
-    /**
-     * Merge cached data with new updates
-     * @private
-     * @param {Object} cached - Cached data
-     * @param {Object} updates - New updates
-     * @returns {Object} Merged data
-     */
-    async #mergeData(cached, updates) {
-        try {
-            if (!cached?.orders || !updates?.orders) {
-                throw new Error('Invalid data format for merging');
-            }
-
-            // Create a map of existing orders
-            const orderMap = new Map(
-                cached.orders.map(order => [order.id, order])
-            );
-
-            // Update or add new orders
-            updates.orders.forEach(order => {
-                orderMap.set(order.id, {
-                    ...orderMap.get(order.id),
-                    ...order,
-                    lastUpdate: Date.now()
-                });
-            });
-
-            this.log(LogLevel.DEBUG, '🔄 Merged data', {
-                cachedCount: cached.orders.length,
-                updatesCount: updates.orders.length,
-                finalCount: orderMap.size
-            });
-
-            return {
-                ...cached,
-                orders: Array.from(orderMap.values())
-            };
-        } catch (error) {
-            this.handleError(error, ErrorType.DATA, ErrorSeverity.MEDIUM, {
-                method: '#mergeData'
-            });
-            throw error;
+            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH);
         }
     }
 }
 
-// Export singleton instance
-export const dataManager = DataManager.getInstance(); 
+// Export class only
+export { DataManager }; 

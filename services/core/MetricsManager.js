@@ -11,20 +11,42 @@ export const getMetricsManager = () => MetricsManager.getInstance();
 export class MetricsManager extends BaseManager {
     static MEMORY_CHECK_INTERVAL = 30000; // 30 seconds
     static METRICS_RETENTION = 3600000; // 1 hour
-    static _instance = null;
 
-    static getInstance() {
-        if (!MetricsManager._instance) {
-            MetricsManager._instance = new MetricsManager();
-        }
-        return MetricsManager._instance;
-    }
+    static _registry = null;
 
-    constructor() {
-        if (MetricsManager._instance) {
-            throw new Error('MetricsManager is a singleton. Use MetricsManager.getInstance() instead.');
+    /** @private */
+    static #instance = null;
+
+    /** @private */
+    #metrics = {
+        performance: new Map(),
+        memory: new Map(),
+        errors: new Map(),
+        operations: new Map()
+    };
+
+    /** @private */
+    #memoryCheckInterval = null;
+
+    /** @private */
+    #performanceObserver = null;
+
+    /** @private */
+    #frameMonitor = null;
+
+    /** @private */
+    #settings;
+
+    /** @private */
+    #setupEventListeners;
+
+    constructor(registry) {
+        if (MetricsManager.#instance) {
+            return MetricsManager.#instance;
         }
-        super('MetricsManager');
+        super(registry, 'MetricsManager');
+        MetricsManager.#instance = this;
+        MetricsManager._registry = registry;
         this.metrics = {
             initialization: {
                 totalTime: 0,
@@ -54,33 +76,39 @@ export class MetricsManager extends BaseManager {
             memory: null,
             frames: null
         };
-        MetricsManager._instance = this;
     }
 
-    async onInitialize() {
-        try {
-            this.log(LogLevel.INFO, 'Setting up performance monitoring');
-            // Start performance monitoring
-            this.setupPerformanceObserver();
-            
-            this.log(LogLevel.INFO, 'Starting memory monitoring');
-            // Start memory monitoring
-            this.startMemoryMonitoring();
-            
-            this.log(LogLevel.INFO, 'Setting up frame monitoring');
-            // Start frame monitoring
-            this.setupFrameMonitoring();
+    static getInstance() {
+        if (!MetricsManager.#instance && MetricsManager._registry) {
+            MetricsManager.#instance = new MetricsManager(MetricsManager._registry);
+        }
+        return MetricsManager.#instance;
+    }
 
-            this.log(LogLevel.SUCCESS, 'All monitoring systems initialized', {
-                observers: Object.keys(this.observers),
-                metrics: Object.keys(this.metrics)
-            });
+    static setRegistry(registry) {
+        MetricsManager._registry = registry;
+    }
+
+    /**
+     * Initialize metrics manager
+     * @returns {Promise<boolean>}
+     */
+    async _initialize() {
+        try {
+            this.log(LogLevel.INFO, '🔄 Initializing metrics manager...');
             
+            // Load metrics settings
+            const storage = await this.getDependency('storage');
+            const settings = await storage.get(METRICS_CONFIG.STORAGE_KEY) || {};
+            this.#settings = { ...METRICS_CONFIG.DEFAULT_SETTINGS, ...settings };
+            
+            // Set up event listeners
+            this.#setupEventListeners();
+            
+            this.log(LogLevel.SUCCESS, '✅ Metrics manager initialized');
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.ERROR, {
-                method: 'onInitialize'
-            });
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
             return false;
         }
     }
@@ -312,7 +340,7 @@ export class MetricsManager extends BaseManager {
             };
 
             // Clear singleton instance
-            MetricsManager._instance = null;
+            MetricsManager.#instance = null;
             
             await super.dispose();
         } catch (error) {

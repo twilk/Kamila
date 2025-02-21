@@ -1,11 +1,20 @@
 import { ACTIVE_USERS, getUserByMemberId, generateUserJson, saveUserFile } from './users.js';
 import { BaseManager } from './core/BaseManager.js';
 import { LogLevel, ErrorType, ErrorSeverity } from './core/EventType.js';
+import { EventManager } from './core/EventManager.js';
 
-export class UserCardService extends BaseManager {
+class UserCardService extends BaseManager {
+    /** @private */
     static #instance = null;
+    static _registry = null;
+    /** @private */
     #currentUser = null;
+    /** @private */
     #cache = new Map();
+    /** @private */
+    #eventManager = null;
+    /** @private */
+    #storageManager = null;
     
     // Stałe dla kluczy storage
     static STORAGE_KEYS = {
@@ -34,19 +43,44 @@ export class UserCardService extends BaseManager {
         FILE: ['firstName', 'memberId', 'fullName']
     };
 
-    constructor() {
+    constructor(registry) {
         if (UserCardService.#instance) {
             return UserCardService.#instance;
         }
-        super('UserCardService');
+        super(registry, 'UserCardService');
         UserCardService.#instance = this;
+        UserCardService._registry = registry;
+        
+        // Add dependencies
+        this.addDependency('event');
+        this.addDependency('storage');
     }
 
     static getInstance() {
-        if (!UserCardService.#instance) {
-            UserCardService.#instance = new UserCardService();
+        if (!UserCardService.#instance && UserCardService._registry) {
+            UserCardService.#instance = new UserCardService(UserCardService._registry);
         }
         return UserCardService.#instance;
+    }
+
+    static setRegistry(registry) {
+        UserCardService._registry = registry;
+    }
+
+    /**
+     * Initialize user card service
+     * @returns {Promise<boolean>}
+     */
+    async _initialize() {
+        try {
+            this.#eventManager = await this.getDependency('event');
+            await this.loadCurrentUser();
+            await this.initializeUserSelector();
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+            return false;
+        }
     }
 
     async saveUserData(userData) {
@@ -199,7 +233,7 @@ export class UserCardService extends BaseManager {
         try {
             const userSelector = document.querySelector(UserCardService.SELECTORS.USER_SELECT);
             if (!userSelector) {
-                this.log(LogLevel.WARNING, '⚠️ User selector element not found');
+                this.log(LogLevel.WARNING, '⚠️ User selector not found');
                 return;
             }
 
@@ -210,81 +244,38 @@ export class UserCardService extends BaseManager {
             const defaultOption = document.createElement('option');
             defaultOption.value = '';
             defaultOption.textContent = 'Wybierz użytkownika';
+            defaultOption.selected = true;
             userSelector.appendChild(defaultOption);
 
-            try {
-                // Get active users and sort them by name
-                const activeUsers = [...ACTIVE_USERS].sort((a, b) => 
-                    a.fullName.localeCompare(b.fullName)
-                );
+            // Sort users by full name
+            const sortedUsers = [...ACTIVE_USERS].sort((a, b) =>
+                a.fullName.localeCompare(b.fullName)
+            );
 
-                // Add options for each active user
-                for (const user of activeUsers) {
-                    const option = document.createElement('option');
-                    option.value = user.memberId;
-                    option.textContent = user.fullName;
-                    userSelector.appendChild(option);
-                }
+            // Add user options
+            sortedUsers.forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.memberId;
+                option.textContent = user.fullName;
+                userSelector.appendChild(option);
+            });
 
-                this.log(LogLevel.DEBUG, `📋 Loaded ${activeUsers.length} users into selector`);
-            } catch (error) {
-                this.handleError(error, ErrorType.DATA, ErrorSeverity.MEDIUM, {
-                    method: 'initializeUserSelector',
-                    context: 'Loading active users'
-                });
+            // Set current user if exists
+            if (this.#currentUser?.memberId) {
+                userSelector.value = this.#currentUser.memberId;
             }
 
-            // Load and set current user if exists
-            const currentUser = await this.getCurrentUser();
-            if (currentUser) {
-                userSelector.value = currentUser.memberId;
-                await this.updateUserCard(currentUser);
-                this.log(LogLevel.DEBUG, `👤 Set current user: ${currentUser.fullName}`);
-            } else {
-                // Explicitly update card with no user
-                await this.updateUserCard(null);
-            }
-
-            // Add change listener
+            // Add change event listener
             userSelector.addEventListener('change', async (event) => {
-                try {
-                    const userId = event.target.value;
-                    const previousValue = userSelector.dataset.previousValue;
-                    
-                    // Update selector state
-                    userSelector.disabled = true;
-                    userSelector.dataset.previousValue = userId;
-
-                    try {
-                        if (!userId) {
-                            // Handle empty selection
-                            await this.updateUserCard(null);
-                            await this.changeUser(null);
-                        } else {
-                            await this.changeUser(userId);
-                        }
-                        this.log(LogLevel.INFO, `✅ User ${userId ? 'changed to: ' + userId : 'cleared'}`);
-                    } catch (error) {
-                        // Restore previous selection on error
-                        userSelector.value = previousValue;
-                        throw error;
-                    } finally {
-                        userSelector.disabled = false;
-                    }
-                } catch (error) {
-                    this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
-                        method: 'userSelector.onChange',
-                        userId: event.target.value
-                    });
+                const selectedUserId = event.target.value;
+                if (selectedUserId) {
+                    await this.setCurrentUser(selectedUserId);
                 }
             });
 
-            this.log(LogLevel.SUCCESS, '✨ User selector initialized successfully');
+            this.log(LogLevel.INFO, '✅ User selector initialized');
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initializeUserSelector'
-            });
-            throw error;
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.MEDIUM);
         }
     }
 
@@ -588,4 +579,7 @@ export class UserCardService extends BaseManager {
             this.log(LogLevel.ERROR, '❌ Error during cleanup:', error);
         }
     }
-} 
+}
+
+export { UserCardService };
+export const userCardService = UserCardService.getInstance(); 

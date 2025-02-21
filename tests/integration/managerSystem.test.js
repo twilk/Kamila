@@ -1,4 +1,3 @@
-import { InitializationManager } from '../../services/core/InitializationManager.js';
 import { MessageManager } from '../../services/core/MessageManager.js';
 import { StoreManager } from '../../services/core/StoreManager.js';
 import { UIManager } from '../../services/core/UIManager.js';
@@ -12,7 +11,6 @@ jest.mock('chrome.storage.local', () => ({
 }));
 
 describe('Manager System Integration', () => {
-    let initManager;
     let messageManager;
     let storeManager;
     let uiManager;
@@ -38,7 +36,6 @@ describe('Manager System Integration', () => {
         storeManager = StoreManager.getInstance();
         uiManager = UIManager.getInstance();
         dataManager = DataManager.getInstance();
-        initManager = InitializationManager.getInstance();
     });
 
     afterEach(async () => {
@@ -47,14 +44,12 @@ describe('Manager System Integration', () => {
             messageManager.dispose(),
             storeManager.dispose(),
             uiManager.dispose(),
-            dataManager.dispose(),
-            initManager.dispose()
+            dataManager.dispose()
         ]);
     });
 
     describe('System Initialization', () => {
         it('should initialize all managers in correct order', async () => {
-            const initSpy = jest.spyOn(initManager, 'initialize');
             const messageSpy = jest.spyOn(messageManager, 'initialize');
             const storeSpy = jest.spyOn(storeManager, 'initialize');
             const uiSpy = jest.spyOn(uiManager, 'initialize');
@@ -67,9 +62,8 @@ describe('Manager System Integration', () => {
                 })
             });
 
-            await initManager.initializeOnStartup();
+            await messageManager.initialize();
 
-            expect(initSpy).toHaveBeenCalled();
             expect(messageSpy).toHaveBeenCalled();
             expect(storeSpy).toHaveBeenCalled();
             expect(uiSpy).toHaveBeenCalled();
@@ -77,7 +71,6 @@ describe('Manager System Integration', () => {
 
             // Verify initialization order
             const calls = [
-                initSpy.mock.invocationCallOrder[0],
                 messageSpy.mock.invocationCallOrder[0],
                 storeSpy.mock.invocationCallOrder[0],
                 uiSpy.mock.invocationCallOrder[0],
@@ -94,7 +87,7 @@ describe('Manager System Integration', () => {
             const errorSpy = jest.spyOn(errorHandler, 'handle');
             const messageSpy = jest.spyOn(messageManager, 'showError');
 
-            await initManager.initializeOnStartup();
+            await messageManager.initialize();
 
             expect(errorSpy).toHaveBeenCalledWith(
                 mockError,
@@ -118,7 +111,7 @@ describe('Manager System Integration', () => {
                 })
             });
 
-            await initManager.initializeOnStartup();
+            await messageManager.initialize();
         });
 
         it('should handle store changes across managers', async () => {
@@ -169,19 +162,17 @@ describe('Manager System Integration', () => {
                 ok: true,
                 json: () => Promise.resolve({ stores: [] })
             });
-            await initManager.initializeOnStartup();
+            await messageManager.initialize();
         });
 
         it('should dispose all managers properly', async () => {
-            const disposeSpy = jest.spyOn(initManager, 'dispose');
             const messageDisposeSpy = jest.spyOn(messageManager, 'dispose');
             const storeDisposeSpy = jest.spyOn(storeManager, 'dispose');
             const uiDisposeSpy = jest.spyOn(uiManager, 'dispose');
             const dataDisposeSpy = jest.spyOn(dataManager, 'dispose');
 
-            await initManager.dispose();
+            await messageManager.dispose();
 
-            expect(disposeSpy).toHaveBeenCalled();
             expect(messageDisposeSpy).toHaveBeenCalled();
             expect(storeDisposeSpy).toHaveBeenCalled();
             expect(uiDisposeSpy).toHaveBeenCalled();
@@ -194,7 +185,7 @@ describe('Manager System Integration', () => {
 
             const errorSpy = jest.spyOn(errorHandler, 'handle');
 
-            await initManager.dispose();
+            await messageManager.dispose();
 
             expect(errorSpy).toHaveBeenCalledWith(
                 mockError,
@@ -211,7 +202,7 @@ describe('Manager System Integration', () => {
                 ok: true,
                 json: () => Promise.resolve({ stores: [] })
             });
-            await initManager.initializeOnStartup();
+            await messageManager.initialize();
         });
 
         it('should recover from temporary errors', async () => {

@@ -1,205 +1,230 @@
 import { BaseManager } from './BaseManager.js';
 import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
 import { LogLevel } from './LogLevel.js';
-import { storageManager } from './StorageManager.js';
 
-const MESSAGE_QUEUE_KEY = 'pending_messages';
-const MAX_QUEUE_SIZE = 100;
-const MAX_RETRY_ATTEMPTS = 3;
-const RETRY_DELAY = 1000;
+const MESSAGE_CONFIG = {
+    MAX_QUEUE_SIZE: 1000,
+    MAX_LISTENERS: 100,
+    PROCESS_INTERVAL: 100,
+    BATCH_SIZE: 50,
+    RESPONSE_TIMEOUT: 30000, // 30 seconds
+    MAX_RETRIES: 3,
+    RETRY_DELAY: 1000
+};
 
 /**
- * Manages message communication between background and popup
- * @extends {BaseManager}
+ * Manages message passing between components
+ * @extends BaseManager
  */
-export class MessageManager extends BaseManager {
+class MessageManager extends BaseManager {
+    /** @private */
     static #instance = null;
-    #messageQueue = new Map();
-    #retryAttempts = new Map();
-    #ports = new Set();
-    #isProcessingQueue = false;
-    #messageListeners = new Map();
+    static _registry = null;
 
-    constructor() {
+    /** @private */
+    #settings;
+
+    /** @private */
+    #listeners = new Map();
+    
+    /** @private */
+    #messageQueue = [];
+    
+    /** @private */
+    #pendingResponses = new Map();
+    
+    /** @private */
+    #queueProcessInterval = null;
+    
+    /** @private */
+    #processing = false;
+
+    /** @private */
+    #handleIncomingMessage = async (message, sender, sendResponse) => {
+        try {
+            const listeners = this.#listeners.get(message.type) || [];
+            const results = await Promise.all(
+                listeners.map(listener => listener(message.data, { sender, message }))
+            );
+            
+            // If message requires response, send back the last result
+            if (message.requiresResponse) {
+                sendResponse(results[results.length - 1]);
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.MESSAGE, ErrorSeverity.MEDIUM, {
+                operation: 'handleIncomingMessage',
+                messageType: message.type
+            });
+            if (message.requiresResponse) {
+                sendResponse({ error: error.message });
+            }
+        }
+    };
+
+    /** @private */
+    #setupEventListeners = () => {
+        // Set up message listeners
+        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+            this.#handleIncomingMessage(message, sender, sendResponse);
+            return true; // Keep the message channel open for async response
+        });
+        
+        // Start queue processor
+        this.#startQueueProcessor();
+    };
+
+    constructor(registry) {
         if (MessageManager.#instance) {
             return MessageManager.#instance;
         }
-        super('MessageManager');
+        super(registry, 'MessageManager');
         MessageManager.#instance = this;
+        MessageManager._registry = registry;
     }
 
+    /**
+     * Get singleton instance
+     * @returns {MessageManager}
+     */
     static getInstance() {
-        if (!MessageManager.#instance) {
-            MessageManager.#instance = new MessageManager();
+        if (!MessageManager.#instance && MessageManager._registry) {
+            MessageManager.#instance = new MessageManager(MessageManager._registry);
         }
         return MessageManager.#instance;
     }
 
-    /**
-     * Add a message listener
-     * @param {string} type - Message type to listen for
-     * @param {Function} callback - Callback function to handle the message
-     */
-    addListener(type, callback) {
-        if (!this.#messageListeners.has(type)) {
-            this.#messageListeners.set(type, new Set());
-        }
-        this.#messageListeners.get(type).add(callback);
-        this.log(LogLevel.DEBUG, `📌 Added listener for message type: ${type}`);
-    }
-
-    /**
-     * Remove a message listener
-     * @param {string} type - Message type to remove listener for
-     * @param {Function} callback - Callback function to remove
-     */
-    removeListener(type, callback) {
-        if (this.#messageListeners.has(type)) {
-            this.#messageListeners.get(type).delete(callback);
-            if (this.#messageListeners.get(type).size === 0) {
-                this.#messageListeners.delete(type);
-            }
-            this.log(LogLevel.DEBUG, `🗑️ Removed listener for message type: ${type}`);
-        }
-    }
-
-    /**
-     * Handle incoming message
-     * @param {Object} message - Message object
-     * @private
-     */
-    #handleMessage(message) {
-        const { type, payload } = message;
-        if (this.#messageListeners.has(type)) {
-            this.#messageListeners.get(type).forEach(callback => {
-                try {
-                    callback(message);
-                } catch (error) {
-                    this.log(LogLevel.ERROR, `❌ Error in message listener for type ${type}:`, error);
-                    this.errorHandler?.handleError(error, ErrorType.MESSAGE_HANDLER, ErrorSeverity.MEDIUM);
-                }
-            });
-        }
+    static setRegistry(registry) {
+        MessageManager._registry = registry;
     }
 
     /**
      * Initialize message manager
      * @returns {Promise<boolean>}
      */
-    async onInitialize() {
+    async _initialize() {
         try {
             this.log(LogLevel.INFO, '🔄 Initializing message manager...');
-
-            // Load pending messages from storage
-            await this.#loadPendingMessages();
-
-            // Setup message listeners
-            this.#setupMessageListeners();
-
-            // Setup port connection listener
-            chrome.runtime.onConnect.addListener((port) => {
-                if (port.name === 'popup') {
-                    this.#ports.add(port);
-                    this.log(LogLevel.DEBUG, '🔌 New popup connection established');
-
-                    port.onMessage.addListener((message) => {
-                        this.#handleMessage(message);
-                    });
-
-                    port.onDisconnect.addListener(() => {
-                        this.#ports.delete(port);
-                        this.log(LogLevel.DEBUG, '🔌 Popup connection closed');
-                    });
-                }
-            });
-
-            this.log(LogLevel.INFO, '✅ Message manager initialized');
+            
+            // Load message settings
+            const storage = await this.getDependency('storage');
+            const settings = await storage.get(MESSAGE_CONFIG.STORAGE_KEY) || {};
+            this.#settings = { ...MESSAGE_CONFIG.DEFAULT_SETTINGS, ...settings };
+            
+            // Set up event listeners
+            this.#setupEventListeners();
+            
+            this.log(LogLevel.SUCCESS, '✅ Message manager initialized');
             return true;
         } catch (error) {
-            this.log(LogLevel.ERROR, '❌ Failed to initialize message manager:', error);
-            this.errorHandler?.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
             return false;
         }
     }
 
     /**
-     * Setup message listeners
-     * @private
-     */
-    #setupMessageListeners() {
-        // Add default message handlers here
-        this.addListener('PING', () => {
-            return { type: 'PONG', status: 'OK' };
-        });
-
-        this.addListener('STATE_SYNC_REQUEST', async (message) => {
-            const state = await this.getCurrentState();
-            return {
-                type: 'STATE_SYNC_RESPONSE',
-                syncId: message.syncId,
-                state
-            };
-        });
-    }
-
-    /**
-     * Get current application state
-     * @returns {Promise<Object>}
-     * @private
-     */
-    async getCurrentState() {
-        return {
-            timestamp: Date.now(),
-            connected: this.#ports.size > 0,
-            queueSize: this.#messageQueue.size,
-            retryAttempts: Object.fromEntries(this.#retryAttempts)
-        };
-    }
-
-    /**
-     * Send message to popup with retry mechanism
+     * Send a message with optional response
      * @param {string} type Message type
-     * @param {*} payload Message payload
-     * @returns {Promise<boolean>} Success status
+     * @param {*} data Message data
+     * @param {Object} [options] Message options
+     * @returns {Promise<*>} Response data if awaiting response
      */
-    async sendToPopup(type, payload) {
+    async send(type, data = null, options = {}) {
         try {
-            // Add message to queue
-            const message = { type, payload, timestamp: Date.now() };
-            await this.#queueMessage(message);
+            const { 
+                awaitResponse = false,
+                timeout = MESSAGE_CONFIG.RESPONSE_TIMEOUT,
+                retries = MESSAGE_CONFIG.MAX_RETRIES
+            } = options;
 
-            // Try to process queue immediately
-            return await this.#processMessageQueue();
-        } catch (error) {
-            this.handleError(error, ErrorType.MESSAGING, ErrorSeverity.MEDIUM, {
-                method: 'sendToPopup',
+            const message = {
+                id: crypto.randomUUID(),
                 type,
-                payload
+                data,
+                timestamp: Date.now(),
+                source: this.name,
+                requiresResponse: awaitResponse
+            };
+
+            if (awaitResponse) {
+                return this.#sendWithResponse(message, timeout, retries);
+            }
+
+            await this.#queueMessage(message);
+            return null;
+        } catch (error) {
+            this.handleError(error, ErrorType.MESSAGE, ErrorSeverity.MEDIUM, {
+                operation: 'send',
+                type
             });
-            return false;
+            throw error;
         }
     }
 
     /**
-     * Queue message for delivery
+     * Send a message and wait for response
+     * @private
+     */
+    async #sendWithResponse(message, timeout, retries) {
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                this.#pendingResponses.delete(message.id);
+                reject(new Error(`Message response timeout: ${message.type}`));
+            }, timeout);
+
+            this.#pendingResponses.set(message.id, {
+                resolve,
+                reject,
+                timeout: timeoutId,
+                retries,
+                message
+            });
+
+            this.#queueMessage(message).catch(error => {
+                clearTimeout(timeoutId);
+                this.#pendingResponses.delete(message.id);
+                reject(error);
+            });
+        });
+    }
+
+    /**
+     * Queue a message for processing
      * @private
      */
     async #queueMessage(message) {
-        try {
-            const id = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            this.#messageQueue.set(id, message);
-            this.#retryAttempts.set(id, 0);
-
-            // Save to storage
-            await this.#savePendingMessages();
-
-            this.log(LogLevel.DEBUG, '📥 Message queued', { id, type: message.type });
-        } catch (error) {
-            this.handleError(error, ErrorType.MESSAGING, ErrorSeverity.LOW, {
-                method: '#queueMessage',
-                message
-            });
+        if (this.#messageQueue.length >= MESSAGE_CONFIG.MAX_QUEUE_SIZE) {
+            throw new Error('Message queue full');
         }
+
+        this.#messageQueue.push(message);
+        
+        this.log(LogLevel.DEBUG, `📥 Queued message: ${message.type}`, {
+            id: message.id,
+            queueSize: this.#messageQueue.length
+        });
+
+        await managers.eventManager.emit('message:queued', {
+            type: message.type,
+            id: message.id
+        });
+    }
+
+    /**
+     * Start queue processor
+     * @private
+     */
+    #startQueueProcessor() {
+        if (this.#queueProcessInterval) {
+            clearInterval(this.#queueProcessInterval);
+        }
+
+        this.#queueProcessInterval = setInterval(
+            () => this.#processMessageQueue(),
+            MESSAGE_CONFIG.PROCESS_INTERVAL
+        );
+
+        this.log(LogLevel.DEBUG, '🔄 Message queue processor started');
     }
 
     /**
@@ -207,139 +232,183 @@ export class MessageManager extends BaseManager {
      * @private
      */
     async #processMessageQueue() {
-        if (this.#isProcessingQueue) return;
-        this.#isProcessingQueue = true;
+        if (this.#processing || this.#messageQueue.length === 0) return;
 
+        this.#processing = true;
+        
         try {
-            if (this.#messageQueue.size === 0) {
-                return true;
+            const batch = this.#messageQueue.splice(0, MESSAGE_CONFIG.BATCH_SIZE);
+            
+            for (const message of batch) {
+                await this.#processMessage(message);
             }
 
-            // Check if popup is available
-            if (this.#ports.size === 0) {
-                this.log(LogLevel.DEBUG, '⏳ No popup connection available, messages queued');
-                return false;
+            if (this.#messageQueue.length > 0) {
+                this.log(LogLevel.DEBUG, `📊 Processed ${batch.length} messages, ${this.#messageQueue.length} remaining`);
             }
-
-            // Process each message
-            for (const [id, message] of this.#messageQueue) {
-                const attempts = this.#retryAttempts.get(id) || 0;
-                
-                if (attempts >= MAX_RETRY_ATTEMPTS) {
-                    this.log(LogLevel.WARNING, `⚠️ Message ${id} exceeded retry limit, removing`);
-                    this.#messageQueue.delete(id);
-                    this.#retryAttempts.delete(id);
-                    continue;
-                }
-
-                try {
-                    // Send to all connected popups
-                    const sendPromises = Array.from(this.#ports).map(port => 
-                        new Promise(resolve => {
-                            port.postMessage(message);
-                            resolve();
-                        })
-                    );
-
-                    await Promise.all(sendPromises);
-
-                    // Message sent successfully
-                    this.#messageQueue.delete(id);
-                    this.#retryAttempts.delete(id);
-                    this.log(LogLevel.SUCCESS, '✉️ Message sent successfully', { id, type: message.type });
-                } catch (error) {
-                    this.#retryAttempts.set(id, attempts + 1);
-                    this.handleError(error, ErrorType.MESSAGING, ErrorSeverity.LOW, {
-                        method: '#processMessageQueue',
-                        id,
-                        attempts
-                    });
-                }
-            }
-
-            // Save updated queue
-            await this.#savePendingMessages();
-
-            return this.#messageQueue.size === 0;
         } catch (error) {
-            this.handleError(error, ErrorType.MESSAGING, ErrorSeverity.MEDIUM, {
-                method: '#processMessageQueue'
-            });
-            return false;
+            this.handleError(error, ErrorType.MESSAGE_QUEUE, ErrorSeverity.MEDIUM);
         } finally {
-            this.#isProcessingQueue = false;
+            this.#processing = false;
         }
     }
 
     /**
-     * Load pending messages from storage
+     * Process a single message
      * @private
      */
-    async #loadPendingMessages() {
+    async #processMessage(message) {
+        const listeners = this.#listeners.get(message.type) || [];
+        
+        if (listeners.length === 0) {
+            this.log(LogLevel.WARN, `⚠️ No listeners for message type: ${message.type}`);
+            return;
+        }
+
         try {
-            const data = await storageManager.get(MESSAGE_QUEUE_KEY);
-            if (data) {
-                for (const [id, message] of Object.entries(data)) {
-                    this.#messageQueue.set(id, message);
-                    this.#retryAttempts.set(id, 0);
+            const results = await Promise.all(
+                listeners.map(listener => 
+                    this.executeWithRetry(
+                        () => listener(message.data, message),
+                        {
+                            maxAttempts: MESSAGE_CONFIG.MAX_RETRIES,
+                            retryDelay: MESSAGE_CONFIG.RETRY_DELAY,
+                            context: `message listener for ${message.type}`
+                        }
+                    )
+                )
+            );
+
+            // Handle response if needed
+            if (message.requiresResponse) {
+                const pending = this.#pendingResponses.get(message.id);
+                if (pending) {
+                    clearTimeout(pending.timeout);
+                    this.#pendingResponses.delete(message.id);
+                    pending.resolve(results[0]); // Use first listener's response
                 }
-                this.log(LogLevel.INFO, `📥 Loaded ${this.#messageQueue.size} pending messages`);
             }
-        } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
-                method: '#loadPendingMessages'
+
+            await managers.eventManager.emit('message:processed', {
+                type: message.type,
+                id: message.id
             });
+        } catch (error) {
+            this.handleError(error, ErrorType.MESSAGE_PROCESSING, ErrorSeverity.MEDIUM, {
+                type: message.type,
+                id: message.id
+            });
+
+            // Handle failed response
+            if (message.requiresResponse) {
+                const pending = this.#pendingResponses.get(message.id);
+                if (pending) {
+                    if (pending.retries > 0) {
+                        // Retry message
+                        this.#messageQueue.unshift({
+                            ...pending.message,
+                            retries: pending.retries - 1
+                        });
+                    } else {
+                        clearTimeout(pending.timeout);
+                        this.#pendingResponses.delete(message.id);
+                        pending.reject(error);
+                    }
+                }
+            }
         }
     }
 
     /**
-     * Save pending messages to storage
-     * @private
+     * Add message listener
+     * @param {string} type Message type
+     * @param {Function} listener Listener function
      */
-    async #savePendingMessages() {
-        try {
-            if (this.#messageQueue.size === 0) {
-                await storageManager.remove(MESSAGE_QUEUE_KEY);
-            } else {
-                await storageManager.set(MESSAGE_QUEUE_KEY, Object.fromEntries(this.#messageQueue));
-            }
-        } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
-                method: '#savePendingMessages'
-            });
+    on(type, listener) {
+        if (typeof listener !== 'function') {
+            throw new Error('Listener must be a function');
         }
+
+        if (!this.#listeners.has(type)) {
+            this.#listeners.set(type, new Set());
+        }
+
+        const listeners = this.#listeners.get(type);
+
+        if (listeners.size >= MESSAGE_CONFIG.MAX_LISTENERS) {
+            throw new Error(`Max listeners (${MESSAGE_CONFIG.MAX_LISTENERS}) exceeded for message type: ${type}`);
+        }
+
+        listeners.add(listener);
+        
+        this.log(LogLevel.DEBUG, `👂 Added listener for ${type}`);
+        return true;
     }
 
     /**
-     * Clean up resources
+     * Remove message listener
+     * @param {string} type Message type
+     * @param {Function} listener Listener function
+     */
+    off(type, listener) {
+        const listeners = this.#listeners.get(type);
+        if (!listeners) return false;
+
+        const removed = listeners.delete(listener);
+        
+        if (removed) {
+            this.log(LogLevel.DEBUG, `🗑️ Removed listener for ${type}`);
+        }
+        
+        if (listeners.size === 0) {
+            this.#listeners.delete(type);
+        }
+        
+        return removed;
+    }
+
+    /**
+     * Get message manager stats
+     */
+    getStats() {
+        return {
+            queueSize: this.#messageQueue.length,
+            pendingResponses: this.#pendingResponses.size,
+            listenerCount: Array.from(this.#listeners.entries()).reduce(
+                (acc, [type, listeners]) => ({
+                    ...acc,
+                    [type]: listeners.size
+                }),
+                {}
+            ),
+            isProcessing: this.#processing
+        };
+    }
+
+    /**
+     * Dispose message manager
      */
     async dispose() {
-        try {
-            // Close all ports
-            for (const port of this.#ports) {
-                try {
-                    port.disconnect();
-                } catch (error) {
-                    this.log(LogLevel.WARNING, '⚠️ Error disconnecting port:', error);
-                }
-            }
-            this.#ports.clear();
-
-            // Save any pending messages
-            await this.#savePendingMessages();
-
-            // Clear maps
-            this.#messageQueue.clear();
-            this.#retryAttempts.clear();
-
-            await super.dispose();
-        } catch (error) {
-            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.MEDIUM, {
-                method: 'dispose'
-            });
+        if (this.#queueProcessInterval) {
+            clearInterval(this.#queueProcessInterval);
+            this.#queueProcessInterval = null;
         }
+
+        // Clear pending responses
+        for (const { timeout, reject } of this.#pendingResponses.values()) {
+            clearTimeout(timeout);
+            reject(new Error('Message manager disposed'));
+        }
+
+        this.#messageQueue = [];
+        this.#listeners.clear();
+        this.#pendingResponses.clear();
+        this.#processing = false;
+
+        await super.dispose();
     }
 }
 
-// Export singleton instance
+// Export both class and instance
+export { MessageManager };
 export const messageManager = MessageManager.getInstance(); 

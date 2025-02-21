@@ -1,6 +1,8 @@
 import { stores } from '../stores.js';
 import { BaseManager } from './BaseManager.js';
-import { EventType, ErrorType, ErrorSeverity, LogLevel } from './EventType.js';
+import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
+import { LogLevel } from './LogLevel.js';
+import { EventType } from './EventType.js';
 import { MenuManager } from './MenuManager.js';
 import { EventManager } from './EventManager.js';
 import { ThemeManager } from './ThemeManager.js';
@@ -20,474 +22,511 @@ const SELECTORS = {
     ACTIVE_TAB: '.menu .link.active'
 };
 
-export class InterfaceManager extends BaseManager {
-    static instance = null;
-    #initialized = false;
-    #dependencies = new Set();
+const INTERFACE_CONFIG = {
+    TRANSITION_DURATION: 300,
+    SAVE_DELAY: 1000,
+    MAX_HISTORY: 50,
+    UNDO_TIMEOUT: 5000
+};
+
+/**
+ * Manages high-level UI interactions and state
+ * @extends BaseManager
+ */
+class InterfaceManager extends BaseManager {
+    /** @private */
+    static #instance = null;
+    static _registry = null;
+
+    /** @private */
+    #currentView = null;
+    /** @private */
+    #views = new Map();
+    /** @private */
+    #eventManager = null;
+    /** @private */
+    #settings = null;
+
+    // Private method declarations
+    #handleViewChange = null;
+    #handleUIUpdate = null;
+    #setupEventListeners = null;
+
+    /** @private */
+    #state = {
+        currentView: null,
+        previousView: null,
+        navigationStack: [],
+        viewStates: new Map(),
+        undoStack: [],
+        redoStack: [],
+        lastSaved: null
+    };
     
-    constructor() {
-        super('InterfaceManager');
-        if (InterfaceManager.instance) {
-            return InterfaceManager.instance;
+    /** @private */
+    #saveTimeout = null;
+    
+    /** @private */
+    #transitionPromise = null;
+
+    constructor(registry) {
+        if (InterfaceManager.#instance) {
+            return InterfaceManager.#instance;
         }
-        InterfaceManager.instance = this;
-        
-        // Add required dependencies
-        this.addDependency(MenuManager.getInstance());
-        this.addDependency(EventManager.getInstance());
-        this.addDependency(ThemeManager.getInstance());
-        this.addDependency(LanguageManager.getInstance());
+        super(registry, 'InterfaceManager');
+        InterfaceManager.#instance = this;
+        InterfaceManager._registry = registry;
+
+        // Initialize private methods
+        this.#handleViewChange = async (event) => {
+            try {
+                const { view } = event;
+                await this.setView(view);
+            } catch (error) {
+                this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
+                    method: '#handleViewChange',
+                    view: event?.view
+                });
+            }
+        };
+
+        this.#handleUIUpdate = async (event) => {
+            try {
+                const { elements } = event;
+                await this.updateElements(elements);
+            } catch (error) {
+                this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
+                    method: '#handleUIUpdate',
+                    elements: event?.elements
+                });
+            }
+        };
+
+        this.#setupEventListeners = async () => {
+            try {
+                const eventManager = await this.getDependency('event');
+                
+                // Listen for view change events
+                await eventManager.on('interface:view-change', this.#handleViewChange.bind(this));
+                
+                // Listen for UI update events
+                await eventManager.on('interface:update', this.#handleUIUpdate.bind(this));
+                
+                this.log(LogLevel.DEBUG, '🔄 Interface event listeners set up');
+            } catch (error) {
+                this.handleError(error, ErrorType.EVENT_LISTENER, ErrorSeverity.HIGH, {
+                    method: '#setupEventListeners'
+                });
+                throw error;
+            }
+        };
     }
 
     static getInstance() {
-        if (!InterfaceManager.instance) {
-            InterfaceManager.instance = new InterfaceManager();
+        if (!InterfaceManager.#instance && InterfaceManager._registry) {
+            InterfaceManager.#instance = new InterfaceManager(InterfaceManager._registry);
         }
-        return InterfaceManager.instance;
+        return InterfaceManager.#instance;
     }
 
-    async onInitialize() {
-        if (this.#initialized) {
-            return true;
-        }
+    static setRegistry(registry) {
+        InterfaceManager._registry = registry;
+    }
 
+    /**
+     * Initialize interface manager
+     * @returns {Promise<boolean>}
+     */
+    async _initialize() {
         try {
-            this.log(LogLevel.INFO, '🖥️ Initializing interface manager...');
+            this.log(LogLevel.INFO, '🔄 Initializing interface manager...');
             
-            await this.initializeStoreSelect();
-            await this.initializeTabs();
-            await this.initializeLanguageSwitcher();
-            this.initializeThemeSwitcher();
-            this.initializeStatusButtons();
-            this.initializeLeadStatusLinks();
-            this.setupCounterClickHandlers();
+            // Get dependencies
+            const eventManager = await this.getDependency('event');
             
-            this.#initialized = true;
-            this.log(LogLevel.SUCCESS, '✅ Interface manager initialized successfully');
+            // Set up event listeners
+            await this.#setupEventListeners();
+            
+            this.log(LogLevel.SUCCESS, '✅ Interface manager initialized');
             return true;
         } catch (error) {
-            this.log(LogLevel.ERROR, '❌ Failed to initialize interface manager:', error);
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'onInitialize'
-            });
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
             return false;
         }
     }
 
-    async initializeStoreSelect() {
+    /**
+     * Navigate to view
+     * @param {string} viewId View ID
+     * @param {Object} [params] Navigation parameters
+     */
+    async navigateTo(viewId, params = {}) {
         try {
-            const storeSelect = document.querySelector('#store-select');
-            if (!storeSelect) {
-                console.log('[DEBUG] ⚠️ Store select not found');
-                return;
+            if (this.#transitionPromise) {
+                await this.#transitionPromise;
             }
 
-            // Load saved selection first
-            const { selectedStore } = await chrome.storage.local.get('selectedStore');
+            const previousView = this.#state.currentView;
             
-            // Add change handler - use debounce to prevent multiple rapid changes
-            let changeTimeout = null;
-            storeSelect.addEventListener('change', async (e) => {
-                if (changeTimeout) {
-                    clearTimeout(changeTimeout);
-                }
-                
-                changeTimeout = setTimeout(async () => {
-                    try {
-                        const selectedStore = e.target.value;
-                        await chrome.storage.local.set({ selectedStore });
-                        
-                        // Emit store change event
-                        managers.EventManager.emit(EventType.STORE_CHANGED, {
-                            oldStore: e.target.dataset.previousValue,
-                            newStore: selectedStore,
-                            timestamp: new Date().toISOString()
+            this.#transitionPromise = (async () => {
+                try {
+                    // Hide current view
+                    if (previousView) {
+                        // Save view state
+                        this.#state.viewStates.set(previousView, {
+                            params: this.#state.navigationStack[this.#state.navigationStack.length - 1]?.params,
+                            scrollPosition: window.scrollY
                         });
                         
-                        // Save current value for next change
-                        e.target.dataset.previousValue = selectedStore;
-                        
-                    } catch (error) {
-                        console.error('[ERROR] ❌ Store change failed:', error);
-                        managers.ErrorHandler.handleError(error);
+                        await this.getDependency('ui').hide(previousView, {
+                            duration: INTERFACE_CONFIG.TRANSITION_DURATION
+                        });
                     }
-                }, 300);
-            });
 
-            console.log('[DEBUG] ✅ Store select initialized');
+                    // Update navigation stack
+                    this.#state.navigationStack.push({ viewId, params });
+                    this.#state.previousView = previousView;
+                    this.#state.currentView = viewId;
+
+                    // Show new view
+                    await this.getDependency('ui').show(viewId, {
+                        duration: INTERFACE_CONFIG.TRANSITION_DURATION
+                    });
+
+                    // Restore view state if exists
+                    const viewState = this.#state.viewStates.get(viewId);
+                    if (viewState) {
+                        window.scrollTo(0, viewState.scrollPosition);
+                    }
+
+                    await this.getDependency('event').emit('interface:navigate', {
+                        from: previousView,
+                        to: viewId,
+                        params
+                    });
+
+                    // Schedule state save
+                    this.#scheduleSave();
+                } finally {
+                    this.#transitionPromise = null;
+                }
+            })();
+
+            await this.#transitionPromise;
         } catch (error) {
-            console.warn('[WARNING] ⚠️ Store select initialization failed:', error);
+            this.handleError(error, ErrorType.NAVIGATION, ErrorSeverity.MEDIUM, {
+                operation: 'navigateTo',
+                viewId
+            });
+            throw error;
         }
     }
 
     /**
-     * Initialize tabs
+     * Navigate back
+     */
+    async navigateBack() {
+        try {
+            if (this.#state.navigationStack.length <= 1) {
+                throw new Error('Cannot navigate back: no previous view');
+            }
+
+            // Remove current view
+            this.#state.navigationStack.pop();
+            
+            // Get previous view
+            const previous = this.#state.navigationStack[this.#state.navigationStack.length - 1];
+            
+            // Navigate to previous view
+            await this.navigateTo(previous.viewId, previous.params);
+            
+            await this.getDependency('event').emit('interface:back');
+        } catch (error) {
+            this.handleError(error, ErrorType.NAVIGATION, ErrorSeverity.MEDIUM, {
+                operation: 'navigateBack'
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Record action for undo/redo
+     * @param {Object} action Action to record
+     */
+    recordAction(action) {
+        try {
+            if (!action.undo || !action.redo) {
+                throw new Error('Action must have undo and redo functions');
+            }
+
+            // Clear redo stack when new action is recorded
+            this.#state.redoStack = [];
+            
+            // Add to undo stack
+            this.#state.undoStack.push(action);
+            
+            // Trim stack if too large
+            if (this.#state.undoStack.length > INTERFACE_CONFIG.MAX_HISTORY) {
+                this.#state.undoStack.shift();
+            }
+            
+            // Schedule state save
+            this.#scheduleSave();
+            
+            this.getDependency('event').emit('interface:action', { action });
+        } catch (error) {
+            this.handleError(error, ErrorType.ACTION, ErrorSeverity.LOW, {
+                operation: 'recordAction'
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Undo last action
+     */
+    async undo() {
+        try {
+            if (this.#state.undoStack.length === 0) {
+                throw new Error('Nothing to undo');
+            }
+
+            const action = this.#state.undoStack.pop();
+            
+            try {
+                await action.undo();
+                this.#state.redoStack.push(action);
+                
+                await this.getDependency('event').emit('interface:undo', { action });
+            } catch (error) {
+                // Restore action to undo stack if failed
+                this.#state.undoStack.push(action);
+                throw error;
+            }
+            
+            // Schedule state save
+            this.#scheduleSave();
+        } catch (error) {
+            this.handleError(error, ErrorType.ACTION, ErrorSeverity.LOW, {
+                operation: 'undo'
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Redo last undone action
+     */
+    async redo() {
+        try {
+            if (this.#state.redoStack.length === 0) {
+                throw new Error('Nothing to redo');
+            }
+
+            const action = this.#state.redoStack.pop();
+            
+            try {
+                await action.redo();
+                this.#state.undoStack.push(action);
+                
+                await this.getDependency('event').emit('interface:redo', { action });
+            } catch (error) {
+                // Restore action to redo stack if failed
+                this.#state.redoStack.push(action);
+                throw error;
+            }
+            
+            // Schedule state save
+            this.#scheduleSave();
+        } catch (error) {
+            this.handleError(error, ErrorType.ACTION, ErrorSeverity.LOW, {
+                operation: 'redo'
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Show loading overlay
+     * @param {string} message Loading message
+     */
+    async showLoading(message) {
+        try {
+            await this.getDependency('ui').show('loading-overlay', {
+                data: { message }
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                operation: 'showLoading'
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Hide loading overlay
+     */
+    async hideLoading() {
+        try {
+            await this.getDependency('ui').hide('loading-overlay');
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                operation: 'hideLoading'
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Show confirmation dialog
+     * @param {Object} options Dialog options
+     * @returns {Promise<boolean>} User confirmation
+     */
+    async confirm(options) {
+        try {
+            const {
+                title,
+                message,
+                confirmText = 'OK',
+                cancelText = 'Cancel',
+                type = 'info'
+            } = options;
+
+            return new Promise(resolve => {
+                this.getDependency('ui').showModal('confirm-dialog', {
+                    data: {
+                        title,
+                        message,
+                        confirmText,
+                        cancelText,
+                        type,
+                        onConfirm: () => resolve(true),
+                        onCancel: () => resolve(false)
+                    }
+                });
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                operation: 'confirm'
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Load interface state
      * @private
      */
-    async initializeTabs() {
+    async #loadState() {
         try {
-            // Get MenuManager instance
-            const menuManager = this.getDependency('MenuManager');
-            if (!menuManager?.isInitialized()) {
-                this.log(LogLevel.INFO, '⏳ Waiting for MenuManager to initialize...');
-                await menuManager.waitForReady();
-            }
-
-            // Add event listener for tab changes
-            window.addEventListener(EVENTS.TAB_CHANGED, (event) => {
-                const { previousTab, currentTab, timestamp } = event.detail;
-                
-                // Forward event to eventManager
-                EventManager.getInstance().emit(EventType.TAB_CHANGED, {
-                    previousTab,
-                    currentTab,
-                    timestamp
-                });
-            });
-
-            this.log(LogLevel.SUCCESS, '✅ Tabs initialized');
-        } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initializeTabs'
-            });
-        }
-    }
-
-    async initializeLanguageSwitcher() {
-        try {
-            const languageButtons = document.querySelectorAll('[data-lang]');
-            const { language: currentLang } = await chrome.storage.local.get('language') || { language: 'polish' };
+            const storageManager = await this.getDependency('storage');
+            const saved = await storageManager.get('interface_state');
             
-            languageButtons.forEach(btn => {
-                btn.classList.remove('active');
+            if (saved) {
+                this.#state = {
+                    ...this.#state,
+                    ...saved,
+                    lastSaved: new Date(saved.lastSaved)
+                };
                 
-                if (btn.dataset.lang === currentLang) {
-                    btn.classList.add('active');
+                // Restore current view if any
+                if (this.#state.currentView) {
+                    await this.navigateTo(
+                        this.#state.currentView,
+                        this.#state.navigationStack[this.#state.navigationStack.length - 1]?.params
+                    );
                 }
-                
-                btn.addEventListener('click', async () => {
-                    const lang = btn.dataset.lang;
-                    languageButtons.forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    
-                    try {
-                        const languageManager = LanguageManager.getInstance();
-                        await languageManager.setLanguage(lang);
-                        
-                        // Event will be emitted by LanguageManager.updateUI()
-                        this.log(LogLevel.DEBUG, `🌍 Language changed to: ${lang}`);
-                    } catch (error) {
-                        this.handleError(error, ErrorType.LANGUAGE, ErrorSeverity.MEDIUM, {
-                            method: 'initializeLanguageSwitcher',
-                            language: lang
-                        });
-                    }
-                });
-            });
-
-            this.log(LogLevel.DEBUG, '✅ Language switcher initialized');
+            }
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initializeLanguageSwitcher'
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.MEDIUM, {
+                operation: 'loadState'
             });
         }
     }
 
-    initializeThemeSwitcher() {
+    /**
+     * Save interface state
+     * @private
+     */
+    async #saveState() {
         try {
-            const themeToggle = document.getElementById('theme-switch');
+            const storageManager = await this.getDependency('storage');
             
-            if (!themeToggle) {
-                this.log(LogLevel.WARNING, '⚠️ Theme toggle element not found');
-                return;
-            }
-
-            // Get ThemeManager instance
-            const themeManager = ThemeManager.getInstance();
-            const { theme: currentTheme } = themeManager.getThemeSettings();
+            this.#state.lastSaved = new Date();
             
-            // Set initial state of toggle
-            themeToggle.checked = currentTheme === 'dark';
-
-            const handleThemeChange = async (event) => {
-                try {
-                    const newTheme = event.target.checked ? 'dark' : 'light';
-                    await themeManager.setTheme(newTheme);
-                    this.log(LogLevel.DEBUG, '🎨 Theme changed', { theme: newTheme });
-                } catch (error) {
-                    this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                        method: 'handleThemeChange',
-                        theme: event.target.checked ? 'dark' : 'light'
-                    });
-                }
-            };
-
-            themeToggle.addEventListener('change', handleThemeChange);
-            this.log(LogLevel.DEBUG, '✅ Theme switcher initialized');
+            await storageManager.set('interface_state', {
+                currentView: this.#state.currentView,
+                previousView: this.#state.previousView,
+                navigationStack: this.#state.navigationStack,
+                viewStates: Array.from(this.#state.viewStates.entries()),
+                lastSaved: this.#state.lastSaved
+            });
+            
+            await this.getDependency('event').emit('interface:saved', {
+                timestamp: this.#state.lastSaved
+            });
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.LOW, {
-                method: 'initializeThemeSwitcher'
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.MEDIUM, {
+                operation: 'saveState'
             });
         }
     }
 
-    initializeStatusButtons() {
-        try {
-            const runTestsButton = document.getElementById('run-tests');
-            const checkStatusButton = document.getElementById('check-status');
-            const checkOrdersBtn = document.getElementById('check-orders');
-            
-            // Get manager instances
-            const eventManager = EventManager.getInstance();
-            const errorHandler = ErrorHandler.getInstance();
-
-            if (runTestsButton) {
-                runTestsButton.addEventListener('click', async () => {
-                    this.log(LogLevel.DEBUG, '🔍 Running tests...');
-                    eventManager.emit(EventType.RUN_TESTS);
-                });
-            }
-
-            if (checkStatusButton) {
-                checkStatusButton.addEventListener('click', async () => {
-                    this.log(LogLevel.DEBUG, '🔄 Checking status...');
-                    eventManager.emit(EventType.CHECK_STATUS);
-                });
-            }
-
-            if (checkOrdersBtn) {
-                checkOrdersBtn.addEventListener('click', async () => {
-                    try {
-                        this.log(LogLevel.DEBUG, '📦 Checking orders...');
-                        const response = await chrome.runtime.sendMessage({ type: 'CHECK_ORDERS_NOW' });
-                        
-                        if (response?.success) {
-                            this.log(LogLevel.SUCCESS, '✅ Orders checked successfully');
-                            eventManager.emit(EventType.ORDERS_CHECKED);
-                        } else {
-                            throw new Error(response?.error || 'Unknown error');
-                        }
-                    } catch (error) {
-                        this.handleError(error, ErrorType.API, ErrorSeverity.MEDIUM, {
-                            method: 'initializeStatusButtons',
-                            button: 'checkOrders'
-                        });
-                    }
-                });
-            }
-
-            this.log(LogLevel.DEBUG, '✅ Status buttons initialized');
-        } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.LOW, {
-                method: 'initializeStatusButtons'
-            });
+    /**
+     * Schedule state save
+     * @private
+     */
+    #scheduleSave() {
+        if (this.#saveTimeout) {
+            clearTimeout(this.#saveTimeout);
         }
+        
+        this.#saveTimeout = setTimeout(
+            () => this.#saveState(),
+            INTERFACE_CONFIG.SAVE_DELAY
+        );
     }
 
-    initializeLeadStatusLinks() {
-        const statusMap = {
-            '1': 'submitted',
-            '2': 'confirmed',
-            '3': 'accepted',
-            'READY': 'ready',
-            'OVERDUE': 'overdue'
+    /**
+     * Get interface manager stats
+     */
+    getStats() {
+        return {
+            currentView: this.#state.currentView,
+            navigationStackSize: this.#state.navigationStack.length,
+            undoStackSize: this.#state.undoStack.length,
+            redoStackSize: this.#state.redoStack.length,
+            viewStatesCount: this.#state.viewStates.size,
+            lastSaved: this.#state.lastSaved
+        };
+    }
+
+    /**
+     * Dispose interface manager
+     */
+    async dispose() {
+        // Save final state
+        await this.#saveState();
+        
+        if (this.#saveTimeout) {
+            clearTimeout(this.#saveTimeout);
+            this.#saveTimeout = null;
+        }
+
+        this.#state = {
+            currentView: null,
+            previousView: null,
+            navigationStack: [],
+            viewStates: new Map(),
+            undoStack: [],
+            redoStack: [],
+            lastSaved: null
         };
 
-        document.querySelectorAll('.lead-status').forEach(statusElement => {
-            const dataStatus = statusElement.getAttribute('data-status');
-            const status = statusMap[dataStatus];
-            
-            if (status) {
-                statusElement.style.cursor = 'pointer';
-                statusElement.addEventListener('click', async () => {
-                    try {
-                        const storeSelect = document.getElementById('store-select');
-                        const selectedStore = storeSelect?.value;
-                        const selectedStoreId = selectedStore === 'ALL' ? '0' : this.getStoreId(selectedStore);
-                        const url = this.generateOrdersUrl(status, selectedStoreId);
-                        
-                        // Log click event
-                        console.log('[DEBUG] 👆 Lead status clicked:', {
-                            status,
-                            store: selectedStore,
-                            storeId: selectedStoreId,
-                            url
-                        });
-                        
-                        // Emit lead status click event
-                        managers.EventManager.emit(EventType.LEAD_STATUS_CLICKED, {
-                            status,
-                            store: selectedStore,
-                            url,
-                            timestamp: new Date().toISOString()
-                        });
-                        
-                        window.open(url, '_blank');
-                    } catch (error) {
-                        console.error('[ERROR] ❌ Failed to handle lead status click:', error);
-                        managers.ErrorHandler.handleError(error);
-                    }
-                });
-            }
-        });
-    }
-
-    getStoreId(storeCode) {
-        const store = stores.find(s => s.id === storeCode);
-        return store ? store.deliveryId.toString() : '0';
-    }
-
-    /**
-     * Generate URL for orders page with filters
-     * @param {string} status - Order status
-     * @param {string} storeId - Store ID
-     * @returns {string} URL for orders page
-     */
-    generateOrdersUrl(status, storeId) {
-        const baseUrl = 'https://darwina.pl/adm/';
-        const params = new URLSearchParams({
-            'a': 'zamowienia',
-            'sk': '',
-            'opid': '0',
-            'pcid': '0',
-            'daid': storeId || '0',
-            'sztyp': 'pid',
-            'sztxt': '',
-            'ptid': '',
-            'dw': '0',
-            'dp': '',
-            'dk': ''
-        });
-
-        // Calculate date 14 days ago
-        const date = new Date();
-        date.setDate(date.getDate() - 14);
-        const formattedDate = date.toISOString().split('T')[0];
-
-        // Add appropriate parameters based on status
-        switch (status) {
-            case 'submitted':
-                params.set('st', '1');
-                params.set('s[]', '1');
-                break;
-            case 'confirmed':
-                params.set('st', '2');
-                params.set('s[]', '2');
-                break;
-            case 'accepted':
-                params.set('st', '3');
-                params.set('s[]', '3');
-                break;
-            case 'ready':
-                params.set('st', '5');
-                params.set('s[]', '5');
-                params.set('dp', formattedDate);
-                break;
-            case 'overdue':
-                params.set('st', '5');
-                params.set('s[]', '5');
-                params.set('dk', formattedDate);
-                break;
-        }
-
-        return `${baseUrl}?${params.toString()}`;
-    }
-
-    updateInterface() {
-        try {
-            const languageManager = LanguageManager.getInstance();
-            const eventManager = EventManager.getInstance();
-            
-            // Update translations
-            languageManager.updateUI();
-            
-            // Emit interface updated event
-            eventManager.emit(EventType.INTERFACE_UPDATED, {
-                timestamp: new Date().toISOString()
-            });
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
-                method: 'updateInterface'
-            });
-        }
-    }
-
-    /**
-     * Set up click handlers for order status counters
-     */
-    setupCounterClickHandlers() {
-        try {
-            document.querySelectorAll('.lead-status').forEach(statusElement => {
-                const status = statusElement.getAttribute('data-status');
-                if (status) {
-                    statusElement.style.cursor = 'pointer';
-                    statusElement.addEventListener('mouseup', async (event) => {
-                        // Only handle left and middle mouse buttons
-                        if (event.button !== 0 && event.button !== 1) return;
-                        
-                        // Get currently selected store
-                        const store = await this.getSelectedStore();
-                        const storeId = store?.id !== 'ALL' ? this.getStoreId(store.id) : '0';
-                        
-                        // Generate URL with store ID if available
-                        const url = this.generateOrdersUrl(status, storeId);
-                        
-                        // Open in new tab
-                        window.open(url, '_blank');
-                        
-                        // Prevent default for middle click
-                        if (event.button === 1) {
-                            event.preventDefault();
-                        }
-                    });
-                }
-            });
-
-            this.log(LogLevel.DEBUG, '✅ Counter click handlers initialized');
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: 'setupCounterClickHandlers'
-            });
-        }
-    }
-
-    /**
-     * Get currently selected store
-     * @returns {Promise<Object|null>} Selected store object or null
-     */
-    async getSelectedStore() {
-        try {
-            const select = document.querySelector('#store-select, #store-selector');
-            if (!select) {
-                this.log(LogLevel.WARNING, '⚠️ Store select element not found');
-                return null;
-            }
-
-            const selectedOption = select.options[select.selectedIndex];
-            if (!selectedOption) {
-                this.log(LogLevel.WARNING, '⚠️ No store option selected');
-                return null;
-            }
-
-            const storeId = selectedOption.value;
-            const store = stores.find(s => s.id === storeId);
-
-            this.log(LogLevel.DEBUG, '🏪 Selected store:', {
-                id: storeId,
-                name: selectedOption.text,
-                index: select.selectedIndex,
-                delivery_id: store?.deliveryId
-            });
-
-            return store || { id: 'ALL' };
-        } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                method: 'getSelectedStore'
-            });
-            return { id: 'ALL' };
-        }
+        await super.dispose();
     }
 }
 
-// Export singleton instance
+// Export both class and instance
+export { InterfaceManager };
 export const interfaceManager = InterfaceManager.getInstance();

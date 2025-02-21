@@ -1,26 +1,64 @@
 import { BaseManager } from './BaseManager.js';
-import { EventType, ErrorType, ErrorSeverity, LogLevel } from './EventType.js';
+import { LogLevel, ErrorType, ErrorSeverity } from '../constants.js';
+
+const EVENT_QUEUE_CONFIG = {
+    MAX_QUEUE_SIZE: 1000,
+    MAX_LISTENERS: 100,
+    PROCESS_INTERVAL: 100,
+    BATCH_SIZE: 50
+};
 
 /**
  * @extends {BaseManager}
  * Manages event delegation and handling
  */
-export class EventManager extends BaseManager {
+class EventManager extends BaseManager {
     static #instance = null;
-    #delegatedEvents = new Map();
-    #eventMetrics = new Map();
-    #debounceTimers = new Map();
-    #throttleTimers = new Map();
-    #boundHandleEvent = null;
-    #customEventHandlers = new Map();
+    static _registry = null;
+    
+    /** @private */
+    #listeners = new Map();
+    
+    /** @private */
+    #subscribers = new Map();
+    
+    /** @private */
+    #eventQueue = [];
+    
+    /** @private */
+    #queueProcessInterval = null;
+    
+    /** @private */
+    #processing = false;
 
-    constructor() {
+    constructor(registry) {
         if (EventManager.#instance) {
             return EventManager.#instance;
         }
-        super('EventManager');
+        super(registry, 'EventManager');
         EventManager.#instance = this;
-        this.#boundHandleEvent = this.#handleEvent.bind(this);
+        EventManager._registry = registry;
+        
+        // Add dependencies
+        this.addDependency('error');
+    }
+
+    async _initialize() {
+        try {
+            this.log(LogLevel.INFO, '🔄 Initializing event manager...');
+            
+            // Start queue processor
+            this.#queueProcessInterval = setInterval(
+                () => this.#processEventQueue(),
+                EVENT_QUEUE_CONFIG.PROCESS_INTERVAL
+            );
+            
+            this.log(LogLevel.SUCCESS, '✅ Event manager initialized');
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+            return false;
+        }
     }
 
     /**
@@ -28,291 +66,226 @@ export class EventManager extends BaseManager {
      * @returns {EventManager}
      */
     static getInstance() {
-        if (!EventManager.#instance) {
-            EventManager.#instance = new EventManager();
+        if (!EventManager.#instance && EventManager._registry) {
+            EventManager.#instance = new EventManager(EventManager._registry);
         }
         return EventManager.#instance;
     }
 
     /**
-     * Initialize event manager
-     * @returns {Promise<boolean>}
+     * Set registry for all instances
+     * @param {ManagerRegistry} registry Manager registry
      */
-    async onInitialize() {
-        try {
-            // Setup event delegation
-            document.addEventListener('click', this.#boundHandleEvent, true);
-            document.addEventListener('input', this.#boundHandleEvent, true);
-            document.addEventListener('change', this.#boundHandleEvent, true);
-            document.addEventListener('submit', this.#boundHandleEvent, true);
-
-            this.log(LogLevel.SUCCESS, '✅ Event manager initialized');
-            return true;
-        } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
-                method: 'initialize'
-            });
-            return false;
-        }
-    }
-
-    /**
-     * Add delegated event handler
-     * @param {string} selector CSS selector
-     * @param {string} eventType Event type
-     * @param {Function} handler Event handler
-     * @param {Object} [options] Event options
-     */
-    delegate(selector, eventType, handler, options = {}) {
-        const key = `${selector}:${eventType}`;
-        if (!this.#delegatedEvents.has(key)) {
-            this.#delegatedEvents.set(key, new Set());
-        }
-        this.#delegatedEvents.get(key).add({
-            handler,
-            options
-        });
-    }
-
-    /**
-     * Remove delegated event handler
-     * @param {string} selector CSS selector
-     * @param {string} eventType Event type
-     * @param {Function} handler Event handler
-     */
-    undelegate(selector, eventType, handler) {
-        const key = `${selector}:${eventType}`;
-        const handlers = this.#delegatedEvents.get(key);
-        if (handlers) {
-            handlers.delete(handler);
-            if (handlers.size === 0) {
-                this.#delegatedEvents.delete(key);
-            }
-        }
-    }
-
-    /**
-     * Handle delegated event
-     * @private
-     */
-    #handleEvent(event) {
-        const startTime = performance.now();
-        let handled = false;
-
-        for (const [key, handlers] of this.#delegatedEvents) {
-            const [selector] = key.split(':');
-            if (event.target.matches(selector)) {
-                handlers.forEach(({ handler, options }) => {
-                    try {
-                        if (options.throttle) {
-                            this.#throttle(key, handler, options.throttle, event, event.target);
-                        } else if (options.debounce) {
-                            this.#debounce(key, handler, options.debounce, event, event.target);
-                        } else {
-                            this.#executeHandler(key, handler, event, event.target);
-                        }
-                        handled = true;
-                    } catch (error) {
-                        this.handleError(error, ErrorType.EVENT, ErrorSeverity.MEDIUM, {
-                            method: 'handleEvent',
-                            selector,
-                            eventType: event.type
-                        });
-                    }
-                });
-            }
-        }
-
-        const duration = performance.now() - startTime;
-        this.#updateMetrics(event.type, duration, handled);
-    }
-
-    /**
-     * Execute event handler
-     * @private
-     */
-    #executeHandler(key, handler, event, target) {
-        try {
-            handler.call(target, event, target);
-        } catch (error) {
-            this.handleError(error, ErrorType.EVENT, ErrorSeverity.MEDIUM, {
-                method: 'executeHandler',
-                key
-            });
-        }
-    }
-
-    /**
-     * Debounce event handler
-     * @private
-     */
-    #debounce(key, handler, delay, event, target) {
-        const timerKey = `${key}:${handler.name}`;
-        
-        if (this.#debounceTimers.has(timerKey)) {
-            clearTimeout(this.#debounceTimers.get(timerKey));
-        }
-        
-        this.#debounceTimers.set(timerKey, setTimeout(() => {
-            this.#executeHandler(key, handler, event, target);
-            this.#debounceTimers.delete(timerKey);
-        }, delay));
-    }
-
-    /**
-     * Throttle event handler
-     * @private
-     */
-    #throttle(key, handler, limit, event, target) {
-        const timerKey = `${key}:${handler.name}`;
-        
-        if (!this.#throttleTimers.has(timerKey)) {
-            this.#executeHandler(key, handler, event, target);
-            
-            this.#throttleTimers.set(timerKey, setTimeout(() => {
-                this.#throttleTimers.delete(timerKey);
-            }, limit));
-        }
-    }
-
-    /**
-     * Update event metrics
-     * @private
-     */
-    #updateMetrics(eventType, duration, handled) {
-        const metrics = {
-            timestamp: Date.now(),
-            type: eventType,
-            duration,
-            handled
-        };
-
-        this.emit('eventMetrics', metrics);
-        
-        if (duration > 16.67) { // Longer than one frame (60fps)
-            this.emit('longEvent', {
-                ...metrics,
-                threshold: 16.67
-            });
-        }
-    }
-
-    /**
-     * Get event metrics
-     * @returns {Object} Event metrics
-     */
-    getMetrics() {
-        return Object.fromEntries(this.#eventMetrics);
-    }
-
-    /**
-     * Subscribe to an event
-     * @param {string} eventName Event name
-     * @param {Function} handler Event handler
-     * @param {Object} [options] Event options
-     */
-    on(eventName, handler, options = {}) {
-        if (!this.#customEventHandlers.has(eventName)) {
-            this.#customEventHandlers.set(eventName, new Set());
-        }
-        this.#customEventHandlers.get(eventName).add({ handler, options });
-        
-        this.log(LogLevel.DEBUG, `📌 Subscribed to event: ${eventName}`, { 
-            handler: handler.name || 'anonymous'
-        });
-    }
-
-    /**
-     * Unsubscribe from an event
-     * @param {string} eventName Event name
-     * @param {Function} handler Event handler
-     */
-    off(eventName, handler) {
-        const handlers = this.#customEventHandlers.get(eventName);
-        if (handlers) {
-            handlers.forEach(h => {
-                if (h.handler === handler) {
-                    handlers.delete(h);
-                }
-            });
-            if (handlers.size === 0) {
-                this.#customEventHandlers.delete(eventName);
-            }
-        }
-        
-        this.log(LogLevel.DEBUG, `🗑️ Unsubscribed from event: ${eventName}`, { 
-            handler: handler.name || 'anonymous'
-        });
+    static setRegistry(registry) {
+        EventManager._registry = registry;
     }
 
     /**
      * Emit an event
      * @param {string} eventName Event name
-     * @param {*} data Event data
+     * @param {Object} data Event data
      */
-    emit(eventName, data = {}) {
-        const handlers = this.#customEventHandlers.get(eventName);
-        if (handlers) {
-            handlers.forEach(({ handler, options }) => {
-                try {
-                    if (options.throttle) {
-                        this.#throttle(`custom:${eventName}`, () => handler(data), options.throttle);
-                    } else if (options.debounce) {
-                        this.#debounce(`custom:${eventName}`, () => handler(data), options.debounce);
-                    } else {
-                        handler(data);
+    async emit(eventName, data = {}) {
+        try {
+            if (!this.isReady()) {
+                return this.#queueEvent(eventName, data);
+            }
+
+            const listeners = this.#listeners.get(eventName) || [];
+            const timestamp = Date.now();
+
+            const eventData = {
+                ...data,
+                eventName,
+                timestamp
+            };
+
+            this.log(LogLevel.DEBUG, `📢 Emitting ${eventName}`, eventData);
+
+            const promises = listeners.map(listener => 
+                this.executeWithRetry(
+                    () => listener(eventData),
+                    {
+                        maxAttempts: 3,
+                        retryDelay: 1000,
+                        context: `event listener for ${eventName}`
                     }
-                } catch (error) {
-                    this.handleError(error, ErrorType.EVENT, ErrorSeverity.MEDIUM, {
-                        method: 'emit',
+                ).catch(error => {
+                    this.handleError(error, ErrorType.EVENT_LISTENER, ErrorSeverity.LOW, {
                         eventName,
-                        data
+                        listener: listener.name || 'anonymous'
                     });
-                }
+                })
+            );
+
+            await Promise.all(promises);
+        } catch (error) {
+            this.handleError(error, ErrorType.EVENT_EMISSION, ErrorSeverity.MEDIUM, {
+                eventName,
+                data
             });
         }
-
-        // Also emit as DOM event for broader compatibility
-        const event = new CustomEvent(eventName, { detail: data });
-        document.dispatchEvent(event);
-        
-        this.log(LogLevel.DEBUG, `📢 Emitted event: ${eventName}`, { data });
     }
 
     /**
-     * Clean up resources
+     * Add event listener
+     * @param {string} eventName Event name
+     * @param {Function} listener Listener function
+     */
+    on(eventName, listener) {
+        if (typeof listener !== 'function') {
+            throw new Error('Listener must be a function');
+        }
+
+        if (!this.#listeners.has(eventName)) {
+            this.#listeners.set(eventName, new Set());
+        }
+
+        const listeners = this.#listeners.get(eventName);
+
+        if (listeners.size >= EVENT_QUEUE_CONFIG.MAX_LISTENERS) {
+            this.handleError(
+                new Error(`Max listeners (${EVENT_QUEUE_CONFIG.MAX_LISTENERS}) exceeded for event: ${eventName}`),
+                ErrorType.MAX_LISTENERS_EXCEEDED,
+                ErrorSeverity.MEDIUM
+            );
+            return false;
+        }
+
+        listeners.add(listener);
+        this.log(LogLevel.DEBUG, `👂 Added listener for ${eventName}`);
+        return true;
+    }
+
+    /**
+     * Remove event listener
+     * @param {string} eventName Event name
+     * @param {Function} listener Listener function
+     */
+    off(eventName, listener) {
+        const listeners = this.#listeners.get(eventName);
+        if (!listeners) return false;
+
+        const removed = listeners.delete(listener);
+        if (removed) {
+            this.log(LogLevel.DEBUG, `🗑️ Removed listener for ${eventName}`);
+        }
+        
+        if (listeners.size === 0) {
+            this.#listeners.delete(eventName);
+        }
+        
+        return removed;
+    }
+
+    /**
+     * Queue event for later processing
+     * @private
+     */
+    #queueEvent(eventName, data) {
+        if (this.#eventQueue.length >= EVENT_QUEUE_CONFIG.MAX_QUEUE_SIZE) {
+            this.log(LogLevel.WARN, `⚠️ Event queue full, dropping oldest event`);
+            this.#eventQueue.shift();
+        }
+
+        this.#eventQueue.push({
+            eventName,
+            data,
+            timestamp: Date.now()
+        });
+
+        this.log(LogLevel.DEBUG, `📥 Queued event: ${eventName}`, {
+            queueSize: this.#eventQueue.length
+        });
+    }
+
+    /**
+     * Process event queue
+     * @private
+     */
+    async #processEventQueue() {
+        if (this.#processing || this.#eventQueue.length === 0) return;
+
+        this.#processing = true;
+        
+        try {
+            const batch = this.#eventQueue.splice(0, EVENT_QUEUE_CONFIG.BATCH_SIZE);
+            
+            for (const event of batch) {
+                await this.emit(event.eventName, event.data);
+            }
+
+            if (this.#eventQueue.length > 0) {
+                this.log(LogLevel.DEBUG, `📊 Processed ${batch.length} events, ${this.#eventQueue.length} remaining`);
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.EVENT_QUEUE_PROCESSING, ErrorSeverity.MEDIUM);
+        } finally {
+            this.#processing = false;
+        }
+    }
+
+    /**
+     * Get event manager stats
+     */
+    getStats() {
+        return {
+            queueSize: this.#eventQueue.length,
+            listenerCount: Array.from(this.#listeners.entries()).reduce(
+                (acc, [event, listeners]) => ({
+                    ...acc,
+                    [event]: listeners.size
+                }),
+                {}
+            ),
+            isProcessing: this.#processing
+        };
+    }
+
+    /**
+     * Dispose event manager
      */
     async dispose() {
-        try {
-            // Remove event listeners
-            document.removeEventListener('click', this.#boundHandleEvent, true);
-            document.removeEventListener('input', this.#boundHandleEvent, true);
-            document.removeEventListener('change', this.#boundHandleEvent, true);
-            document.removeEventListener('submit', this.#boundHandleEvent, true);
-
-            // Clear all timers
-            this.#debounceTimers.forEach(timer => clearTimeout(timer));
-            this.#throttleTimers.forEach(timer => clearTimeout(timer));
-
-            // Clear collections
-            this.#delegatedEvents.clear();
-            this.#eventMetrics.clear();
-            this.#debounceTimers.clear();
-            this.#throttleTimers.clear();
-            this.#customEventHandlers.clear();
-
-            // Reset state
-            this.#boundHandleEvent = null;
-
-            await super.dispose();
-        } catch (error) {
-            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH, {
-                method: 'dispose'
-            });
-            throw error;
+        if (this.#queueProcessInterval) {
+            clearInterval(this.#queueProcessInterval);
+            this.#queueProcessInterval = null;
         }
+
+        this.#eventQueue = [];
+        this.#listeners.clear();
+        this.#processing = false;
+
+        await super.dispose();
+    }
+
+    /**
+     * Subscribe to an event
+     * @param {string} eventName Event name
+     * @param {Function} callback Callback function
+     */
+    async subscribe(eventName, callback) {
+        if (!eventName || typeof eventName !== 'string') {
+            throw new Error('Event name must be a non-empty string');
+        }
+        if (typeof callback !== 'function') {
+            throw new Error('Callback must be a function');
+        }
+
+        if (!this.#subscribers.has(eventName)) {
+            this.#subscribers.set(eventName, new Set());
+        }
+        this.#subscribers.get(eventName).add(callback);
+    }
+
+    /**
+     * Alias for subscribe
+     * @param {string} eventName Event name
+     * @param {Function} callback Callback function
+     */
+    async on(eventName, callback) {
+        return this.subscribe(eventName, callback);
     }
 }
 
-// Export only the singleton instance
-export const eventManager = EventManager.getInstance(); 
+// Export class only
+export { EventManager }; 
