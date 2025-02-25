@@ -211,7 +211,7 @@ body.debug-enabled .container-fluid {
     color: var(--gray-600);
 }
 
-.lead-status[data-status="OVERDUE"] .lead-count.has-count {
+.lead-status[data-status="overdue"] .lead-count.has-count {
     background: var(--danger);
 }
 

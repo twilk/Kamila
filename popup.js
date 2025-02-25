@@ -41,13 +41,12 @@ import { INTERVALS } from './config/intervals.js';
 import { API_CONFIG, getDarwinaCredentials, sendLogToPopup } from './config/api.js';
 import { stores } from './services/stores.js';
 
-// Add EVENTS constant
+// Core events
 const EVENTS = {
-    TAB_CHANGED: 'menu:tabChanged',
-    TAB_SHOW: 'menu:tabShow',
-    MENU_READY: 'menu:ready',
-    STORE_CHANGED: 'menu:storeChanged',
-    DATA_UPDATED: 'menu:dataUpdated'
+    STORE_CHANGED: 'store:change',
+    COUNTERS_UPDATED: 'counters:updated',
+    ERROR_OCCURRED: 'error:occurred',
+    TAB_CHANGED: 'tab:changed'
 };
 
 // Constants for cache and refresh
@@ -74,6 +73,7 @@ const MANAGERS = [
     ['cache', CacheManager],
     ['api', APIManager],
     ['store', StoreManager],
+    ['order', createOrderService],
     ['data', DataManager],
     ['status', StatusManager],
     ['theme', ThemeManager],
@@ -92,7 +92,6 @@ const MANAGERS = [
     ['interface', InterfaceManager],
     ['alarm', AlarmManager],
     ['counter', CounterManager],
-    ['order', createOrderService],
     ['userCard', UserCardService]
 ];
 
@@ -136,11 +135,11 @@ async function initializeManagers() {
             ['cache'],    // Depends on storage
             ['api'],      // Depends on error, cache, event
             ['store'],    // Depends on storage
-            ['data'],     // Depends on store, api
+            ['order'],    // Depends on storage, api, error
+            ['data'],     // Depends on store, api, cache, order
             ['status'],   // Depends on store, data
             ['language'], // Depends on event
             ['theme'],    // Depends on storage
-            ['order'],    // Depends on storage, api, error
             ['refresh'],  // Depends on event, order
             ['alarm'],    // Depends on event, order, storage
             ['ui'],       // Depends on theme, refresh
@@ -167,7 +166,7 @@ async function initializeManagers() {
                     console.log(`✅ Initialized ${name}`);
                 } catch (error) {
                     console.error(`❌ Failed to initialize ${name}:`, error);
-                    throw error; // Re-throw to stop initialization
+                    throw error;
                 }
             }));
             console.log(`✅ Group initialized:`, group);
@@ -186,24 +185,20 @@ async function initializeManagers() {
         // Print initialization report
         const report = registry.printInitializationReport();
         
-        // Only show success if there are no failures
         if (report.failed.length === 0) {
             console.log('✅ All managers initialized successfully');
         } else {
             console.error(`❌ ${report.failed.length} managers failed to initialize:`, report.failed.join(', '));
         }
         
-        // Assign to global variable
         managerInstances = instances;
         
-        // Throw error if there were failures
         if (report.failed.length > 0) {
             throw new Error(`Failed to initialize managers: ${report.failed.join(', ')}`);
         }
         
         return instances;
     } catch (error) {
-        // Print initialization report even if there was an error
         console.error('❌ Manager initialization failed:', error);
         registry.printInitializationReport();
         throw error;
@@ -211,47 +206,101 @@ async function initializeManagers() {
 }
 
 /**
- * Setup event listeners
+ * Check if all required managers are initialized
+ * @param {Object} instances Manager instances
+ * @returns {boolean} True if all required managers are initialized
  */
-async function setupEventListeners(instances) {
-    if (!instances?.eventManager?.isInitialized()) {
-        console.warn('EventManager not ready, deferring event setup');
-        return;
+function areManagersReady(instances) {
+    const required = ['event', 'data', 'counter', 'ui'];
+    const missing = required.filter(name => !instances[name]?.isInitialized());
+    
+    if (missing.length > 0) {
+        console.log('⏳ Waiting for managers:', missing.join(', '));
+        return false;
     }
-
-    // Add store change event listener
-    instances.eventManager.on(EVENTS.STORE_CHANGED, async ({ detail }) => {
-        const { currentStore } = detail;
-        if (instances.dataManager?.isInitialized()) {
-            await instances.dataManager.setActiveStore(currentStore);
-        }
-        if (instances.storeManager?.isInitialized()) {
-            await instances.storeManager.changeStore(currentStore);
-        }
-    });
-
-    // Add other event listeners here...
+    
+    return true;
 }
 
-// Initialize when DOM is ready
+// Setup event listeners
+async function setupEventListeners(instances) {
+    if (!areManagersReady(instances)) {
+        throw new Error('Required managers not ready');
+    }
+
+    const eventManager = await registry.get('event');
+    const dataManager = await registry.get('data');
+    const uiManager = await registry.get('ui');
+
+    // Setup refresh button
+    const refreshButton = document.getElementById('refresh-store-data');
+    if (refreshButton) {
+        refreshButton.addEventListener('click', async () => {
+            try {
+                refreshButton.disabled = true;
+                const interfaceManager = await registry.get('interface');
+                await interfaceManager.showLoading();
+                await dataManager.refreshData({ forceRefresh: true });
+            } catch (error) {
+                eventManager.emit(EVENTS.ERROR_OCCURRED, error);
+            } finally {
+                refreshButton.disabled = false;
+                const interfaceManager = await registry.get('interface');
+                await interfaceManager.hideLoading();
+            }
+        });
+    }
+
+    // Setup store selector
+    const storeSelect = document.getElementById('store-select');
+    if (storeSelect) {
+        storeSelect.addEventListener('change', async () => {
+            try {
+                const storeId = storeSelect.value;
+                await eventManager.emit(EVENTS.STORE_CHANGED, { storeId });
+            } catch (error) {
+                eventManager.emit(EVENTS.ERROR_OCCURRED, error);
+            }
+        });
+    }
+
+    // Setup tab navigation
+    const tabLinks = document.querySelectorAll('.nav-link');
+    tabLinks.forEach(link => {
+        link.addEventListener('click', async () => {
+            const targetId = link.getAttribute('data-target');
+            await eventManager.emit(EVENTS.TAB_CHANGED, { tabId: targetId });
+        });
+    });
+
+    // Setup error handling
+    eventManager.on(EVENTS.ERROR_OCCURRED, (error) => {
+        uiManager.showError(error.message);
+    });
+}
+
+// Initialize application
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        // Initialize managers first
-        const managerInstances = await initializeManagers();
+        const instances = await initializeManagers();
+        await setupEventListeners(instances);
         
-        // Then initialize UI and data
-        await initializeAndFetchData();
-        
-        // Setup UI components
-        setupTabs();
-        setupAutoRefresh();
-        initializeTooltips();
-        
-        // Update interface
-        await updateInterface();
+        // Initial data load
+        const dataManager = await registry.get('data');
+        await dataManager.refreshData({ forceRefresh: true });
+
+        // Setup auto refresh
+        setInterval(async () => {
+            try {
+                await dataManager.refreshData();
+            } catch (error) {
+                const eventManager = await registry.get('event');
+                eventManager.emit(EVENTS.ERROR_OCCURRED, error);
+            }
+        }, REFRESH_INTERVAL);
+
     } catch (error) {
-        console.error('Failed to initialize popup:', error);
-        showMessage('error', 'initializationError');
+        console.error('❌ Initialization failed:', error);
     }
 });
 
@@ -337,7 +386,7 @@ async function loadAndUpdateData(forceRefresh = false) {
         managerInstances.operationProgressManager.setProgress(40, 'logs.fetchingData');
 
         const store = await getSelectedStore();
-        const response = await managerInstances.dataManager.fetchData(store);
+        const response = await managerInstances.data.fetchData(store);
 
         if (!response?.success) {
             throw new Error(response?.error || 'Failed to fetch data');
@@ -367,30 +416,54 @@ async function loadAndUpdateData(forceRefresh = false) {
  * @returns {Promise<void>}
  */
 async function updateCounters(counts) {
-    try {
-        if (!managerInstances) throw new Error('Managers not initialized');
+    console.log('🔄 Updating counters with data:', counts);
 
-        // Update counter elements
-        Object.entries(counts).forEach(([status, count]) => {
-            const counter = document.querySelector(`[data-status="${status}"]`);
-            if (counter) {
-                const countElement = counter.querySelector('.count');
-                if (countElement) {
-                    countElement.textContent = count;
-                    counter.classList.toggle('has-items', count > 0);
-                }
+    try {
+        if (!counts || typeof counts !== 'object') {
+            console.error('❌ Invalid counts data:', counts);
+            return;
+        }
+
+        // Get all counter elements
+        const counterElements = document.querySelectorAll('[data-status] .lead-count');
+        console.log('📊 Found counter elements:', counterElements.length);
+        
+        // Update each counter
+        counterElements.forEach(counter => {
+            const statusElement = counter.closest('[data-status]');
+            const status = statusElement?.dataset.status;
+            
+            console.log(`🏷️ Processing counter for status: ${status}`, {
+                element: statusElement,
+                currentCount: counter.textContent,
+                newCount: counts[status]
+            });
+            
+            if (!status) {
+                console.error('❌ Counter element missing data-status attribute:', counter);
+                return;
             }
+
+            const count = counts[status] || 0;
+            
+            // Update text and classes
+            counter.textContent = count;
+            counter.classList.toggle('count-zero', count === 0);
+            counter.classList.remove('count-error');
+            
+            // Add animation class
+            counter.classList.add('count-updated');
+            setTimeout(() => counter.classList.remove('count-updated'), 1000);
         });
 
-        // Update status indicators
-        updateStatusIndicators(counts);
-        
-        // Adjust window height
-        await managerInstances.uiManager.adjustWindowHeight();
-        
+        // Log update
+        console.log('✅ Updated all counters:', counts);
     } catch (error) {
-        managerInstances?.errorHandler?.handle(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
-            method: 'updateCounters'
+        console.error('❌ Error updating counters:', error);
+        // Show error state
+        document.querySelectorAll('.lead-count').forEach(counter => {
+            counter.textContent = '-';
+            counter.classList.add('count-error');
         });
     }
 }

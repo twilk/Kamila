@@ -12,8 +12,8 @@ const STATUS_CONFIG = {
  * @property {number} '1' - New orders
  * @property {number} '2' - Confirmed orders
  * @property {number} '3' - Accepted orders
- * @property {number} 'READY' - Ready orders
- * @property {number} 'OVERDUE' - Overdue orders
+ * @property {number} 'ready' - Ready orders
+ * @property {number} 'overdue' - Overdue orders
  */
 
 /**
@@ -30,8 +30,16 @@ export const STATUS_MAP = {
     submitted: '1',
     confirmed: '2',
     accepted: '3',
-    ready: 'READY',
-    overdue: 'OVERDUE'
+    ready: 'ready',
+    overdue: 'overdue'
+};
+
+const STATUS_KEYS = {
+    '1': '1',
+    '2': '2',
+    '3': '3',
+    ready: 'ready',
+    overdue: 'overdue'
 };
 
 // Development mode detection
@@ -71,8 +79,8 @@ class StatusManager extends BaseManager {
             '1': 0,
             '2': 0,
             '3': 0,
-            'READY': 0,
-            'OVERDUE': 0
+            'ready': 0,
+            'overdue': 0
         },
         lastUpdate: null
     };
@@ -342,8 +350,8 @@ class StatusManager extends BaseManager {
                 '1': 0,
                 '2': 0,
                 '3': 0,
-                'READY': 0,
-                'OVERDUE': 0
+                'ready': 0,
+                'overdue': 0
             },
             lastUpdate: null
         };
@@ -505,7 +513,7 @@ class StatusManager extends BaseManager {
         }
 
         // Check for overdue orders
-        const overdueOrders = this.#status.orderCounts['OVERDUE'] - this.#previousCounts['OVERDUE'];
+        const overdueOrders = this.#status.orderCounts['overdue'] - this.#previousCounts['overdue'];
         if (overdueOrders > 0) {
             await notification.show(
                 'Overdue Orders',
@@ -659,6 +667,35 @@ class StatusManager extends BaseManager {
                 online: this.#status.online
             }
         };
+    }
+
+    /**
+     * Set status for a specific item
+     * @param {string} status - Status to set
+     * @returns {Promise<void>}
+     */
+    async setStatus(status) {
+        try {
+            const mappedStatus = StatusManager.mapStatus(status);
+            if (!mappedStatus) {
+                throw new Error(`Invalid status: ${status}`);
+            }
+
+            // Emit status change event
+            const eventManager = await this.getDependency('event');
+            await eventManager.emit('status:change', {
+                status: mappedStatus,
+                timestamp: Date.now()
+            });
+
+            this.log(LogLevel.INFO, `📊 Status set to: ${status}`);
+        } catch (error) {
+            this.handleError(error, ErrorType.STATUS_UPDATE, ErrorSeverity.MEDIUM, {
+                method: 'setStatus',
+                status
+            });
+            throw error;
+        }
     }
 }
 

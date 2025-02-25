@@ -60,8 +60,8 @@ describe('StatusManager', () => {
                 { input: 'submitted', expected: '1' },
                 { input: 'confirmed', expected: '2' },
                 { input: 'accepted', expected: '3' },
-                { input: 'ready', expected: 'READY' },
-                { input: 'overdue', expected: 'OVERDUE' },
+                { input: 'ready', expected: 'ready' },
+                { input: 'overdue', expected: 'overdue' },
                 { input: 'unknown', expected: 'unknown' }
             ];
 
@@ -87,8 +87,8 @@ describe('StatusManager', () => {
                 '1': 5,
                 '2': 3,
                 '3': 2,
-                'READY': 1,
-                'OVERDUE': 0
+                'ready': 1,
+                'overdue': 0
             };
 
             await statusManager.updateOrderCounts(counts);

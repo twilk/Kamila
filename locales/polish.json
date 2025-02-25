@@ -232,5 +232,27 @@
     "errors": {
         "unknown": "Wystąpił nieznany błąd",
         "fetch": "Błąd podczas pobierania danych"
+    },
+    "orderStatuses": {
+        "untouched": {
+            "label": "Nieruszone",
+            "tooltip": "Zamówienia, które nie zostały jeszcze obsłużone"
+        },
+        "called": {
+            "label": "Obdzwonione",
+            "tooltip": "Zamówienia po kontakcie telefonicznym"
+        },
+        "ready": {
+            "label": "Gotowe",
+            "tooltip": "Zamówienia gotowe do odbioru"
+        },
+        "overdue": {
+            "label": "Zaległe",
+            "tooltip": "Zamówienia oczekujące 3-7 dni"
+        },
+        "critical": {
+            "label": "Dramat",
+            "tooltip": "Zamówienia oczekujące ponad 7 dni"
+        }
     }
 }

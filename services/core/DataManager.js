@@ -33,23 +33,7 @@ class DataManager extends BaseManager {
     static _registry = null;
 
     /** @private */
-    #pendingChanges = new Map();
-
-    /** @private */
-    #processing = false;
-
-    /** @private */
-    #lastSync = 0;
-
-    /** @private */
     #isRefreshing = false;
-
-    /** @private */
-    #metrics = {
-        syncAttempts: 0,
-        refreshAttempts: 0,
-        errors: []
-    };
 
     constructor(registry) {
         if (DataManager.#instance) {
@@ -59,11 +43,10 @@ class DataManager extends BaseManager {
         DataManager.#instance = this;
         DataManager._registry = registry;
         
-        // Add dependencies as strings
+        // Only keep essential dependencies
         this.addDependency('event');
         this.addDependency('store');
-        this.addDependency('api');
-        this.addDependency('cache');
+        this.addDependency('order');
     }
 
     /**
@@ -91,63 +74,26 @@ class DataManager extends BaseManager {
      */
     async _initialize() {
         try {
-            // Get dependencies
-            const eventManager = await this.getDependency('event');
-            const storeManager = await this.getDependency('store');
-            const apiManager = await this.getDependency('api');
-            const cacheManager = await this.getDependency('cache');
+            // Get essential dependencies
+            const [eventManager, storeManager, orderService] = await Promise.all([
+                this.getDependency('event'),
+                this.getDependency('store'),
+                this.getDependency('order')
+            ]);
             
-            if (!eventManager?.isInitialized()) {
-                throw new Error('EventManager must be initialized');
-            }
+            // Verify dependencies
+            if (!eventManager?.isInitialized()) throw new Error('EventManager not initialized');
+            if (!storeManager?.isInitialized()) throw new Error('StoreManager not initialized');
+            if (!orderService?.isInitialized()) throw new Error('OrderService not initialized');
 
-            if (!storeManager?.isInitialized()) {
-                throw new Error('StoreManager must be initialized');
-            }
-
-            if (!apiManager?.isInitialized()) {
-                throw new Error('APIManager must be initialized');
-            }
-
-            if (!cacheManager?.isInitialized()) {
-                throw new Error('CacheManager must be initialized');
-            }
-
-            // Setup event listeners
-            await this.#setupEventListeners();
+            // Setup minimal event listeners
+            await eventManager.on('store:change', () => this.refreshData({ forceRefresh: true }));
 
             this.log(LogLevel.SUCCESS, '✅ Data manager initialized');
             return true;
         } catch (error) {
             this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
             return false;
-        }
-    }
-
-    /**
-     * Setup event listeners
-     * @private
-     */
-    async #setupEventListeners() {
-        try {
-            const eventManager = await this.getDependency('event');
-            eventManager.subscribe('data:refresh', this.refreshData.bind(this));
-            eventManager.subscribe('store:change', this.handleStoreChange.bind(this));
-        } catch (error) {
-            this.handleError(error, ErrorType.EVENT_LISTENER, ErrorSeverity.HIGH);
-        }
-    }
-
-    /**
-     * Handle store change event
-     * @private
-     */
-    async handleStoreChange(event) {
-        try {
-            const { newStore } = event;
-            await this.refreshData({ forceRefresh: true });
-        } catch (error) {
-            this.handleError(error, ErrorType.STORE_CHANGE, ErrorSeverity.MEDIUM);
         }
     }
 
@@ -163,91 +109,49 @@ class DataManager extends BaseManager {
         }
 
         this.#isRefreshing = true;
-        this.log(LogLevel.INFO, '🔄 Starting data refresh...');
+        this.log(LogLevel.INFO, '🔄 Starting data refresh', { options });
 
         try {
-            const eventManager = await this.getDependency('event');
-            await eventManager.emit('data:refresh-start');
-
-            // Get dependencies
+            // Get active store
             const storeManager = await this.getDependency('store');
-            const apiManager = await this.getDependency('api');
-            const cacheManager = await this.getDependency('cache');
-
-            const activeStore = storeManager.getActiveStore();
+            const activeStore = await storeManager.getActiveStore();
             
-            // Fetch data
-            const response = await apiManager.get('/data', {
-                params: {
-                    storeId: activeStore?.id
-                }
-            });
+            // Get order data
+            const orderService = await this.getDependency('order');
+            const result = await orderService.getOrderStatuses(
+                activeStore?.id || 'ALL',
+                options
+            );
 
-            // Process and cache data
-            await this.#processData(response.data);
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to get order statuses');
+            }
 
-            // Emit success event
-            await eventManager.emit('data:refresh-success', {
-                timestamp: Date.now(),
-                storeId: activeStore?.id
-            });
-
-            this.log(LogLevel.SUCCESS, '✅ Data refresh complete');
-        } catch (error) {
-            this.handleError(error, ErrorType.DATA_REFRESH, ErrorSeverity.HIGH);
+            // Emit counter update
             const eventManager = await this.getDependency('event');
-            await eventManager.emit('data:refresh-error', error);
+            await eventManager.emit('counters:updated', result.counts);
+
+            this.log(LogLevel.SUCCESS, '✅ Data refresh complete', {
+                storeId: activeStore?.id,
+                counts: result.counts
+            });
+            
+            return result;
+        } catch (error) {
+            this.log(LogLevel.ERROR, '❌ Data refresh failed', { error: error.message });
+            this.handleError(error, ErrorType.DATA_REFRESH, ErrorSeverity.HIGH);
+            throw error;
         } finally {
             this.#isRefreshing = false;
         }
     }
 
     /**
-     * Process and cache data
-     * @private
-     */
-    async #processData(data) {
-        try {
-            const cacheManager = await this.getDependency('cache');
-            await cacheManager.set('data', data, {
-                ttl: DATA_CONFIG.CACHE_TTL
-            });
-
-            const eventManager = await this.getDependency('event');
-            await eventManager.emit('data:cache-cleared');
-            this.log(LogLevel.INFO, '🧹 Cache cleared successfully');
-        } catch (error) {
-            this.handleError(error, ErrorType.CACHE, ErrorSeverity.MEDIUM);
-            throw error;
-        }
-    }
-
-    /**
-     * Get metrics
-     * @returns {Object} Metrics object
-     */
-    getMetrics() {
-        return {
-            ...this.#metrics,
-            lastSync: this.#lastSync,
-            pendingChanges: this.#pendingChanges.size,
-            isProcessing: this.#processing,
-            isRefreshing: this.#isRefreshing
-        };
-    }
-
-    /**
      * Clean up resources
      */
     async dispose() {
-        try {
-            this.#pendingChanges.clear();
-            this.#processing = false;
-            this.#isRefreshing = false;
-            await super.dispose();
-        } catch (error) {
-            this.handleError(error, ErrorType.DISPOSAL, ErrorSeverity.HIGH);
-        }
+        this.#isRefreshing = false;
+        await super.dispose();
     }
 }
 

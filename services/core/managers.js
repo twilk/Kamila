@@ -113,7 +113,7 @@ export class ManagerRegistry {
      */
     async get(name) {
         try {
-            console.log(`🔄 Getting manager: ${name}`);
+            if(name !== 'log' && name !== 'event' && name !== 'error' && name !== 'storage') console.log(`🔄 Getting manager: ${name}`);
             
             if (!name || typeof name !== 'string') {
                 throw new Error('Manager name must be a non-empty string');
@@ -143,7 +143,7 @@ export class ManagerRegistry {
 
             const instance = this.#managers.get(name);
             this.#recordMetric('access', name, Date.now() - startTime);
-            console.log(`✅ Got manager: ${name}`);
+            if(name !== 'log' && name !== 'event' && name !== 'error' && name !== 'storage')console.log(`✅ Got manager: ${name}`);
             return instance;
         } catch (error) {
             console.error(`❌ Failed to get manager: ${name}`, error);

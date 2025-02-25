@@ -16,29 +16,29 @@
 }
 
 /* Status Colors */
-.order-counter[data-status="submitted"] {
+.order-counter[data-status="1"] {
     --counter-bg: #e3f2fd;
     --counter-text: #1976d2;
 }
 
-.order-counter[data-status="confirmed"] {
+.order-counter[data-status="2"] {
     --counter-bg: #e8f5e9;
     --counter-text: #388e3c;
 }
 
-.order-counter[data-status="accepted"] {
+.order-counter[data-status="3"] {
     --counter-bg: #fff3e0;
     --counter-text: #f57c00;
 }
 
 .order-counter[data-status="ready"] {
-    --counter-bg: #f3e5f5;
-    --counter-text: #7b1fa2;
+    background-color: var(--ready-bg);
+    color: var(--ready-text);
 }
 
 .order-counter[data-status="overdue"] {
-    --counter-bg: #ffebee;
-    --counter-text: #d32f2f;
+    background-color: var(--overdue-bg);
+    color: var(--overdue-text);
 }
 
 /* Change Animation */
@@ -72,29 +72,29 @@ body[data-theme="dark"] .order-counter {
     --counter-text: rgba(255, 255, 255, 0.9);
 }
 
-body[data-theme="dark"] .order-counter[data-status="submitted"] {
+body[data-theme="dark"] .order-counter[data-status="1"] {
     --counter-bg: rgba(25, 118, 210, 0.2);
     --counter-text: #90caf9;
 }
 
-body[data-theme="dark"] .order-counter[data-status="confirmed"] {
+body[data-theme="dark"] .order-counter[data-status="2"] {
     --counter-bg: rgba(56, 142, 60, 0.2);
     --counter-text: #a5d6a7;
 }
 
-body[data-theme="dark"] .order-counter[data-status="accepted"] {
+body[data-theme="dark"] .order-counter[data-status="3"] {
     --counter-bg: rgba(245, 124, 0, 0.2);
     --counter-text: #ffcc80;
 }
 
 body[data-theme="dark"] .order-counter[data-status="ready"] {
-    --counter-bg: rgba(123, 31, 162, 0.2);
-    --counter-text: #ce93d8;
+    background-color: var(--dark-ready-bg);
+    color: var(--dark-ready-text);
 }
 
 body[data-theme="dark"] .order-counter[data-status="overdue"] {
-    --counter-bg: rgba(211, 47, 47, 0.2);
-    --counter-text: #ef9a9a;
+    background-color: var(--dark-overdue-bg);
+    color: var(--dark-overdue-text);
 }
 
 /* Hover Effects */
@@ -135,4 +135,110 @@ body[data-theme="dark"] .counter-label {
         height: 20px;
         font-size: 12px;
     }
+}
+
+/* Counter Value Styles */
+.lead-count {
+    font-size: 16px;
+    font-weight: 600;
+    transition: all 0.3s ease-in-out;
+    display: inline-block;
+    min-width: 24px;
+    text-align: center;
+}
+
+/* Counter States */
+.lead-count.count-zero {
+    opacity: 0.5;
+    color: var(--text-muted, #757575);
+}
+
+.lead-count.count-error {
+    color: var(--color-danger, #ff4444);
+    animation: shake 0.5s ease-in-out;
+}
+
+/* Counter Animations */
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.2);
+        color: var(--color-success, #4CAF50);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes shake {
+    0%, 100% {
+        transform: translateX(0);
+    }
+    25% {
+        transform: translateX(-5px);
+    }
+    75% {
+        transform: translateX(5px);
+    }
+}
+
+.lead-count.count-updated {
+    animation: pulse 1s ease-in-out;
+}
+
+/* Dark Theme Support */
+body[data-theme="dark"] .lead-count {
+    color: var(--text-primary-dark, #e0e0e0);
+}
+
+body[data-theme="dark"] .lead-count.count-zero {
+    color: var(--text-muted-dark, #757575);
+}
+
+body[data-theme="dark"] .lead-count.count-error {
+    color: var(--color-danger-dark, #ff6b6b);
+}
+
+/* Layout Helpers */
+.counters-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.counter-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary, #757575);
+    margin-right: 4px;
+}
+
+/* Responsive Design */
+@media (max-width: 576px) {
+    .counters-row {
+        flex-wrap: wrap;
+    }
+
+    .lead-count {
+        font-size: 14px;
+        min-width: 20px;
+    }
+}
+
+/* Total Counter */
+#total-count {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary, #212121);
+    transition: all 0.3s ease-in-out;
+}
+
+body[data-theme="dark"] #total-count {
+    color: var(--text-primary-dark, #ffffff);
+}
+
+#total-count.count-updated {
+    animation: pulse 1s ease-in-out;
 } 

@@ -236,5 +236,27 @@
         "tooltipRanking": "Sales ranking"
     },
     "testPanel": "Test Panel",
-    "runAllTests": "Run All Tests"
+    "runAllTests": "Run All Tests",
+    "orderStatuses": {
+        "untouched": {
+            "label": "Untouched",
+            "tooltip": "Orders that haven't been processed yet"
+        },
+        "called": {
+            "label": "Called",
+            "tooltip": "Orders after phone contact"
+        },
+        "ready": {
+            "label": "Ready",
+            "tooltip": "Orders ready for pickup"
+        },
+        "overdue": {
+            "label": "Overdue",
+            "tooltip": "Orders waiting 3-7 days"
+        },
+        "critical": {
+            "label": "Critical",
+            "tooltip": "Orders waiting over 7 days"
+        }
+    }
 }

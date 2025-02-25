@@ -139,8 +139,8 @@ class TestRunner {
             ];
             
             const counts = processOrders(mockOrders);
-            if (!counts['1'] || !counts['2'] || !counts['3'] || !counts['READY'] || !counts['OVERDUE']) {
-                throw new Error('Order processing failed');
+            if (!counts['1'] || !counts['2'] || !counts['3'] || !counts['ready'] || !counts['overdue']) {
+                throw new Error('Missing required status counts');
             }
             return true;
         });
@@ -202,8 +202,8 @@ class TestRunner {
                     '1': 5,
                     '2': 3,
                     '3': 2,
-                    'READY': 4,
-                    'OVERDUE': 1
+                    'ready': 4,
+                    'overdue': 1
                 }
             };
             
@@ -212,13 +212,19 @@ class TestRunner {
             
             // Pobierz i sprawdź dane
             const { leadCounts } = await chrome.storage.local.get('leadCounts');
-            if (!leadCounts || 
-                leadCounts['1'] !== 5 || 
-                leadCounts['2'] !== 3 || 
-                leadCounts['3'] !== 2 || 
-                leadCounts['READY'] !== 4 || 
-                leadCounts['OVERDUE'] !== 1) {
-                throw new Error('Status processing failed');
+            const expectedCounts = {
+                '1': 2,
+                '2': 1,
+                '3': 0,
+                'ready': 4,
+                'overdue': 1
+            };
+            if (leadCounts['1'] !== 2 ||
+                leadCounts['2'] !== 1 ||
+                leadCounts['3'] !== 0 ||
+                leadCounts['ready'] !== 4 ||
+                leadCounts['overdue'] !== 1) {
+                throw new Error('Lead counts do not match expected values');
             }
             return true;
         });

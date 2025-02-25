@@ -43,16 +43,18 @@ describe('CounterManager', () => {
 
             await counterManager.updateCounters(testOrders);
 
+            const expectedCounts = {
+                '1': 1,
+                '2': 2,
+                '3': 1,
+                'ready': 1,
+                'overdue': 0
+            };
+
             expect(mockCacheManager.set).toHaveBeenCalledWith(
                 expect.any(String),
                 expect.objectContaining({
-                    counts: {
-                        '1': 1,
-                        '2': 2,
-                        '3': 1,
-                        'READY': 1,
-                        'OVERDUE': 0
-                    }
+                    counts: expectedCounts
                 }),
                 expect.any(Number)
             );
@@ -67,16 +69,18 @@ describe('CounterManager', () => {
 
             await counterManager.updateCounters(testOrders);
 
+            const expectedOverdueCounts = {
+                '1': 0,
+                '2': 0,
+                '3': 0,
+                'ready': 1,
+                'overdue': 1
+            };
+
             expect(mockCacheManager.set).toHaveBeenCalledWith(
                 expect.any(String),
                 expect.objectContaining({
-                    counts: {
-                        '1': 0,
-                        '2': 0,
-                        '3': 0,
-                        'READY': 1,
-                        'OVERDUE': 1
-                    }
+                    counts: expectedOverdueCounts
                 }),
                 expect.any(Number)
             );
@@ -91,16 +95,18 @@ describe('CounterManager', () => {
 
             await counterManager.updateCounters(testOrders);
 
+            const expectedZeroCounts = {
+                '1': 0,
+                '2': 0,
+                '3': 0,
+                'ready': 0,
+                'overdue': 0
+            };
+
             expect(mockCacheManager.set).toHaveBeenCalledWith(
                 expect.any(String),
                 expect.objectContaining({
-                    counts: {
-                        '1': 1,
-                        '2': 0,
-                        '3': 0,
-                        'READY': 0,
-                        'OVERDUE': 0
-                    }
+                    counts: expectedZeroCounts
                 }),
                 expect.any(Number)
             );
@@ -114,8 +120,8 @@ describe('CounterManager', () => {
                     '1': 1,
                     '2': 2,
                     '3': 3,
-                    'READY': 4,
-                    'OVERDUE': 5
+                    'ready': 4,
+                    'overdue': 5
                 },
                 metadata: {
                     lastUpdate: Date.now(),
@@ -138,8 +144,8 @@ describe('CounterManager', () => {
                     '1': 0,
                     '2': 0,
                     '3': 0,
-                    'READY': 0,
-                    'OVERDUE': 0
+                    'ready': 0,
+                    'overdue': 0
                 },
                 metadata: expect.objectContaining({
                     initialFetch: false,
@@ -163,6 +169,14 @@ describe('CounterManager', () => {
 
             // Update counters to verify store ID is used
             await counterManager.updateCounters([]);
+
+            const expectedTotalCounts = {
+                '1': 3,
+                '2': 2,
+                '3': 1,
+                'ready': 4,
+                'overdue': 5
+            };
 
             expect(mockCacheManager.set).toHaveBeenCalledWith(
                 expect.any(String),

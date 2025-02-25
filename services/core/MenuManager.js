@@ -15,7 +15,7 @@ const EVENTS = {
 
 // Constants for selectors
 const SELECTORS = {
-    TAB: '.menu .link[data-bs-toggle="tab"]',
+    TAB: '.menu .link[data-target]',
     TAB_PANE: '.tab-pane',
     ACTIVE_TAB: '.menu .link.active',
     USER_SELECT: '#user-select'
@@ -166,7 +166,10 @@ export class MenuManager extends BaseManager {
             // Update tab panes
             const targetId = tab.getAttribute('data-target');
             document.querySelectorAll(SELECTORS.TAB_PANE).forEach(pane => {
-                pane.classList.toggle('active', pane.id === targetId);
+                pane.classList.remove('show', 'active');
+                if (pane.id === targetId) {
+                    pane.classList.add('show', 'active');
+                }
             });
 
             // Store active tab

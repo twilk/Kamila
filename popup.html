@@ -10,6 +10,8 @@
     <link rel="stylesheet" href="styles/theme.css">
     <link rel="stylesheet" href="styles/test.css">
     <link rel="stylesheet" href="styles/loading.css">
+    <link rel="stylesheet" href="styles/popup.css">
+    <link rel="stylesheet" href="styles/counters.css">
     <script type="module" src="popup.js"></script>
 </head>
 <body>
@@ -81,10 +83,10 @@
                     <div class="lead-status" data-status="3" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.accepted">
                         📦 <span class="lead-count" id="count-3">-</span>
                     </div>
-                    <div class="lead-status" data-status="READY" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.ready">
-                        📬 <span class="lead-count" id="count-ready">-</span>
+                    <div class="lead-status" data-status="ready" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.ready">
+                        📤 <span class="lead-count" id="count-ready">-</span>
                     </div>
-                    <div class="lead-status" data-status="OVERDUE" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.overdue">
+                    <div class="lead-status" data-status="overdue" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.overdue">
                         ⏳ <span class="lead-count" id="count-overdue">-</span>
                     </div>
                     
@@ -722,36 +724,36 @@
         
         <div class="counters-grid">
             <!-- New Orders -->
-            <div class="counter-item">
-                <div class="counter-label" data-status="1">Nowe</div>
+            <div class="counter-item" data-status="1">
+                <div class="counter-label">Nowe:</div>
                 <div id="submitted-count" class="counter-value">0</div>
                 <div class="status-indicator newOrders"></div>
             </div>
             
             <!-- Confirmed Orders -->
-            <div class="counter-item">
-                <div class="counter-label" data-status="2">Potwierdzone</div>
+            <div class="counter-item" data-status="2">
+                <div class="counter-label">Potwierdzone:</div>
                 <div id="confirmed-count" class="counter-value">0</div>
                 <div class="status-indicator confirmedOrders"></div>
             </div>
             
             <!-- Accepted Orders -->
-            <div class="counter-item">
-                <div class="counter-label" data-status="3">Zaakceptowane</div>
+            <div class="counter-item" data-status="3">
+                <div class="counter-label">Przyjęte:</div>
                 <div id="accepted-count" class="counter-value">0</div>
                 <div class="status-indicator acceptedOrders"></div>
             </div>
             
             <!-- Ready Orders -->
-            <div class="counter-item">
-                <div class="counter-label" data-status="READY">Gotowe do odbioru</div>
+            <div class="counter-item" data-status="ready">
+                <div class="counter-label">Ready</div>
                 <div id="ready-count" class="counter-value">0</div>
                 <div class="status-indicator readyOrders"></div>
             </div>
             
             <!-- Overdue Orders -->
-            <div class="counter-item">
-                <div class="counter-label" data-status="OVERDUE">Przeterminowane</div>
+            <div class="counter-item" data-status="overdue">
+                <div class="counter-label">Overdue</div>
                 <div id="overdue-count" class="counter-value">0</div>
                 <div class="status-indicator overdueOrders"></div>
             </div>

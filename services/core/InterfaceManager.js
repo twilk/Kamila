@@ -80,6 +80,9 @@ class InterfaceManager extends BaseManager {
         // Add dependencies
         this.addDependency('event');
         this.addDependency('language');
+        this.addDependency('store');
+        this.addDependency('theme');
+        this.addDependency('status');
 
         // Initialize private methods
         this.#handleViewChange = async (event) => {
@@ -151,8 +154,13 @@ class InterfaceManager extends BaseManager {
             // Set up event listeners
             await this.#setupEventListeners();
 
-            // Initialize language switcher
+            // Initialize UI components
+            await this.initializeStoreSelect();
+            await this.initializeTabs();
             await this.initializeLanguageSwitcher();
+            await this.initializeThemeSwitcher();
+            await this.initializeStatusButtons();
+            await this.initializeLeadStatusLinks();
             
             this.log(LogLevel.SUCCESS, '✅ Interface manager initialized');
             return true;
@@ -354,33 +362,35 @@ class InterfaceManager extends BaseManager {
     }
 
     /**
-     * Show loading overlay
+     * Show loading state
      * @param {string} message Loading message
      */
     async showLoading(message) {
         try {
-            await this.getDependency('ui').show('loading-overlay', {
-                data: { message }
-            });
+            const loadingElement = document.querySelector('.loading-container');
+            if (loadingElement) {
+                const messageElement = loadingElement.querySelector('.initialization-text');
+                if (messageElement && message) {
+                    messageElement.textContent = message;
+                }
+                loadingElement.classList.remove('d-none');
+            }
         } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                operation: 'showLoading'
-            });
-            throw error;
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW);
         }
     }
 
     /**
-     * Hide loading overlay
+     * Hide loading state
      */
     async hideLoading() {
         try {
-            await this.getDependency('ui').hide('loading-overlay');
+            const loadingElement = document.querySelector('.loading-container');
+            if (loadingElement) {
+                loadingElement.classList.add('d-none');
+            }
         } catch (error) {
-            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
-                operation: 'hideLoading'
-            });
-            throw error;
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW);
         }
     }
 
@@ -567,6 +577,218 @@ class InterfaceManager extends BaseManager {
         } catch (error) {
             this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.MEDIUM, {
                 method: 'initializeLanguageSwitcher'
+            });
+        }
+    }
+
+    /**
+     * Initialize store selector
+     */
+    async initializeStoreSelect() {
+        try {
+            const storeSelect = document.getElementById('store-select');
+            if (!storeSelect) return;
+
+            const storeManager = await this.getDependency('store');
+            const currentStore = await storeManager.getActiveStore();
+
+            storeSelect.value = currentStore?.id || 'ALL';
+            storeSelect.addEventListener('change', async (e) => {
+                const store = e.target.value;
+                await storeManager.setActiveStore(store);
+                this.log(LogLevel.INFO, `🏪 Store changed to: ${store}`);
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.MEDIUM, {
+                method: 'initializeStoreSelect'
+            });
+        }
+    }
+
+    /**
+     * Initialize tabs
+     */
+    async initializeTabs() {
+        try {
+            const tabButtons = document.querySelectorAll('.nav-link');
+            const tabPanes = document.querySelectorAll('.tab-pane');
+
+            tabButtons.forEach(button => {
+                button.addEventListener('click', async () => {
+                    const targetId = button.getAttribute('data-target');
+                    
+                    // Remove active class from all buttons and panes
+                    tabButtons.forEach(btn => btn.classList.remove('active'));
+                    tabPanes.forEach(pane => pane.classList.remove('show', 'active'));
+                    
+                    // Add active class to clicked button and its target pane
+                    button.classList.add('active');
+                    document.querySelector(targetId)?.classList.add('show', 'active');
+
+                    // Emit tab change event
+                    const eventManager = await this.getDependency('event');
+                    await eventManager.emit('interface:tab-changed', {
+                        tab: targetId,
+                        timestamp: Date.now()
+                    });
+                });
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.MEDIUM, {
+                method: 'initializeTabs'
+            });
+        }
+    }
+
+    /**
+     * Initialize theme switcher
+     */
+    async initializeThemeSwitcher() {
+        try {
+            const themeSwitch = document.getElementById('theme-switch');
+            if (!themeSwitch) return;
+
+            const themeManager = await this.getDependency('theme');
+            const { theme } = themeManager.getThemeSettings();
+
+            themeSwitch.checked = theme === 'dark';
+            themeSwitch.addEventListener('change', async () => {
+                const newTheme = themeSwitch.checked ? 'dark' : 'light';
+                await themeManager.setTheme(newTheme);
+                this.log(LogLevel.INFO, `🎨 Theme changed to: ${newTheme}`);
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.MEDIUM, {
+                method: 'initializeThemeSwitcher'
+            });
+        }
+    }
+
+    /**
+     * Initialize status buttons
+     */
+    async initializeStatusButtons() {
+        try {
+            const statusButtons = document.querySelectorAll('[data-status]');
+            const statusManager = await this.getDependency('status');
+            const storeManager = await this.getDependency('store');
+
+            // Status mapping for DARWINA URLs
+            const statusMap = {
+                '1': 'submitted',
+                '2': 'confirmed',
+                '3': 'accepted',
+                'ready': 'ready',
+                'overdue': 'overdue'
+            };
+
+            statusButtons.forEach(button => {
+                button.addEventListener('click', async () => {
+                    try {
+                        const status = button.dataset.status;
+                        const mappedStatus = statusMap[status];
+                        
+                        if (!mappedStatus) {
+                            throw new Error(`Invalid status mapping: ${status}`);
+                        }
+
+                        // Get current store
+                        const store = await storeManager.getActiveStore();
+                        const storeId = store?.id === 'ALL' ? '0' : store?.deliveryId?.toString() || '0';
+                        
+                        // Generate and open DARWINA URL
+                        const url = this.generateDarwinaUrl(mappedStatus, storeId);
+                        window.open(url, '_blank');
+                        
+                        this.log(LogLevel.INFO, `🔗 Opening DARWINA for status: ${status}`);
+                    } catch (error) {
+                        this.handleError(error, ErrorType.NAVIGATION, ErrorSeverity.MEDIUM, {
+                            method: 'initializeStatusButtons',
+                            status: button.dataset.status
+                        });
+                    }
+                });
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.MEDIUM, {
+                method: 'initializeStatusButtons'
+            });
+        }
+    }
+
+    /**
+     * Generate DARWINA URL for given status and store
+     * @private
+     */
+    generateDarwinaUrl(status, storeId) {
+        const baseUrl = 'https://darwina.pl/adm/';
+        const params = new URLSearchParams({
+            'a': 'zamowienia',
+            'sk': '',
+            'opid': '0',
+            'pcid': '0',
+            'daid': storeId || '0',
+            'sztyp': 'pid',
+            'sztxt': '',
+            'ptid': '',
+            'dw': '0',
+            'dp': '',
+            'dk': ''
+        });
+
+        // Add date filter for overdue orders
+        if (status === 'overdue') {
+            const date = new Date();
+            date.setDate(date.getDate() - 14);
+            params.set('dp', date.toISOString().split('T')[0]);
+        }
+
+        // Map status to DARWINA status IDs
+        switch (status) {
+            case 'submitted':
+                params.set('st', '1');
+                params.set('s[]', '1');
+                break;
+            case 'confirmed':
+                params.set('st', '2');
+                params.set('s[]', '2');
+                break;
+            case 'accepted':
+                params.set('st', '3');
+                params.set('s[]', '3');
+                break;
+            case 'ready':
+                params.set('st', '5');
+                params.set('s[]', '5');
+                break;
+            case 'overdue':
+                params.set('st', '5');
+                params.set('s[]', '5');
+                break;
+        }
+
+        return `${baseUrl}?${params.toString()}`;
+    }
+
+    /**
+     * Initialize lead status links
+     */
+    async initializeLeadStatusLinks() {
+        try {
+            const statusLinks = document.querySelectorAll('[data-lead-status]');
+            const statusManager = await this.getDependency('status');
+
+            statusLinks.forEach(link => {
+                link.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    const status = link.dataset.leadStatus;
+                    await statusManager.setLeadStatus(status);
+                    this.log(LogLevel.INFO, `📈 Lead status changed to: ${status}`);
+                });
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.MEDIUM, {
+                method: 'initializeLeadStatusLinks'
             });
         }
     }
