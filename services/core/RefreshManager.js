@@ -185,21 +185,37 @@ class RefreshManager extends BaseManager {
             if (this.#settings.check_frequency !== 'off') {
                 const checkMs = this._getMilliseconds(this.#settings.check_frequency);
                 this.#intervals.check = setInterval(() => this.checkRefresh(), checkMs);
+                this.log(LogLevel.INFO, '✅ Check frequency interval updated', {
+                    interval: this.#settings.check_frequency,
+                    milliseconds: checkMs
+                });
             }
 
             if (this.#settings.notification_interval !== 'off') {
                 const notifyMs = this._getMilliseconds(this.#settings.notification_interval);
                 this.#intervals.notification = setInterval(() => this.notifyRefresh(), notifyMs);
+                this.log(LogLevel.INFO, '✅ Notification interval updated', {
+                    interval: this.#settings.notification_interval,
+                    milliseconds: notifyMs
+                });
             }
 
             if (this.#settings.full_refresh !== 'off') {
                 const refreshMs = this._getMilliseconds(this.#settings.full_refresh);
                 this.#intervals.fullRefresh = setInterval(() => this.fullRefresh(), refreshMs);
+                this.log(LogLevel.INFO, '✅ Full refresh interval updated', {
+                    interval: this.#settings.full_refresh,
+                    milliseconds: refreshMs
+                });
             }
 
             if (this.#settings.delta_update !== 'off') {
                 const deltaMs = this._getMilliseconds(this.#settings.delta_update);
                 this.#intervals.deltaUpdate = setInterval(() => this.deltaUpdate(), deltaMs);
+                this.log(LogLevel.INFO, '✅ Delta update interval updated', {
+                    interval: this.#settings.delta_update,
+                    milliseconds: deltaMs
+                });
             }
 
             // Update UI

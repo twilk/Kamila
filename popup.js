@@ -132,9 +132,9 @@ async function initializeManagers() {
             ['log'],      // Depends on error
             ['event'],    // Depends on error
             ['storage'],  // Depends on error, log, event
-            ['cache'],    // Depends on storage
-            ['api'],      // Depends on error, cache, event
             ['store'],    // Depends on storage
+            ['cache'],    // Depends on store
+            ['api'],      // Depends on error, cache, event
             ['order'],    // Depends on storage, api, error
             ['data'],     // Depends on store, api, cache, order
             ['status'],   // Depends on store, data
@@ -274,9 +274,153 @@ async function setupEventListeners(instances) {
     });
 
     // Setup error handling
-    eventManager.on(EVENTS.ERROR_OCCURRED, (error) => {
-        uiManager.showError(error.message);
+    eventManager.on(EVENTS.ERROR_OCCURRED, async (error) => {
+        try {
+            if (uiManager?.isInitialized()) {
+                await uiManager.showMessage('error', error.message || 'An unexpected error occurred');
+            } else {
+                console.error('UIManager not initialized:', error);
+            }
+        } catch (e) {
+            console.error('Failed to show error:', e);
+        }
     });
+}
+
+// Store previous counts for animation
+let previousCounts = {
+    untouched: 0,
+    called: 0,
+    ready: 0,
+    overdue: 0,
+    critical: 0
+};
+
+/**
+ * Update counters in UI
+ * @param {Object} [counts] Optional counts to update directly
+ * @returns {Promise<void>}
+ */
+async function updateCounters(counts) {
+    try {
+        // Show loading state
+        document.querySelectorAll('.lead-status').forEach(status => {
+            status.classList.add('loading');
+        });
+
+        // If counts not provided, fetch them
+        if (!counts) {
+            const orderService = await registry.get('order');
+            const result = await orderService.getOrderStatuses();
+            if (!result.success) {
+                throw new Error(result.error);
+            }
+            counts = result.counts;
+        }
+
+        // Update each counter element
+        const counterElements = {
+            'count-untouched': counts.untouched || 0,
+            'count-called': counts.called || 0,
+            'count-ready': counts.ready || 0,
+            'count-overdue': counts.overdue || 0,
+            'count-critical': counts.critical || 0
+        };
+
+        const counterManager = await registry.get('counter');
+        
+        // Update each counter
+        for (const [id, value] of Object.entries(counterElements)) {
+            const element = document.getElementById(id);
+            if (element) {
+                // Register counter if not already registered
+                await counterManager.registerCounter(element, value);
+                // Update counter value with animation
+                await counterManager.updateCounter(id, value, true);
+            }
+        }
+        
+        // Store current counts for next update
+        previousCounts = { ...counts };
+        
+        // Update last refresh time
+        const lastUpdateTime = document.getElementById('last-update-time');
+        if (lastUpdateTime) {
+            const now = new Date();
+            lastUpdateTime.textContent = now.toLocaleTimeString();
+            lastUpdateTime.setAttribute('datetime', now.toISOString());
+        }
+
+        // Emit counters updated event
+        const eventManager = await registry.get('event');
+        await eventManager.emit(EVENTS.COUNTERS_UPDATED, {
+            counts,
+            timestamp: Date.now()
+        });
+
+        // Log update
+        console.log('✅ Updated all counters:', counts);
+    } catch (error) {
+        console.error('Error updating counters:', error);
+        document.querySelectorAll('.lead-status').forEach(status => {
+            status.classList.add('error');
+        });
+
+        // Emit error event
+        const eventManager = await registry.get('event');
+        await eventManager.emit(EVENTS.ERROR_OCCURRED, error);
+    } finally {
+        // Remove loading state
+        document.querySelectorAll('.lead-status').forEach(status => {
+            status.classList.remove('loading');
+        });
+    }
+}
+
+/**
+ * Initialize click handlers and UI elements
+ */
+async function initializeUI() {
+    // Refresh button
+    const refreshButton = document.getElementById('refresh-counters');
+    if (refreshButton) {
+        refreshButton.addEventListener('click', () => {
+            refreshButton.classList.add('rotating');
+            updateCounters().finally(() => {
+                refreshButton.classList.remove('rotating');
+            });
+        });
+    }
+
+    // Status links
+    document.querySelectorAll('.lead-status').forEach(status => {
+        status.addEventListener('click', async () => {
+            const statusType = status.dataset.status;
+            if (statusType) {
+                try {
+                    // Get current store
+                    const storeManager = await registry.get('store');
+                    const store = await storeManager.getActiveStore();
+                    const storeId = store?.id === 'ALL' ? '0' : store?.deliveryId?.toString() || '0';
+                    
+                    // Generate and open DARWINA URL
+                    const interfaceManager = await registry.get('interface');
+                    const url = interfaceManager.generateDarwinaUrl(statusType, storeId);
+                    window.open(url, '_blank');
+                } catch (error) {
+                    console.error('Error opening DARWINA:', error);
+                    const notificationManager = await registry.get('notification');
+                    await notificationManager.show('Error', 'Could not open DARWINA', { type: 'error' });
+                }
+            }
+        });
+    });
+
+    // Initial update
+    await updateCounters();
+
+    // Set up periodic refresh
+    setInterval(updateCounters, REFRESH_INTERVAL);
 }
 
 // Initialize application
@@ -284,23 +428,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         const instances = await initializeManagers();
         await setupEventListeners(instances);
+        await initializeUI();
         
         // Initial data load
         const dataManager = await registry.get('data');
         await dataManager.refreshData({ forceRefresh: true });
 
         // Setup auto refresh
-        setInterval(async () => {
-            try {
-                await dataManager.refreshData();
-            } catch (error) {
-                const eventManager = await registry.get('event');
-                eventManager.emit(EVENTS.ERROR_OCCURRED, error);
-            }
-        }, REFRESH_INTERVAL);
+        setupAutoRefresh();
 
     } catch (error) {
         console.error('❌ Initialization failed:', error);
+        const errorHandler = await registry.get('error');
+        errorHandler?.handle(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
     }
 });
 
@@ -407,64 +547,6 @@ async function loadAndUpdateData(forceRefresh = false) {
         managerInstances?.operationProgressManager?.setError('logs.dataFetchError');
         managerInstances?.errorHandler?.handle(error, ErrorType.DATA_LOAD, ErrorSeverity.HIGH);
         throw error;
-    }
-}
-
-/**
- * Update counters in UI
- * @param {Object} counts - Counter values
- * @returns {Promise<void>}
- */
-async function updateCounters(counts) {
-    console.log('🔄 Updating counters with data:', counts);
-
-    try {
-        if (!counts || typeof counts !== 'object') {
-            console.error('❌ Invalid counts data:', counts);
-            return;
-        }
-
-        // Get all counter elements
-        const counterElements = document.querySelectorAll('[data-status] .lead-count');
-        console.log('📊 Found counter elements:', counterElements.length);
-        
-        // Update each counter
-        counterElements.forEach(counter => {
-            const statusElement = counter.closest('[data-status]');
-            const status = statusElement?.dataset.status;
-            
-            console.log(`🏷️ Processing counter for status: ${status}`, {
-                element: statusElement,
-                currentCount: counter.textContent,
-                newCount: counts[status]
-            });
-            
-            if (!status) {
-                console.error('❌ Counter element missing data-status attribute:', counter);
-                return;
-            }
-
-            const count = counts[status] || 0;
-            
-            // Update text and classes
-            counter.textContent = count;
-            counter.classList.toggle('count-zero', count === 0);
-            counter.classList.remove('count-error');
-            
-            // Add animation class
-            counter.classList.add('count-updated');
-            setTimeout(() => counter.classList.remove('count-updated'), 1000);
-        });
-
-        // Log update
-        console.log('✅ Updated all counters:', counts);
-    } catch (error) {
-        console.error('❌ Error updating counters:', error);
-        // Show error state
-        document.querySelectorAll('.lead-count').forEach(counter => {
-            counter.textContent = '-';
-            counter.classList.add('count-error');
-        });
     }
 }
 
@@ -595,4 +677,60 @@ async function getSelectedStore() {
 // Validate cache data
 function validateCacheData(cachedData) {
     // Implementation of validateCacheData function
+}
+
+// Add these variables at the top with other declarations
+let nextRefreshInterval;
+let nextRefreshTime;
+
+// Add this function to update the countdown timer
+function updateNextRefreshTime() {
+    const nextRefreshEl = document.getElementById('next-refresh-time');
+    if (!nextRefreshTime) return;
+
+    const now = Date.now();
+    const timeLeft = Math.max(0, nextRefreshTime - now);
+    
+    if (timeLeft === 0) {
+        nextRefreshEl.textContent = '-';
+        return;
+    }
+
+    const minutes = Math.floor(timeLeft / 60000);
+    const seconds = Math.floor((timeLeft % 60000) / 1000);
+    nextRefreshEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// Modify the updateLastRefreshTime function
+function updateLastRefreshTime() {
+    const lastUpdateEl = document.getElementById('last-update-time');
+    const now = new Date();
+    lastUpdateEl.textContent = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    
+    // Update next refresh time
+    const refreshManager = registry.get('refresh');
+    const settings = refreshManager.getSettings();
+    const checkFrequency = settings.check_frequency;
+    
+    // Convert check frequency to milliseconds
+    const checkMs = typeof checkFrequency === 'string' ? 
+        parseInt(checkFrequency) * (checkFrequency.endsWith('m') ? 60000 : 1000) : 
+        checkFrequency;
+    
+    nextRefreshTime = now.getTime() + checkMs;
+    
+    // Clear existing interval and start new countdown
+    if (nextRefreshInterval) {
+        clearInterval(nextRefreshInterval);
+    }
+    updateNextRefreshTime();
+    nextRefreshInterval = setInterval(updateNextRefreshTime, 1000);
+}
+
+// Add cleanup to the dispose function
+async function dispose() {
+    if (nextRefreshInterval) {
+        clearInterval(nextRefreshInterval);
+    }
+    // ... rest of dispose function
 }

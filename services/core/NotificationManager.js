@@ -490,6 +490,32 @@ class NotificationManager extends BaseManager {
             });
         }
     }
+
+    async updateConfig(config) {
+        try {
+            this.#settings = {
+                ...this.#settings,
+                ...config
+            };
+
+            this.log(LogLevel.INFO, '✅ Notification settings updated', {
+                enabled: this.#settings.enabled,
+                sound: this.#settings.sound,
+                desktop: this.#settings.desktop,
+                limits: this.#settings.limits
+            });
+
+            // Save settings
+            await this.#storageManager?.set('notification_settings', this.#settings);
+            
+            // Emit event
+            await this.#eventManager?.emit('notification:config-updated', {
+                settings: this.#settings
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.SETTINGS, ErrorSeverity.MEDIUM);
+        }
+    }
 }
 
 // Export both class and instance

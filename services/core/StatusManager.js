@@ -4,7 +4,8 @@ import { ErrorType, ErrorSeverity, LogLevel } from '../constants.js';
 const STATUS_CONFIG = {
     UPDATE_INTERVAL: 30 * 1000, // 30 seconds
     NOTIFICATION_COOLDOWN: 5 * 60 * 1000, // 5 minutes
-    MAX_NOTIFICATIONS: 5
+    MAX_NOTIFICATIONS: 5,
+    ANIMATION_DURATION: 300 // ms
 };
 
 /**
@@ -27,19 +28,19 @@ const STATUS_CONFIG = {
 
 /** @type {StatusMapType} */
 export const STATUS_MAP = {
-    submitted: '1',
-    confirmed: '2',
-    accepted: '3',
+    untouched: 'untouched',
+    called: 'called',
     ready: 'ready',
-    overdue: 'overdue'
+    overdue: 'overdue',
+    critical: 'critical'
 };
 
 const STATUS_KEYS = {
-    '1': '1',
-    '2': '2',
-    '3': '3',
+    untouched: 'untouched',
+    called: 'called',
     ready: 'ready',
-    overdue: 'overdue'
+    overdue: 'overdue',
+    critical: 'critical'
 };
 
 // Development mode detection
@@ -56,6 +57,7 @@ const isDevelopment = () => {
  * @extends BaseManager
  */
 class StatusManager extends BaseManager {
+    /** @private */
     static #instance = null;
     static _registry = null;
     #services = {
@@ -71,18 +73,30 @@ class StatusManager extends BaseManager {
     #currentCounts = null;
     #uiUpdateTimeout = null;
     #uiUpdateDelay = 100; // ms
+    /** @private */
     #status = {
         online: true,
         initialized: false,
         error: null,
         orderCounts: {
-            '1': 0,
-            '2': 0,
-            '3': 0,
-            'ready': 0,
-            'overdue': 0
+            untouched: 0,
+            called: 0,
+            ready: 0,
+            overdue: 0,
+            critical: 0
         },
-        lastUpdate: null
+        lastUpdate: null,
+        timestamps: {
+            lastOpen: {
+                popup: 0,
+                options: 0,
+                drwn: 0
+            },
+            lastSync: {
+                orders: 0,
+                status: 0
+            }
+        }
     };
     #lastNotification = null;
     #notificationCount = 0;
@@ -347,13 +361,24 @@ class StatusManager extends BaseManager {
             initialized: false,
             error: null,
             orderCounts: {
-                '1': 0,
-                '2': 0,
-                '3': 0,
-                'ready': 0,
-                'overdue': 0
+                untouched: 0,
+                called: 0,
+                ready: 0,
+                overdue: 0,
+                critical: 0
             },
-            lastUpdate: null
+            lastUpdate: null,
+            timestamps: {
+                lastOpen: {
+                    popup: 0,
+                    options: 0,
+                    drwn: 0
+                },
+                lastSync: {
+                    orders: 0,
+                    status: 0
+                }
+            }
         };
     }
 
@@ -467,6 +492,9 @@ class StatusManager extends BaseManager {
             // Check for significant changes
             await this.#checkForSignificantChanges();
 
+            // Update UI with animation
+            await this.#updateUIWithAnimation(counts);
+
             // Emit status update event
             const event = await this.getDependency('event');
             await event.emit('status:updated', {
@@ -476,6 +504,55 @@ class StatusManager extends BaseManager {
             });
         } catch (error) {
             this.handleError(error, ErrorType.STATUS_UPDATE, ErrorSeverity.MEDIUM);
+        }
+    }
+
+    /**
+     * Update UI with animation
+     * @private
+     */
+    async #updateUIWithAnimation(counts) {
+        try {
+            const ui = await this.getDependency('ui');
+            if (!ui?.isInitialized()) return;
+
+            // Update each counter with animation
+            for (const [status, count] of Object.entries(counts)) {
+                const elementId = `count-${status}`;
+                const element = document.getElementById(elementId);
+                if (!element) continue;
+
+                // Get previous count
+                const previousCount = this.#previousCounts?.[status] || 0;
+
+                // Add animation class based on count change
+                if (count > previousCount) {
+                    element.classList.add('count-increased');
+                } else if (count < previousCount) {
+                    element.classList.add('count-decreased');
+                }
+
+                // Update count
+                element.textContent = count;
+
+                // Remove animation classes after animation
+                setTimeout(() => {
+                    element.classList.remove('count-increased', 'count-decreased');
+                }, STATUS_CONFIG.ANIMATION_DURATION);
+            }
+
+            // Update total count
+            const totalElement = document.getElementById('total-count');
+            if (totalElement) {
+                const total = Object.values(counts).reduce((sum, c) => sum + c, 0);
+                totalElement.textContent = total;
+                totalElement.classList.add('count-updated');
+                setTimeout(() => {
+                    totalElement.classList.remove('count-updated');
+                }, STATUS_CONFIG.ANIMATION_DURATION);
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.UI_UPDATE, ErrorSeverity.LOW);
         }
     }
 
@@ -501,11 +578,11 @@ class StatusManager extends BaseManager {
         }
 
         // Check for new orders
-        const newOrders = this.#status.orderCounts['1'] - this.#previousCounts['1'];
+        const newOrders = this.#status.orderCounts.untouched - this.#previousCounts.untouched;
         if (newOrders > 0) {
             await notification.show(
-                'New Orders',
-                `You have ${newOrders} new order${newOrders > 1 ? 's' : ''}!`,
+                'Nowe zamówienia',
+                `Masz ${newOrders} ${newOrders === 1 ? 'nowe zamówienie' : 'nowych zamówień'}!`,
                 { type: 'info' }
             );
             this.#lastNotification = now;
@@ -513,12 +590,24 @@ class StatusManager extends BaseManager {
         }
 
         // Check for overdue orders
-        const overdueOrders = this.#status.orderCounts['overdue'] - this.#previousCounts['overdue'];
+        const overdueOrders = this.#status.orderCounts.overdue - this.#previousCounts.overdue;
         if (overdueOrders > 0) {
             await notification.show(
-                'Overdue Orders',
-                `You have ${overdueOrders} new overdue order${overdueOrders > 1 ? 's' : ''}!`,
+                'Zaległe zamówienia',
+                `Masz ${overdueOrders} ${overdueOrders === 1 ? 'nowe zaległe zamówienie' : 'nowych zaległych zamówień'}!`,
                 { type: 'warning' }
+            );
+            this.#lastNotification = now;
+            this.#notificationCount++;
+        }
+
+        // Check for critical orders
+        const criticalOrders = this.#status.orderCounts.critical - this.#previousCounts.critical;
+        if (criticalOrders > 0) {
+            await notification.show(
+                'Krytyczne zamówienia',
+                `Masz ${criticalOrders} ${criticalOrders === 1 ? 'nowe krytyczne zamówienie' : 'nowych krytycznych zamówień'}!`,
+                { type: 'error' }
             );
             this.#lastNotification = now;
             this.#notificationCount++;
@@ -695,6 +784,179 @@ class StatusManager extends BaseManager {
                 status
             });
             throw error;
+        }
+    }
+
+    /**
+     * Update timestamp for specific action
+     * @private
+     */
+    async #updateTimestamp(type, key) {
+        try {
+            this.#status.timestamps[type][key] = Date.now();
+            
+            // Emit event about timestamp update
+            const eventManager = await this.getDependency('event');
+            await eventManager.emit('status:timestamp-updated', {
+                type,
+                key,
+                timestamp: this.#status.timestamps[type][key]
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.STATUS_UPDATE, ErrorSeverity.LOW, {
+                method: '#updateTimestamp',
+                type,
+                key
+            });
+        }
+    }
+
+    /**
+     * Get timestamp for specific action
+     */
+    async getTimestamp(type, key) {
+        return this.#status.timestamps[type]?.[key] || 0;
+    }
+
+    /**
+     * Check if enough time has passed since last notification
+     * @private
+     */
+    async #checkNotificationCooldown() {
+        try {
+            const now = Date.now();
+            
+            // If no previous notification, allow
+            if (!this.#lastNotification) {
+                return true;
+            }
+            
+            // Check if cooldown has passed
+            const timeSinceLastNotification = now - this.#lastNotification;
+            return timeSinceLastNotification >= STATUS_CONFIG.NOTIFICATION_COOLDOWN;
+        } catch (error) {
+            this.handleError(error, ErrorType.STATUS_UPDATE, ErrorSeverity.LOW, {
+                method: '#checkNotificationCooldown'
+            });
+            return false; // Fail safe - don't show notification if error
+        }
+    }
+
+    /**
+     * Check if notification should be shown for given type
+     * @private
+     */
+    async #shouldShowNotification(type) {
+        try {
+            // Check cooldown first
+            if (!await this.#checkNotificationCooldown()) {
+                return false;
+            }
+
+            // Get notification settings
+            const settingsManager = await this.getDependency('settings');
+            const settings = await settingsManager.getSettings();
+            
+            // Check if notifications are enabled globally
+            if (!settings.notifications?.enabled) {
+                return false;
+            }
+
+            // Check if we haven't exceeded max notifications
+            if (this.#notificationCount >= STATUS_CONFIG.MAX_NOTIFICATIONS) {
+                return false;
+            }
+
+            // Check specific notification type settings
+            switch (type) {
+                case 'untouched':
+                    return settings.notifications?.showUntouched ?? true;
+                case 'overdue':
+                    return settings.notifications?.showOverdue ?? true;
+                case 'critical':
+                    return settings.notifications?.showCritical ?? true;
+                default:
+                    return false;
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.STATUS_UPDATE, ErrorSeverity.LOW, {
+                method: '#shouldShowNotification',
+                type
+            });
+            return false; // Fail safe - don't show notification if error
+        }
+    }
+
+    /**
+     * Play notification sound if enabled
+     * @private
+     */
+    async #playNotificationSound() {
+        try {
+            // Get settings
+            const settingsManager = await this.getDependency('settings');
+            const settings = await settingsManager.getSettings();
+            
+            // Check if sound is enabled
+            if (!settings.notifications?.sound) {
+                return;
+            }
+
+            // Get volume manager
+            const volumeManager = await this.getDependency('volume');
+            if (!volumeManager) {
+                throw new Error('VolumeManager not available');
+            }
+
+            // Play sound
+            await volumeManager.playNotificationSound();
+        } catch (error) {
+            this.handleError(error, ErrorType.STATUS_UPDATE, ErrorSeverity.LOW, {
+                method: '#playNotificationSound'
+            });
+        }
+    }
+
+    /**
+     * Show notification with sound
+     * @param {string} type Notification type
+     * @param {string} title Notification title
+     * @param {string} message Notification message
+     */
+    async showNotification(type, title, message) {
+        try {
+            // Check if we should show notification
+            if (!await this.#shouldShowNotification(type)) {
+                return;
+            }
+
+            // Get notification manager
+            const notificationManager = await this.getDependency('notification');
+            if (!notificationManager) {
+                throw new Error('NotificationManager not available');
+            }
+
+            // Show notification
+            await notificationManager.show(title, message, { type });
+
+            // Play sound
+            await this.#playNotificationSound();
+
+            // Update counters
+            this.#lastNotification = Date.now();
+            this.#notificationCount++;
+
+            // Reset notification count after cooldown
+            setTimeout(() => {
+                this.#notificationCount = 0;
+            }, STATUS_CONFIG.NOTIFICATION_COOLDOWN);
+
+        } catch (error) {
+            this.handleError(error, ErrorType.STATUS_UPDATE, ErrorSeverity.LOW, {
+                method: 'showNotification',
+                type,
+                title
+            });
         }
     }
 }

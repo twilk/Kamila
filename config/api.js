@@ -12,14 +12,29 @@ export const API_CONFIG = {
     CACHE_TTL: 5 * 60 * 1000, // 5 minutes
     ENDPOINTS: {
         ORDERS: '/orders',
-        AUTH: '/auth/access_token'
+        INVENTORY: '/inventory',
+        AUTH: '/auth/token',
+        STORES: '/stores'
     },
     STATUS_CODES: {
         NEW: '1',
         CONFIRMED: '2',
         ACCEPTED: '3',
         READY_FOR_PICKUP: '5'
-    }
+    },
+    SHIPPING_STORES: [
+        {
+            id: 'HOK',
+            name: 'HOK - Ursus',
+            deliveryId: 25
+        },
+        {
+            id: 'OBR',
+            name: 'OBR - Obrzezna',
+            deliveryId: 26
+        }
+    ],
+    REFRESH_INTERVAL: 60 * 1000 // 1 minute
 };
 
 export const API_BASE_URL = 'https://darwina.pl/api';
@@ -247,4 +262,11 @@ export const getStatusName = (statusCode) => {
     };
 
     return statusMap[statusCode] || 'Nieznany status';
+};
+
+export const FTP_CONFIG = {
+    host: process.env.FTP_HOST || 'ftp.darwina.pl',
+    user: process.env.FTP_USER || 'ftp_user',
+    password: process.env.FTP_PASSWORD || 'ftp_password',
+    secure: true
 }; 

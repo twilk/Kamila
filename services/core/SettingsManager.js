@@ -201,11 +201,19 @@ class SettingsManager extends BaseManager {
         try {
             // Integracja z RefreshManager
             this.on(SETTINGS_KEYS.REFRESH_INTERVAL, (value) => {
+                this.log(LogLevel.INFO, '⚙️ Setting change triggered', {
+                    setting: 'refresh_interval',
+                    value: value
+                });
                 refreshManager.updateSetting('check_frequency', value);
             });
 
             // Integracja z AlarmManager
             this.on(SETTINGS_KEYS.ALARM_INTERVALS, (value) => {
+                this.log(LogLevel.INFO, '⚙️ Setting change triggered', {
+                    setting: 'alarm_intervals',
+                    value: value
+                });
                 Object.entries(value).forEach(([alarmName, interval]) => {
                     alarmManager.updateAlarmInterval(alarmName, interval);
                 });
@@ -213,6 +221,10 @@ class SettingsManager extends BaseManager {
 
             // Integracja z NotificationManager
             this.on(SETTINGS_KEYS.NOTIFICATIONS, (value) => {
+                this.log(LogLevel.INFO, '⚙️ Setting change triggered', {
+                    setting: 'notifications',
+                    value: value
+                });
                 notificationManager.updateConfig({
                     enabled: value.enabled,
                     sound: value.sound,
@@ -223,17 +235,29 @@ class SettingsManager extends BaseManager {
 
             // Integracja z LanguageManager
             this.on(SETTINGS_KEYS.LANGUAGE, (value) => {
+                this.log(LogLevel.INFO, '⚙️ Setting change triggered', {
+                    setting: 'language',
+                    value: value
+                });
                 languageManager.setLanguage(value);
             });
 
             // Integracja z UI (theme)
             this.on(SETTINGS_KEYS.THEME, (value) => {
+                this.log(LogLevel.INFO, '⚙️ Setting change triggered', {
+                    setting: 'theme',
+                    value: value
+                });
                 document.documentElement.setAttribute('data-theme', value);
                 EventManager.emit('theme:changed', { theme: value });
             });
 
             // Integracja z Debug Mode
             this.on(SETTINGS_KEYS.DEBUG_MODE, (value) => {
+                this.log(LogLevel.INFO, '⚙️ Setting change triggered', {
+                    setting: 'debug_mode',
+                    value: value
+                });
                 if (value) {
                     this.log(LogLevel.DEBUG, '🐛 Debug mode enabled');
                 }
@@ -242,6 +266,10 @@ class SettingsManager extends BaseManager {
 
             // Integracja z Store ID
             this.on(SETTINGS_KEYS.STORE_ID, (value) => {
+                this.log(LogLevel.INFO, '⚙️ Setting change triggered', {
+                    setting: 'store_id',
+                    value: value
+                });
                 EventManager.emit('store:changed', { storeId: value });
             });
 

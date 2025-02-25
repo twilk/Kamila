@@ -6,26 +6,44 @@ import { StorageManager } from '../core/StorageManager.js';
 
 // Essential constants for status handling
 const ORDER_STATUSES = {
-    NEW: '1',
-    CONFIRMED: '2',
-    ACCEPTED: '3',
-    READY_FOR_PICKUP: '5'
+    UNTOUCHED: ['1', '2'],
+    CALLED: ['3', '4'],
+    READY: ['5', '8', '13'],
+    OVERDUE: {
+        STATUSES: ['1', '2', '3', '4', '5', '8', '13'],
+        MIN_DAYS: 3,
+        MAX_DAYS: 7
+    },
+    CRITICAL: {
+        STATUSES: ['1', '2', '3', '4', '5', '8', '13'],
+        MIN_DAYS: 7
+    }
 };
 
 const ORDER_STATUS_NAMES = {
-    [ORDER_STATUSES.NEW]: 'Nowe',
-    [ORDER_STATUSES.CONFIRMED]: 'Potwierdzone',
-    [ORDER_STATUSES.ACCEPTED]: 'Przyjęte',
-    [ORDER_STATUSES.READY_FOR_PICKUP]: 'Gotowe'
+    untouched: 'Nieruszone',
+    called: 'Obdzwonione',
+    ready: 'Gotowe',
+    overdue: 'Zaległe',
+    critical: 'Dramat'
 };
 
 // Keys matching HTML data-status attributes
 const COUNTER_KEYS = {
-    '1': '1',           // data-status="1"
-    '2': '2',           // data-status="2"
-    '3': '3',           // data-status="3"
-    'ready': 'ready',     // data-status="ready"
-    'overdue': 'overdue'  // data-status="overdue"
+    untouched: 'untouched',
+    called: 'called',
+    ready: 'ready',
+    overdue: 'overdue',
+    critical: 'critical'
+};
+
+// Cache configuration
+const CACHE_CONFIG = {
+    TTL: 5 * 60 * 1000, // 5 minutes
+    KEYS: {
+        COUNTERS: 'counters_v2_',
+        LAST_VERSION: 'last_cache_version'
+    }
 };
 
 /**
@@ -193,16 +211,16 @@ class OrderService extends BaseManager {
         const perPage = parseInt(url.searchParams.get('limit')) || 50;
         const currentPage = page;
         const ordersInPage = data.data.length;
-        
-        const hasMorePages = ordersInPage >= perPage;
-        const totalPages = hasMorePages ? page + 1 : page;
+        const totalPages = Math.ceil(data.total_count / perPage);
+        const hasMorePages = currentPage < totalPages;
 
         console.log('💩 [API] Page info:', {
             currentPage,
             perPage,
             ordersInPage,
+            totalPages,
             hasMorePages,
-            totalPages
+            totalCount: data.total_count
         });
 
         return {
@@ -210,7 +228,8 @@ class OrderService extends BaseManager {
             page: currentPage,
             totalPages,
             perPage,
-            hasMorePages
+            hasMorePages,
+            totalCount: data.total_count
         };
     }
 
@@ -264,13 +283,17 @@ class OrderService extends BaseManager {
             }
 
             const allOrders = [];
-            const statuses = ['1', '2', '3', '5'];
+            const statuses = [...new Set([
+                ...ORDER_STATUSES.UNTOUCHED,
+                ...ORDER_STATUSES.CALLED,
+                ...ORDER_STATUSES.READY
+            ])];
             
             const statusPromises = statuses.map(async status => {
                 const url = new URL(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ORDERS}`);
                 
                 url.searchParams.set('status_id', status);
-                url.searchParams.set('limit', '50');
+                url.searchParams.set('limit', '50'); // Ustawiamy stały limit 50
 
                 if (storeId && storeId !== 'ALL') {
                     const storeManager = await this.getDependency('store');
@@ -287,7 +310,6 @@ class OrderService extends BaseManager {
             });
 
             const results = await Promise.all(statusPromises);
-            
             results.forEach(orders => allOrders.push(...orders));
 
             console.log('💩 [API] All orders received:', {
@@ -299,72 +321,53 @@ class OrderService extends BaseManager {
                 }, {})
             });
 
+            // Initialize counters
             const counts = {
-                '1': 0,
-                '2': 0,
-                '3': 0,
-                'ready': 0,
-                'overdue': 0
+                untouched: 0,
+                called: 0,
+                ready: 0,
+                overdue: 0,
+                critical: 0
             };
 
             console.log('💩 [API] Counting orders by status...');
             for (const order of allOrders) {
                 const statusId = (order.status_id || '').toString();
+                const orderDate = order.ready_date ? new Date(order.ready_date) : 
+                                order.date ? new Date(order.date) : null;
                 
                 console.log('💩 [API] Processing order:', {
                     id: order.order_id,
                     status: statusId,
-                    date: order.date
+                    date: orderDate?.toISOString()
                 });
                 
-                if (statusId === '5') {
-                    const orderDate = order.ready_date ? new Date(order.ready_date) : 
-                                    order.date ? new Date(order.date) : null;
+                // Check if order is overdue or critical
+                if (orderDate) {
+                    const daysSinceOrder = Math.floor((Date.now() - orderDate.getTime()) / (24 * 60 * 60 * 1000));
                     
-                    console.log('💩 [API] Processing status 5 order:', {
-                        id: order.order_id,
-                        ready_date: order.ready_date,
-                        date: order.date,
-                        orderDateObj: orderDate,
-                        isNull: !orderDate
-                    });
-                    
-                    if (!orderDate) {
-                        counts['ready']++;
-                        console.log('💩 [API] No date available, counting as ready');
-                        continue;
-                    }
-                    
-                    const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-                    if (orderDate < twoWeeksAgo) {
-                        counts['overdue']++;
+                    if (daysSinceOrder >= ORDER_STATUSES.CRITICAL.MIN_DAYS) {
+                        counts.critical++;
+                        console.log('💩 [API] Order is critical:', {
+                            id: order.order_id,
+                            days: daysSinceOrder
+                        });
+                    } else if (daysSinceOrder >= ORDER_STATUSES.OVERDUE.MIN_DAYS) {
+                        counts.overdue++;
                         console.log('💩 [API] Order is overdue:', {
                             id: order.order_id,
-                            orderDate,
-                            twoWeeksAgo,
-                            diff: Math.floor((Date.now() - orderDate) / (24 * 60 * 60 * 1000)) + ' days'
-                        });
-                    } else {
-                        counts['ready']++;
-                        console.log('💩 [API] Order is ready (not overdue):', {
-                            id: order.order_id,
-                            orderDate,
-                            twoWeeksAgo,
-                            diff: Math.floor((Date.now() - orderDate) / (24 * 60 * 60 * 1000)) + ' days'
+                            days: daysSinceOrder
                         });
                     }
-                } else if (statusId && counts.hasOwnProperty(statusId)) {
-                    counts[statusId]++;
-                    console.log('💩 [API] Counted order with status:', {
-                        id: order.order_id,
-                        status: statusId,
-                        currentCount: counts[statusId]
-                    });
-                } else {
-                    console.log('💩 [API] Skipped order with invalid status:', {
-                        id: order.order_id,
-                        status: statusId
-                    });
+                }
+                
+                // Count by basic status
+                if (ORDER_STATUSES.UNTOUCHED.includes(statusId)) {
+                    counts.untouched++;
+                } else if (ORDER_STATUSES.CALLED.includes(statusId)) {
+                    counts.called++;
+                } else if (ORDER_STATUSES.READY.includes(statusId)) {
+                    counts.ready++;
                 }
             }
 
@@ -431,6 +434,191 @@ class OrderService extends BaseManager {
             this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
             throw error;
         }
+    }
+
+    // Add new methods for packing requests
+    async getPackingRequests() {
+        try {
+            // Get orders for the two specific stores that handle shipping
+            const shippingStores = ['store1_id', 'store2_id']; // Replace with actual store IDs
+            const requests = [];
+
+            for (const storeId of shippingStores) {
+                const url = new URL(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ORDERS}`);
+                url.searchParams.set('store_id', storeId);
+                url.searchParams.set('status', 'pending');
+                url.searchParams.set('limit', '50');
+
+                const orders = await this.#fetchOrdersRecursively(url);
+                
+                // Transform orders into packing requests
+                const storeRequests = orders.map(order => ({
+                    id: order.id,
+                    store: {
+                        id: storeId,
+                        name: order.store_name
+                    },
+                    products: order.items.map(item => ({
+                        id: item.product_id,
+                        name: item.name,
+                        quantity: item.quantity,
+                        ean: item.ean
+                    })),
+                    isShipping: order.shipping_method !== null,
+                    packed: order.status === 'packed',
+                    created_at: order.created_at
+                }));
+
+                requests.push(...storeRequests);
+            }
+
+            return {
+                success: true,
+                data: requests
+            };
+        } catch (error) {
+            this.handleError(error, ErrorType.API, ErrorSeverity.HIGH);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    async confirmPacking(request) {
+        try {
+            // Generate exchange file content
+            const fileContent = this.#generateExchangeFile(request);
+            
+            // Upload to FTP
+            const ftpResult = await this.#uploadToFTP(fileContent.filename, fileContent.content);
+            
+            if (!ftpResult.success) {
+                throw new Error('Failed to upload exchange file to FTP');
+            }
+
+            // Update order status
+            const url = new URL(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ORDERS}/${request.id}`);
+            const response = await fetch(url, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${this.#credentials.token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    status: 'packed'
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to update order status: ${response.status}`);
+            }
+
+            return {
+                success: true
+            };
+        } catch (error) {
+            this.handleError(error, ErrorType.API, ErrorSeverity.HIGH);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    #generateExchangeFile(request) {
+        const now = new Date();
+        const formattedDate = now.toLocaleDateString('pl-PL');
+        
+        // Generate unique file name
+        const filename = `RW_wydanie_${request.store.id}-${request.id}_1.txt`;
+        
+        // Generate content based on the template
+        const content = `TypPolskichLiter:LA
+TypDok:RW
+NrDok:RW_${request.store.id}-${request.id}
+Data:${formattedDate}
+Magazyn:${request.store.name}
+SposobPlatn:GOT
+TerminPlatn:0
+IndeksCentralny:NIE
+NazwaWystawcy:Darwina.pl Retail Sp. z o.o
+AdresWystawcy:W•wozowa 6/4B, 02-796 Warszawa
+KodWystawcy:02-796
+PocztaWystawcy:
+MiastoWystawcy:Warszawa
+UlicaWystawcy:W•wozowa 6/4B
+NrDomuWystawcy:6
+NrLokaluWystawcy:4B
+NazwaUlicyWystawcy:W•wozowa
+GminaWystawcy:Warszawa
+PowiatWystawcy:Warszawa
+WojewodztwoWystawcy:mazowieckie
+KodKrajuWystawcy:PL
+NIPWystawcy:9512387656
+BankWystawcy:mBank
+KontoWystawcy:50 1140 2004 0000 3102 7760 2647
+TelefonWystawcy:+48 888 160 888
+NrWystawcyWSieciSklepow:${request.store.id}
+WystawcaToCentralaSieci:0
+NrWystawcyObcyWSieciSklepow:
+IloscLinii:${request.products.length}
+${request.products.map(product => {
+    const netValue = (product.quantity * product.price).toFixed(2);
+    const grossValue = (product.quantity * product.price * 1.23).toFixed(2);
+    return `Linia:Nazwa{${product.name}}Kod{${product.ean}}Vat{23}Jm{szt}Asortyment{${product.category || 'INNE'}}Sww{}PKWiU{}Ilosc{${product.quantity}}Cena{n${product.price}}Wartosc{n${netValue}}IleWOpak{1}CenaSp{b${grossValue}}TowId{${product.id}}`;
+}).join('\n')}
+Stawka:Vat{23}SumaNet{${request.products.reduce((sum, p) => sum + p.quantity * p.price, 0).toFixed(2)}}SumaVat{${(request.products.reduce((sum, p) => sum + p.quantity * p.price * 0.23, 0)).toFixed(2)}}
+DoZaplaty:${(request.products.reduce((sum, p) => sum + p.quantity * p.price * 1.23, 0)).toFixed(2)}`;
+
+        return { filename, content };
+    }
+
+    async #uploadToFTP(filename, content) {
+        try {
+            const ftpConfig = await this.#getFTPConfig();
+            
+            // Create FTP client
+            const ftpClient = new (require('ftp'))();
+            
+            return new Promise((resolve, reject) => {
+                ftpClient.on('ready', () => {
+                    ftpClient.put(Buffer.from(content), filename, (err) => {
+                        ftpClient.end();
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve({ success: true });
+                        }
+                    });
+                });
+
+                ftpClient.on('error', (err) => {
+                    ftpClient.end();
+                    reject(err);
+                });
+
+                ftpClient.connect(ftpConfig);
+            });
+        } catch (error) {
+            this.handleError(error, ErrorType.FTP, ErrorSeverity.HIGH);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    async #getFTPConfig() {
+        // Get FTP configuration from storage
+        const storage = await this.getDependency('storage');
+        const config = await storage.get('ftp_config');
+        
+        if (!config) {
+            throw new Error('FTP configuration not found');
+        }
+        
+        return config;
     }
 }
 

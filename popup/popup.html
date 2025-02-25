@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>DARWINA.PL - Order Monitor</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <div class="lead-counters">
+            <div class="lead-status" data-status="untouched" data-tooltip="Zamówienia, które nie zostały jeszcze obsłużone">
+                🆕 <span class="lead-count" id="count-untouched">
+                    <span class="count-value">-</span>
+                    <span class="count-loader"></span>
+                    <span class="count-error"></span>
+                </span>
+            </div>
+            <div class="lead-status" data-status="called" data-tooltip="Zamówienia po kontakcie telefonicznym">
+                📞 <span class="lead-count" id="count-called">
+                    <span class="count-value">-</span>
+                    <span class="count-loader"></span>
+                    <span class="count-error"></span>
+                </span>
+            </div>
+            <div class="lead-status" data-status="ready" data-tooltip="Zamówienia gotowe do odbioru">
+                ✅ <span class="lead-count" id="count-ready">
+                    <span class="count-value">-</span>
+                    <span class="count-loader"></span>
+                    <span class="count-error"></span>
+                </span>
+            </div>
+            <div class="lead-status" data-status="overdue" data-tooltip="Zamówienia oczekujące 3-7 dni">
+                🆘 <span class="lead-count" id="count-overdue">
+                    <span class="count-value">-</span>
+                    <span class="count-loader"></span>
+                    <span class="count-error"></span>
+                </span>
+            </div>
+            <div class="lead-status" data-status="critical" data-tooltip="Zamówienia oczekujące ponad 7 dni">
+                ⚠️ <span class="lead-count" id="count-critical">
+                    <span class="count-value">-</span>
+                    <span class="count-loader"></span>
+                    <span class="count-error"></span>
+                </span>
+            </div>
+        </div>
+        <div id="total-count" class="counter-value">0</div>
+    </div>
+    <script type="module" src="../services/popup.js"></script>
+</body>
+</html> 

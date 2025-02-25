@@ -673,31 +673,17 @@ class InterfaceManager extends BaseManager {
             const statusManager = await this.getDependency('status');
             const storeManager = await this.getDependency('store');
 
-            // Status mapping for DARWINA URLs
-            const statusMap = {
-                '1': 'submitted',
-                '2': 'confirmed',
-                '3': 'accepted',
-                'ready': 'ready',
-                'overdue': 'overdue'
-            };
-
             statusButtons.forEach(button => {
                 button.addEventListener('click', async () => {
                     try {
                         const status = button.dataset.status;
-                        const mappedStatus = statusMap[status];
                         
-                        if (!mappedStatus) {
-                            throw new Error(`Invalid status mapping: ${status}`);
-                        }
-
                         // Get current store
                         const store = await storeManager.getActiveStore();
                         const storeId = store?.id === 'ALL' ? '0' : store?.deliveryId?.toString() || '0';
                         
                         // Generate and open DARWINA URL
-                        const url = this.generateDarwinaUrl(mappedStatus, storeId);
+                        const url = this.generateDarwinaUrl(status, storeId);
                         window.open(url, '_blank');
                         
                         this.log(LogLevel.INFO, `🔗 Opening DARWINA for status: ${status}`);
@@ -731,41 +717,56 @@ class InterfaceManager extends BaseManager {
             'sztyp': 'pid',
             'sztxt': '',
             'ptid': '',
-            'dw': '0',
-            'dp': '',
-            'dk': ''
+            'dw': '0'
         });
 
-        // Add date filter for overdue orders
-        if (status === 'overdue') {
-            const date = new Date();
-            date.setDate(date.getDate() - 14);
-            params.set('dp', date.toISOString().split('T')[0]);
+        // Get current date for date filters
+        const now = new Date();
+        const threeDaysAgo = new Date(now.getTime() - (3 * 24 * 60 * 60 * 1000));
+        const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+
+        // Format dates as YYYY-MM-DD
+        const formatDate = (date) => {
+            return date.toISOString().split('T')[0];
+        };
+
+        // Map status to DARWINA status IDs and date filters
+        switch (status) {
+            case 'untouched': {
+                params.set('st', '1');
+                ['1', '2'].forEach(s => params.append('s[]', s));
+                break;
+            }
+            case 'called': {
+                params.set('st', '3');
+                ['3', '4'].forEach(s => params.append('s[]', s));
+                break;
+            }
+            case 'ready': {
+                params.set('st', '5');
+                ['5', '8', '13'].forEach(s => params.append('s[]', s));
+                break;
+            }
+            case 'overdue': {
+                params.set('st', '1');
+                ['1', '2', '3', '4', '5', '8', '13'].forEach(s => params.append('s[]', s));
+                params.set('dp', formatDate(sevenDaysAgo));
+                params.set('dk', formatDate(threeDaysAgo));
+                break;
+            }
+            case 'critical': {
+                params.set('st', '1');
+                ['1', '2', '3', '4', '5', '8', '13'].forEach(s => params.append('s[]', s));
+                params.set('dk', formatDate(sevenDaysAgo));
+                break;
+            }
         }
 
-        // Map status to DARWINA status IDs
-        switch (status) {
-            case 'submitted':
-                params.set('st', '1');
-                params.set('s[]', '1');
-                break;
-            case 'confirmed':
-                params.set('st', '2');
-                params.set('s[]', '2');
-                break;
-            case 'accepted':
-                params.set('st', '3');
-                params.set('s[]', '3');
-                break;
-            case 'ready':
-                params.set('st', '5');
-                params.set('s[]', '5');
-                break;
-            case 'overdue':
-                params.set('st', '5');
-                params.set('s[]', '5');
-                break;
-        }
+        console.log('💩 [INTERFACE] Generated URL:', {
+            status,
+            storeId,
+            url: `${baseUrl}?${params.toString()}`
+        });
 
         return `${baseUrl}?${params.toString()}`;
     }

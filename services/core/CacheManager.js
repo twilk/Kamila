@@ -1,7 +1,5 @@
 import { BaseManager } from './BaseManager.js';
-import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
-import { LogLevel } from './LogLevel.js';
-// import { managers } from './managers.js';
+import { ErrorType, ErrorSeverity, LogLevel } from '../constants.js';
 import { 
     CacheLimits,
     EndpointTTL,
@@ -15,63 +13,31 @@ import {
  */
 export const CachePriority = CachePriorities;
 
+const CACHE_CONFIG = {
+    DEFAULT_TTL: 5 * 60 * 1000, // 5 minutes
+    MAX_SIZE: 1000, // Maximum number of entries
+    CLEANUP_INTERVAL: 60 * 1000, // 1 minute
+    COMPRESSION_THRESHOLD: 1024 // 1KB
+};
+
 /**
- * Optimized cache manager implementing hierarchical caching
+ * Manager for optimized caching
+ * @extends BaseManager
  */
 class CacheManager extends BaseManager {
     /** @private */
     static #instance = null;
-    
-    /** @private */
+    static _registry = null;
+
+    #store = null;
+    #cleanupInterval = null;
     #cache = new Map();
-    
-    /** @private */
-    #endpointSizes = new Map();
-    
-    /** @private */
     #stats = {
         hits: 0,
         misses: 0,
-        compressionRatio: 0,
-        size: 0,
-        endpointSizes: new Map()
+        evictions: 0,
+        size: 0
     };
-    
-    /** @private */
-    #defaultTTL = 5 * 60 * 1000; // 5 minutes
-    
-    /** @private */
-    #timeouts = {
-        [CachePriority.HIGH]: 30 * 60 * 1000,    // 30 minutes
-        [CachePriority.MEDIUM]: 15 * 60 * 1000,  // 15 minutes
-        [CachePriority.LOW]: 5 * 60 * 1000       // 5 minutes
-    };
-    
-    /** @private */
-    #compressionThreshold = CompressionConfig.threshold || 50 * 1024; // 50KB
-    
-    /** @private */
-    #maxSize = CacheLimits.memory;
-    
-    /** @private */
-    #maxEndpointSize = CacheLimits.perEndpoint;
-    
-    /** @private */
-    #compressedCache = new Map();
-
-    /** @private */
-    #cleanupInterval = null;
-
-    // Private method declarations
-    // #persistCache = undefined;
-    // #compress = undefined;
-    // #decompress = undefined;
-    // #getSize = undefined;
-    // #ensureSpace = undefined;
-    // #getCurrentSize = undefined;
-    // #updateCompressionStats = undefined;
-    // #cleanupEndpoint = undefined;
-    // #getEndpointFromKey = undefined;
 
     constructor(registry) {
         if (CacheManager.#instance) {
@@ -79,12 +45,11 @@ class CacheManager extends BaseManager {
         }
         super(registry, 'CacheManager');
         CacheManager.#instance = this;
+        CacheManager._registry = registry;
+        
+        this.addDependency('store');
     }
 
-    /**
-     * Get singleton instance
-     * @returns {CacheManager}
-     */
     static getInstance() {
         if (!CacheManager.#instance && CacheManager._registry) {
             CacheManager.#instance = new CacheManager(CacheManager._registry);
@@ -98,506 +63,345 @@ class CacheManager extends BaseManager {
 
     /**
      * Initialize cache manager
+     * @protected
      * @returns {Promise<boolean>}
      */
     async _initialize() {
         try {
             this.log(LogLevel.INFO, '🔄 Initializing cache manager...');
             
-            // Get storage dependency
-            const storage = await this.getDependency('storage');
-            if (!storage?.isInitialized()) {
-                throw new Error('Storage manager must be initialized');
+            // Get dependencies
+            this.#store = await this.getDependency('store');
+            
+            if (!this.#store?.isReady()) {
+                throw new Error('Store must be ready');
             }
 
-            // Initialize cache storage
-            await this.clearAll();
-            
+            // Load persisted cache
+            await this.#loadPersistedCache();
+
             // Start cleanup interval
-            this.cleanup();
-            
-            this.log(LogLevel.SUCCESS, '✅ Cache manager initialized');
+            this.#startCleanup();
+
+            this.log(LogLevel.SUCCESS, '✨ Cache manager initialized');
             return true;
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
+                method: '_initialize'
+            });
             return false;
-        }
-    }
-
-    /**
-     * Cleanup expired cache entries
-     * @private
-     */
-    #cleanup = async () => {
-        try {
-            this.log(LogLevel.DEBUG, '🧹 Starting cache cleanup...');
-            
-            const now = Date.now();
-            let cleanedEntries = 0;
-            
-            // Cleanup regular cache
-            for (const [key, entry] of this.#cache.entries()) {
-                if (now - entry.timestamp > entry.ttl) {
-                    this.#cache.delete(key);
-                    cleanedEntries++;
-                }
-            }
-            
-            // Cleanup compressed cache
-            for (const [key, entry] of this.#compressedCache.entries()) {
-                if (now - entry.timestamp > entry.ttl) {
-                    this.#compressedCache.delete(key);
-                    cleanedEntries++;
-                }
-            }
-            
-            if (cleanedEntries > 0) {
-                this.log(LogLevel.INFO, `🧹 Cleaned up ${cleanedEntries} expired entries`);
-            }
-        } catch (error) {
-            this.handleError(error, ErrorType.CACHE_CLEANUP, ErrorSeverity.LOW, {
-                method: '#cleanup'
-            });
-        }
-    };
-
-    getCacheKey(key, context = '') {
-        return `${key}_${context}`;
-    }
-
-    /**
-     * Set cache value
-     * @param {string} key Cache key
-     * @param {*} value Value to cache
-     * @param {Object} options Cache options
-     */
-    async set(key, value, options = {}) {
-        const priority = options.priority || CachePriority.MEDIUM;
-        const ttl = options.ttl || this.#timeouts[priority];
-        const endpoint = this._getEndpointFromKey(key);
-        const cacheKey = this.getCacheKey(key, options.context);
-
-        try {
-            this.log(LogLevel.DEBUG, 'Setting cache entry', {
-                key: cacheKey,
-                priority,
-                ttl,
-                endpoint
-            });
-
-            const size = this._getSize(value);
-            const shouldCompress = size > this.#compressionThreshold;
-
-            // Check endpoint size limit
-            const endpointLimit = this.#maxEndpointSize[endpoint] || this.#maxEndpointSize.default;
-            const currentEndpointSize = this.#endpointSizes.get(endpoint) || 0;
-            
-            if (currentEndpointSize + size > endpointLimit) {
-                await this._cleanupEndpoint(endpoint, size);
-            }
-
-            const entry = {
-                value: shouldCompress ? await this._compress(value) : value,
-                compressed: shouldCompress,
-                timestamp: Date.now(),
-                ttl,
-                priority,
-                size,
-                endpoint
-            };
-
-            // Check total size limits before storing
-            await this._ensureSpace(priority, size);
-
-            if (shouldCompress) {
-                this.#compressedCache.set(cacheKey, entry);
-            } else {
-                this.#cache.set(cacheKey, entry);
-            }
-
-            // Update endpoint size
-            this.#endpointSizes.set(endpoint, (this.#endpointSizes.get(endpoint) || 0) + size);
-            this.#stats.endpointSizes.set(endpoint, this.#endpointSizes.get(endpoint));
-
-            this.log(LogLevel.SUCCESS, 'Cache entry stored', {
-                key: cacheKey,
-                compressed: shouldCompress,
-                size,
-                priority,
-                endpoint,
-                endpointSize: this.#endpointSizes.get(endpoint)
-            });
-
-            await this.#persistCache();
-        } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.WARNING, {
-                method: 'set',
-                key: cacheKey,
-                size: size
-            });
-            throw error;
         }
     }
 
     /**
      * Get cached value
      * @param {string} key Cache key
-     * @returns {*} Cached value or null if not found/expired
+     * @param {Object} [options] Cache options
+     * @param {number} [options.ttl] Time to live in milliseconds
+     * @returns {Promise<any>} Cached value or null
      */
-    async get(key, context = '') {
-        const cacheKey = this.getCacheKey(key, context);
-        
+    async get(key, options = {}) {
         try {
-            this.log(LogLevel.DEBUG, 'Getting cache entry', { key: cacheKey });
-            
-            // Check both caches
-            const entry = this.#cache.get(cacheKey) || this.#compressedCache.get(cacheKey);
-            
+            const entry = this.#cache.get(key);
             if (!entry) {
                 this.#stats.misses++;
-                this.log(LogLevel.INFO, 'Cache miss', { key: cacheKey });
                 return null;
             }
 
-            if (Date.now() - entry.timestamp > entry.ttl) {
-                this.#cache.delete(cacheKey);
-                this.#compressedCache.delete(cacheKey);
-                this.#stats.misses++;
-                this.log(LogLevel.INFO, 'Cache entry expired', {
-                    key: cacheKey,
-                    age: Date.now() - entry.timestamp
-                });
+            const now = Date.now();
+            if (now - entry.timestamp > (options.ttl || CACHE_CONFIG.DEFAULT_TTL)) {
+                this.#cache.delete(key);
+                this.#stats.evictions++;
+                this.#stats.size--;
                 return null;
             }
 
             this.#stats.hits++;
-            this.log(LogLevel.SUCCESS, 'Cache hit', {
-                key: cacheKey,
-                compressed: entry.compressed,
-                age: Date.now() - entry.timestamp
-            });
-            
-            return entry.compressed ? await this._decompress(entry.value) : entry.value;
+            return this.#decompress(entry.value);
         } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.WARNING, {
+            this.handleError(error, ErrorType.CACHE_READ, ErrorSeverity.LOW, {
                 method: 'get',
-                key: cacheKey
+                key
             });
             return null;
         }
     }
 
     /**
-     * Compress data
-     * @private
+     * Set cached value
+     * @param {string} key Cache key
+     * @param {any} value Value to cache
+     * @param {Object} [options] Cache options
+     * @param {number} [options.ttl] Time to live in milliseconds
+     * @returns {Promise<void>}
      */
-    #compress = async (data) => {
+    async set(key, value, options = {}) {
         try {
-            this.log(LogLevel.DEBUG, 'Compressing data');
-            const jsonString = JSON.stringify(data);
-            const uint8Array = new TextEncoder().encode(jsonString);
-            const compressed = await new Response(
-                new Blob([uint8Array]).stream().pipeThrough(new CompressionStream('gzip'))
-            ).blob();
-            
-            const compressedData = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.readAsDataURL(compressed);
-            });
-
-            this._updateCompressionStats(jsonString.length, compressedData.length);
-            
-            this.log(LogLevel.SUCCESS, 'Data compressed', {
-                originalSize: jsonString.length,
-                compressedSize: compressedData.length,
-                ratio: this.#stats.compressionRatio
-            });
-            
-            return compressedData;
-        } catch (error) {
-            this.handleError(error, ErrorType.COMPRESSION, ErrorSeverity.WARNING, {
-                method: '#compress'
-            });
-            throw error;
-        }
-    };
-
-    /**
-     * Decompress data
-     * @private
-     */
-    #decompress = async (compressedData) => {
-        try {
-            this.log(LogLevel.DEBUG, 'Decompressing data');
-            const blob = await fetch(compressedData).then(r => r.blob());
-            const decompressed = await new Response(
-                blob.stream().pipeThrough(new DecompressionStream('gzip'))
-            ).blob();
-            const text = await decompressed.text();
-            
-            this.log(LogLevel.SUCCESS, 'Data decompressed', {
-                compressedSize: compressedData.length,
-                decompressedSize: text.length
-            });
-            
-            return JSON.parse(text);
-        } catch (error) {
-            this.handleError(error, ErrorType.COMPRESSION, ErrorSeverity.WARNING, {
-                method: '#decompress'
-            });
-            throw error;
-        }
-    };
-
-    /**
-     * Get size of data in bytes
-     * @private
-     */
-    #getSize = (data) => {
-        return new TextEncoder().encode(JSON.stringify(data)).length;
-    };
-
-    /**
-     * Ensure space for new cache entry
-     * @private
-     */
-    #ensureSpace = async (priority, newSize) => {
-        const currentSize = this._getCurrentSize(priority);
-        
-        if (currentSize + newSize <= this.#maxSize[priority]) {
-            return;
-        }
-
-        this.log(LogLevel.INFO, 'Cache cleanup needed', {
-            priority,
-            currentSize,
-            newSize,
-            maxSize: this.#maxSize[priority]
-        });
-
-        // Remove old entries starting with lowest priority
-        for (const currentPriority of Object.values(CachePriority)) {
-            if (currentPriority < priority) continue;
-            
-            const entries = [...this.#cache.entries(), ...this.#compressedCache.entries()]
-                .filter(([_, entry]) => entry.priority === currentPriority)
-                .sort((a, b) => a[1].timestamp - b[1].timestamp);
-
-            for (const [key, entry] of entries) {
-                this.log(LogLevel.DEBUG, 'Removing cache entry', {
-                    key,
-                    size: entry.size,
-                    age: Date.now() - entry.timestamp
-                });
-                
-                this.#cache.delete(key);
-                this.#compressedCache.delete(key);
-                
-                if (this._getCurrentSize(priority) + newSize <= this.#maxSize[priority]) {
-                    this.log(LogLevel.SUCCESS, 'Cache cleanup completed', {
-                        removedEntries: entries.length,
-                        newSize: this._getCurrentSize(priority)
-                    });
-                    return;
-                }
+            // Check cache size
+            if (this.#cache.size >= CACHE_CONFIG.MAX_SIZE) {
+                await this.#evictOldest();
             }
-        }
-    };
 
-    /**
-     * Get current cache size
-     * @private
-     */
-    #getCurrentSize = (priority) => {
-        return [...this.#cache.values(), ...this.#compressedCache.values()]
-            .filter(entry => entry.priority === priority)
-            .reduce((total, entry) => total + entry.size, 0);
-    };
+            // Compress if needed
+            const compressed = await this.#compress(value);
 
-    /**
-     * Update compression stats
-     * @private
-     */
-    #updateCompressionStats = (originalSize, compressedSize) => {
-        const ratio = (originalSize - compressedSize) / originalSize;
-        this.#stats.compressionRatio = (this.#stats.compressionRatio + ratio) / 2;
-    };
+            // Store in memory
+            this.#cache.set(key, {
+                value: compressed,
+                timestamp: Date.now(),
+                ttl: options.ttl || CACHE_CONFIG.DEFAULT_TTL
+            });
 
-    getStats() {
-        return {
-            ...this.#stats,
-            cacheSize: {
-                regular: this._getCurrentSize(CachePriority.MEDIUM),
-                compressed: [...this.#compressedCache.values()].reduce((total, entry) => total + entry.size, 0)
-            },
-            hitRatio: this.#stats.hits / (this.#stats.hits + this.#stats.misses)
-        };
-    }
+            this.#stats.size++;
 
-    async remove(key, context = '') {
-        const cacheKey = this.getCacheKey(key, context);
-        return this.#cache.delete(cacheKey) || this.#compressedCache.delete(cacheKey);
-    }
-
-    /**
-     * Clear cache
-     * @param {string} [key] Specific key to clear, or all if not provided
-     */
-    async clear(key) {
-        try {
-            if (key) {
-                this.#cache.delete(key);
-            } else {
-                this.#cache.clear();
-            }
-            
-            await this.#persistCache();
-            this.log(LogLevel.INFO, `🧹 Cleared cache${key ? ` for key: ${key}` : ''}`);
+            // Persist to storage
+            await this.#persistToStorage();
         } catch (error) {
-            this.handleError(error, ErrorType.RUNTIME, ErrorSeverity.LOW, {
-                method: 'clear',
+            this.handleError(error, ErrorType.CACHE_WRITE, ErrorSeverity.LOW, {
+                method: 'set',
                 key
             });
         }
     }
 
-    async has(key, context = '') {
-        const cacheKey = this.getCacheKey(key, context);
-        return this.#cache.has(cacheKey) || this.#compressedCache.has(cacheKey);
+    /**
+     * Delete cached value
+     * @param {string} key Cache key
+     * @returns {Promise<void>}
+     */
+    async delete(key) {
+        try {
+            if (this.#cache.delete(key)) {
+                this.#stats.size--;
+                await this.#persistToStorage();
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.CACHE_DELETE, ErrorSeverity.LOW, {
+                method: 'delete',
+                key
+            });
+        }
     }
 
     /**
-     * Check if cache entry is valid
+     * Clear entire cache
+     * @returns {Promise<void>}
+     */
+    async clear() {
+        try {
+            this.#cache.clear();
+            this.#stats.size = 0;
+            this.#stats.evictions += this.#cache.size;
+            await this.#persistToStorage();
+        } catch (error) {
+            this.handleError(error, ErrorType.CACHE_CLEAR, ErrorSeverity.MEDIUM, {
+                method: 'clear'
+            });
+        }
+    }
+
+    /**
+     * Get cache stats
+     * @returns {Object} Cache statistics
+     */
+    getStats() {
+        return { ...this.#stats };
+    }
+
+    /**
+     * Start cleanup interval
      * @private
      */
-    #isValid(entry) {
-        return entry && 
-               entry.timestamp && 
-               entry.ttl && 
-               (Date.now() - entry.timestamp) < entry.ttl;
+    #startCleanup() {
+        if (this.#cleanupInterval) {
+            clearInterval(this.#cleanupInterval);
+        }
+
+        this.#cleanupInterval = setInterval(
+            () => this.#cleanup(),
+            CACHE_CONFIG.CLEANUP_INTERVAL
+        );
+    }
+
+    /**
+     * Clean up expired entries
+     * @private
+     */
+    async #cleanup() {
+        try {
+            const now = Date.now();
+            let evicted = 0;
+
+            for (const [key, entry] of this.#cache.entries()) {
+                if (now - entry.timestamp > entry.ttl) {
+                    this.#cache.delete(key);
+                    evicted++;
+                }
+            }
+
+            if (evicted > 0) {
+                this.#stats.evictions += evicted;
+                this.#stats.size -= evicted;
+                await this.#persistToStorage();
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.CACHE_CLEANUP, ErrorSeverity.LOW, {
+                method: '#cleanup'
+            });
+        }
+    }
+
+    /**
+     * Evict oldest entries
+     * @private
+     */
+    async #evictOldest() {
+        try {
+            const entries = Array.from(this.#cache.entries())
+                .sort(([, a], [, b]) => a.timestamp - b.timestamp);
+
+            // Remove 10% of oldest entries
+            const toRemove = Math.ceil(entries.length * 0.1);
+            for (let i = 0; i < toRemove; i++) {
+                const [key] = entries[i];
+                this.#cache.delete(key);
+                this.#stats.evictions++;
+                this.#stats.size--;
+            }
+
+            await this.#persistToStorage();
+        } catch (error) {
+            this.handleError(error, ErrorType.CACHE_EVICTION, ErrorSeverity.LOW, {
+                method: '#evictOldest'
+            });
+        }
+    }
+
+    /**
+     * Load persisted cache from storage
+     * @private
+     */
+    async #loadPersistedCache() {
+        try {
+            const data = await this.#store.get('cache');
+            if (!data) return;
+
+            for (const [key, entry] of Object.entries(data)) {
+                if (Date.now() - entry.timestamp <= entry.ttl) {
+                    this.#cache.set(key, entry);
+                    this.#stats.size++;
+                }
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.CACHE_LOAD, ErrorSeverity.MEDIUM, {
+                method: '#loadPersistedCache'
+            });
+        }
     }
 
     /**
      * Persist cache to storage
      * @private
      */
-    #persistCache = async () => {
+    async #persistToStorage() {
         try {
-            await chrome.storage.local.set({
-                cache_data: Object.fromEntries(this.#cache)
-            });
+            const data = Object.fromEntries(this.#cache.entries());
+            await this.#store.set('cache', data);
         } catch (error) {
-            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
-                method: '#persistCache'
-            });
-        }
-    };
-
-    /**
-     * Dispose cache manager
-     */
-    async dispose() {
-        try {
-            this.log(LogLevel.INFO, '🔄 Disposing cache manager...');
-            
-            this.log(LogLevel.DEBUG, 'Clearing caches');
-            this.#cache.clear();
-            this.#compressedCache.clear();
-            
-            this.log(LogLevel.DEBUG, 'Resetting stats');
-            this.#stats = {
-                hits: 0,
-                misses: 0,
-                compressionRatio: 0,
-                size: 0,
-                endpointSizes: new Map()
-            };
-            
-            await this.#persistCache();
-            await chrome.storage.local.remove('cache_data');
-            
-            this.log(LogLevel.SUCCESS, '✅ Disposed successfully');
-            await super.dispose();
-        } catch (error) {
-            this.handleError(error, ErrorType.DISPOSE, ErrorSeverity.MEDIUM, {
-                method: 'dispose'
+            this.handleError(error, ErrorType.CACHE_PERSIST, ErrorSeverity.MEDIUM, {
+                method: '#persistToStorage'
             });
         }
     }
 
     /**
-     * Clean up endpoint cache to make space
+     * Compress value if needed
      * @private
-     * @param {string} endpoint Endpoint path
-     * @param {number} requiredSize Required size in bytes
+     * @param {any} value Value to compress
+     * @returns {Promise<any>} Compressed value
      */
-    #cleanupEndpoint = async (endpoint, requiredSize) => {
-        const entries = [...this.#cache.entries(), ...this.#compressedCache.entries()]
-            .filter(([_, entry]) => entry.endpoint === endpoint)
-            .sort((a, b) => a[1].timestamp - b[1].timestamp);
-
-        let freedSpace = 0;
-        for (const [key, entry] of entries) {
-            if (freedSpace >= requiredSize) break;
-
-            this.#cache.delete(key);
-            this.#compressedCache.delete(key);
-            freedSpace += entry.size;
-            
-            this.#endpointSizes.set(endpoint, (this.#endpointSizes.get(endpoint) || 0) - entry.size);
-            this.#stats.endpointSizes.set(endpoint, this.#endpointSizes.get(endpoint));
-        }
-    };
-
-    /**
-     * Get endpoint from cache key
-     * @private
-     */
-    #getEndpointFromKey = (key) => {
-        const match = key.match(/^api:(\/.+?)(?:[/?]|$)/);
-        return match ? match[1] : 'default';
-    };
-
-    /**
-     * Clears all cached data
-     */
-    clearAll() {
+    async #compress(value) {
         try {
-            this.#cache.clear();
-            this.#compressedCache.clear();
-            this.#endpointSizes.clear();
-            this.#stats.size = 0;
-            this.#stats.endpointSizes.clear();
-            this.log('Cache cleared successfully', LogLevel.INFO);
-            return true;
+            const json = JSON.stringify(value);
+            if (json.length < CACHE_CONFIG.COMPRESSION_THRESHOLD) {
+                return value;
+            }
+
+            const blob = new Blob([json]);
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
         } catch (error) {
-            this.handleError(error, ErrorType.CACHE_CLEAR_ERROR, ErrorSeverity.MEDIUM);
-            return false;
+            this.handleError(error, ErrorType.CACHE_COMPRESSION, ErrorSeverity.LOW, {
+                method: '#compress'
+            });
+            return value;
         }
     }
 
     /**
-     * Clean up cache data
+     * Decompress value if needed
      * @private
+     * @param {any} value Value to decompress
+     * @returns {Promise<any>} Decompressed value
      */
-    cleanup() {
+    async #decompress(value) {
         try {
-            // Clear all cached data
-            this.#cache.clear();
-            this.#compressedCache.clear();
-            this.#endpointSizes.clear();
-            this.#stats.size = 0;
-            this.#stats.endpointSizes.clear();
-            this.log(LogLevel.INFO, '🧹 Cache cleanup completed');
+            if (typeof value !== 'string' || !value.startsWith('data:')) {
+                return value;
+            }
+
+            const response = await fetch(value);
+            const blob = await response.blob();
+            const text = await blob.text();
+            return JSON.parse(text);
         } catch (error) {
-            this.handleError(error, ErrorType.CLEANUP, ErrorSeverity.LOW, {
-                method: 'cleanup'
+            this.handleError(error, ErrorType.CACHE_DECOMPRESSION, ErrorSeverity.LOW, {
+                method: '#decompress'
             });
+            return value;
         }
+    }
+
+    /**
+     * Clean up resources
+     * @protected
+     */
+    async _dispose() {
+        if (this.#cleanupInterval) {
+            clearInterval(this.#cleanupInterval);
+            this.#cleanupInterval = null;
+        }
+        await this.#persistToStorage();
+        this.#cache.clear();
+        this.#stats = {
+            hits: 0,
+            misses: 0,
+            evictions: 0,
+            size: 0
+        };
+        await super._dispose();
+    }
+
+    /**
+     * Get cache manager metrics
+     * @returns {Object} Metrics object
+     */
+    getMetrics() {
+        return {
+            ...super.getMetrics(),
+            cache: {
+                ...this.#stats,
+                hitRate: this.#stats.hits / (this.#stats.hits + this.#stats.misses) || 0,
+                evictionRate: this.#stats.evictions / this.#stats.size || 0
+            }
+        };
     }
 }
 
-// Export both class and instance
+// Export class only
 export { CacheManager };
 export const cacheManager = CacheManager.getInstance(); 

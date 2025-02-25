@@ -74,20 +74,48 @@
                         </button>
                     </div>
 
-                    <div class="lead-status" data-status="1" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.submitted">
-                        📤 <span class="lead-count" id="count-1">-</span>
-                    </div>
-                    <div class="lead-status" data-status="2" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.confirmed">
-                        ✅ <span class="lead-count" id="count-2">-</span>
-                    </div>
-                    <div class="lead-status" data-status="3" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.accepted">
-                        📦 <span class="lead-count" id="count-3">-</span>
-                    </div>
-                    <div class="lead-status" data-status="ready" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.ready">
-                        📤 <span class="lead-count" id="count-ready">-</span>
-                    </div>
-                    <div class="lead-status" data-status="overdue" data-bs-toggle="tooltip" data-i18n-tooltip="leadStatuses.overdue">
-                        ⏳ <span class="lead-count" id="count-overdue">-</span>
+                    <div class="lead-counters">
+                        <div class="lead-status" data-status="untouched" data-tooltip="Zamówienia, które nie zostały jeszcze obsłużone">
+                            🔔 <span class="lead-count" id="count-untouched">
+                                <span class="count-value">-</span>
+                                <span class="count-loader"></span>
+                                <span class="count-error"></span>
+                            </span>
+                        </div>
+                        <div class="lead-status" data-status="called" data-tooltip="Zamówienia po kontakcie telefonicznym">
+                            📞 <span class="lead-count" id="count-called">
+                                <span class="count-value">-</span>
+                                <span class="count-loader"></span>
+                                <span class="count-error"></span>
+                            </span>
+                        </div>
+                        <div class="lead-status" data-status="ready" data-tooltip="Zamówienia gotowe do odbioru">
+                            📦 <span class="lead-count" id="count-ready">
+                                <span class="count-value">-</span>
+                                <span class="count-loader"></span>
+                                <span class="count-error"></span>
+                            </span>
+                        </div>
+                        <div class="lead-status" data-status="overdue" data-tooltip="Zamówienia oczekujące 3-7 dni">
+                            🆘 <span class="lead-count" id="count-overdue">
+                                <span class="count-value">-</span>
+                                <span class="count-loader"></span>
+                                <span class="count-error"></span>
+                            </span>
+                        </div>
+                        <div class="lead-status" data-status="critical" data-tooltip="Zamówienia oczekujące ponad 7 dni">
+                            💩 <span class="lead-count" id="count-critical">
+                                <span class="count-value">-</span>
+                                <span class="count-loader"></span>
+                                <span class="count-error"></span>
+                            </span>
+                        </div>
+                        <div class="last-update">
+                            <span>Ostatnie:</span>
+                            <time id="last-update-time">-</time>
+                            <span class="next-refresh">Następne: <span id="next-refresh-time">-</span></span>
+                            <button id="refresh-counters" class="btn-icon" title="Odśwież teraz">🔄</button>
+                        </div>
                     </div>
                     
                     <div class="operation-progress-container hidden">
@@ -246,6 +274,14 @@
 
                             <!-- Radio Groups -->
                             <div class="radio-groups">
+                                <!-- Sound URL -->
+                                <div id="sound-url-container" class="sound-url-settings">
+                                    <i class="bi bi-music-note"></i>
+                                    <input type="url" class="form-control" id="sound-url" placeholder="URL dźwięku">
+                                    <button class="btn-minimal" type="button" id="test-sound">
+                                        <i class="bi bi-play-fill"></i>
+                                    </button>
+                                </div>
                                 <!-- Check Frequency -->
                                 <div class="radio-group">
                                     <div class="radio-group-label" data-bs-toggle="tooltip" title="Częstotliwość sprawdzania nowych zamówień">Sprawdzanie</div>
@@ -377,15 +413,6 @@
                                         </form>
                                     </div>
                                 </div>
-                            </div>
-
-                            <!-- Sound URL -->
-                            <div id="sound-url-container" class="sound-url-settings">
-                                <i class="bi bi-music-note"></i>
-                                <input type="url" class="form-control" id="sound-url" placeholder="URL dźwięku">
-                                <button class="btn-minimal" type="button" id="test-sound">
-                                    <i class="bi bi-play-fill"></i>
-                                </button>
                             </div>
                         </div>
                     </div>

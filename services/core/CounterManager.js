@@ -1,15 +1,24 @@
 import { BaseManager } from './BaseManager.js';
-import { ErrorType, ErrorSeverity } from './ErrorTypes.js';
-import { LogLevel } from './LogLevel.js';
+import { ErrorType, ErrorSeverity, LogLevel } from '../constants.js';
+
+const COUNTER_CONFIG = {
+    ANIMATION_DURATION: 300, // ms
+    UPDATE_DEBOUNCE: 100, // ms
+    CACHE_TTL: 5 * 60 * 1000 // 5 minutes
+};
 
 /**
- * Manager responsible for handling order counter UI updates
+ * Manager for handling counters and their animations
+ * @extends BaseManager
  */
 class CounterManager extends BaseManager {
     /** @private */
     static #instance = null;
     static _registry = null;
-    #boundHandler = null;
+
+    #counters = {};
+    #updateTimeout = null;
+    #pendingUpdates = new Map();
 
     constructor(registry) {
         if (CounterManager.#instance) {
@@ -18,11 +27,9 @@ class CounterManager extends BaseManager {
         super(registry, 'CounterManager');
         CounterManager.#instance = this;
         CounterManager._registry = registry;
-
-        // Only need event dependency for listening to updates
+        
         this.addDependency('event');
-        // Bind handler once
-        this.#boundHandler = this.handleDataUpdate.bind(this);
+        this.addDependency('store');
     }
 
     static getInstance() {
@@ -36,142 +43,316 @@ class CounterManager extends BaseManager {
         CounterManager._registry = registry;
     }
 
+    /**
+     * Initialize counter manager
+     * @protected
+     * @returns {Promise<boolean>}
+     */
     async _initialize() {
         try {
             this.log(LogLevel.INFO, '🔄 Initializing counter manager...');
             
-            // Setup single event listener for counter updates
+            // Get dependencies
             const eventManager = await this.getDependency('event');
-            console.log('💩 [COUNTER] Got event manager, adding listener');
+            const storeManager = await this.getDependency('store');
             
-            const result = await eventManager.on('counters:updated', this.#boundHandler);
-            console.log('💩 [COUNTER] Added listener:', { 
-                success: result,
-                handler: this.#boundHandler.name || 'anonymous'
-            });
-            
-            this.log(LogLevel.SUCCESS, '✅ Counter manager initialized');
+            if (!eventManager?.isReady()) {
+                throw new Error('EventManager must be ready');
+            }
+
+            // Load cached counters
+            await this.#loadFromCache();
+
+            // Setup event listeners
+            await eventManager.on('counter:register', this.registerCounter.bind(this));
+            await eventManager.on('counter:unregister', this.unregisterCounter.bind(this));
+            await eventManager.on('counter:update', this.updateCounter.bind(this));
+
+            this.log(LogLevel.SUCCESS, '✨ Counter manager initialized');
             return true;
         } catch (error) {
-            console.log('💩 [COUNTER] Initialization error:', error);
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH, {
+                method: '_initialize'
+            });
             return false;
         }
     }
 
     /**
-     * Handle counter data updates and reflect in UI
-     * @param {Object} counts Counter values
+     * Register new counter
+     * @param {HTMLElement} element Counter element
+     * @param {number} [initialValue=0] Initial counter value
+     * @returns {Promise<void>}
      */
-    async handleDataUpdate(counts) {
+    async registerCounter(element, initialValue = 0) {
         try {
-            console.log('💩 [COUNTER] Received counts update:', counts);
-
-            if (!counts || typeof counts !== 'object') {
-                console.log('💩 [COUNTER] Invalid counts received');
-                throw new Error('Invalid counter data received');
+            const id = element.id;
+            if (!id) {
+                throw new Error('Counter element must have an ID');
             }
 
-            // Map API statuses to HTML data-status attributes
-            const statusMap = {
-                '1': '1',
-                '2': '2', 
-                '3': '3',
-                'ready': 'ready',
-                'overdue': 'overdue'
+            // Store counter data
+            this.#counters[id] = {
+                element,
+                value: initialValue,
+                lastUpdate: Date.now()
             };
 
-            // Update each counter in the UI
-            Object.entries(counts).forEach(([status, count]) => {
-                const mappedStatus = statusMap[status];
-                if (!mappedStatus) {
-                    console.log('💩 [COUNTER] Unknown status:', status);
-                    return;
-                }
+            // Set initial value
+            element.textContent = initialValue;
+            element.classList.toggle('count-zero', initialValue === 0);
 
-                console.log('💩 [COUNTER] Updating counter:', { 
-                    originalStatus: status,
-                    mappedStatus,
-                    count 
-                });
-                
-                // Find element by data-status and lead-count
-                const container = document.querySelector(`[data-status="${mappedStatus}"]`);
-                if (!container) {
-                    console.log('💩 [COUNTER] Container not found:', mappedStatus);
-                    return;
-                }
-
-                // Find the counter element within container
-                const element = container.querySelector('.lead-count');
-                if (!element) {
-                    console.log('💩 [COUNTER] Counter element not found in container:', mappedStatus);
-                    return;
-                }
-
-                console.log('💩 [COUNTER] Found elements for status:', {
-                    status: mappedStatus,
-                    container: container.outerHTML,
-                    element: element.outerHTML
-                });
-
-                // Update text and classes
-                element.textContent = count;
-                element.classList.toggle('count-zero', count === 0);
-                element.classList.add('count-updated');
-                setTimeout(() => element.classList.remove('count-updated'), 1000);
-
-                // Update ID-based counter if exists
-                const idCounter = document.getElementById(`count-${mappedStatus.toLowerCase()}`);
-                if (idCounter) {
-                    console.log('💩 [COUNTER] Updating ID-based counter:', {
-                        status: mappedStatus,
-                        element: idCounter.outerHTML
-                    });
-                    idCounter.textContent = count;
-                    idCounter.classList.toggle('count-zero', count === 0);
-                }
+            // Emit event
+            const eventManager = await this.getDependency('event');
+            await eventManager.emit('counter:registered', {
+                id,
+                value: initialValue,
+                timestamp: Date.now()
             });
 
-            // Update total count if element exists
-            const totalElement = document.querySelector('#total-count');
-            if (totalElement) {
-                const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
-                console.log('💩 [COUNTER] Updating total count:', {
-                    total,
-                    element: totalElement.outerHTML
-                });
-                totalElement.textContent = total;
-                totalElement.classList.add('count-updated');
-                setTimeout(() => totalElement.classList.remove('count-updated'), 1000);
-            }
-
-            console.log('💩 [COUNTER] All counters updated successfully');
+            this.log(LogLevel.DEBUG, '📊 Counter registered', { id, value: initialValue });
         } catch (error) {
-            console.log('💩 [COUNTER] Error updating counters:', error);
-            this.handleError(error, ErrorType.UI_UPDATE, ErrorSeverity.MEDIUM);
-            
-            // Show error state in UI
-            document.querySelectorAll('.lead-count').forEach(counter => {
-                counter.textContent = '-';
-                counter.classList.add('count-error');
+            this.handleError(error, ErrorType.REGISTRATION, ErrorSeverity.MEDIUM, {
+                method: 'registerCounter',
+                element
             });
         }
     }
 
-    async dispose() {
+    /**
+     * Unregister counter
+     * @param {string} id Counter ID
+     * @returns {Promise<void>}
+     */
+    async unregisterCounter(id) {
         try {
+            if (!this.#counters[id]) {
+                throw new Error(`Counter ${id} not found`);
+            }
+
+            // Remove from pending updates
+            this.#pendingUpdates.delete(id);
+
+            // Remove counter data
+            delete this.#counters[id];
+
+            // Emit event
             const eventManager = await this.getDependency('event');
-            console.log('💩 [COUNTER] Removing listener');
-            await eventManager.off('counters:updated', this.#boundHandler);
-            console.log('💩 [COUNTER] Listener removed');
-            await super.dispose();
+            await eventManager.emit('counter:unregistered', {
+                id,
+                timestamp: Date.now()
+            });
+
+            this.log(LogLevel.DEBUG, '🗑️ Counter unregistered', { id });
         } catch (error) {
-            console.log('💩 [COUNTER] Error during dispose:', error);
-            throw error;
+            this.handleError(error, ErrorType.REGISTRATION, ErrorSeverity.LOW, {
+                method: 'unregisterCounter',
+                id
+            });
         }
+    }
+
+    /**
+     * Update counter value
+     * @param {string} id Counter ID
+     * @param {number} value New value
+     * @param {boolean} [animate=true] Whether to animate the change
+     * @returns {Promise<void>}
+     */
+    async updateCounter(id, value, animate = true) {
+        try {
+            const counter = this.#counters[id];
+            if (!counter) {
+                throw new Error(`Counter ${id} not found`);
+            }
+
+            // Store update in pending queue
+            this.#pendingUpdates.set(id, {
+                value,
+                animate,
+                timestamp: Date.now()
+            });
+
+            // Debounce updates
+            if (this.#updateTimeout) {
+                clearTimeout(this.#updateTimeout);
+            }
+
+            this.#updateTimeout = setTimeout(
+                () => this.#processPendingUpdates(),
+                COUNTER_CONFIG.UPDATE_DEBOUNCE
+            );
+        } catch (error) {
+            this.handleError(error, ErrorType.UPDATE, ErrorSeverity.LOW, {
+                method: 'updateCounter',
+                id,
+                value
+            });
+        }
+    }
+
+    /**
+     * Get counter value
+     * @param {string} id Counter ID
+     * @returns {Promise<number>}
+     */
+    async getCounterValue(id) {
+        try {
+            const counter = this.#counters[id];
+            if (!counter) {
+                throw new Error(`Counter ${id} not found`);
+            }
+            return counter.value;
+        } catch (error) {
+            this.handleError(error, ErrorType.READ, ErrorSeverity.LOW, {
+                method: 'getCounterValue',
+                id
+            });
+            return 0;
+        }
+    }
+
+    /**
+     * Process pending counter updates
+     * @private
+     */
+    async #processPendingUpdates() {
+        try {
+            const updates = Array.from(this.#pendingUpdates.entries());
+            this.#pendingUpdates.clear();
+
+            for (const [id, update] of updates) {
+                const counter = this.#counters[id];
+                if (!counter) continue;
+
+                const { value, animate } = update;
+                const previousValue = counter.value;
+
+                // Skip if no change
+                if (value === previousValue) continue;
+
+                // Update element
+                counter.element.textContent = value;
+                counter.element.classList.toggle('count-zero', value === 0);
+
+                // Add animation classes if needed
+                if (animate) {
+                    if (value > previousValue) {
+                        counter.element.classList.add('count-increased');
+                    } else {
+                        counter.element.classList.add('count-decreased');
+                    }
+
+                    // Remove animation classes after animation
+                    setTimeout(() => {
+                        counter.element.classList.remove('count-increased', 'count-decreased');
+                    }, COUNTER_CONFIG.ANIMATION_DURATION);
+                }
+
+                // Update counter data
+                counter.value = value;
+                counter.lastUpdate = Date.now();
+
+                // Save to cache
+                await this.#saveToCache(id, value);
+
+                // Emit event
+                const eventManager = await this.getDependency('event');
+                await eventManager.emit('counter:updated', {
+                    id,
+                    value,
+                    previousValue,
+                    timestamp: counter.lastUpdate
+                });
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.UPDATE, ErrorSeverity.MEDIUM, {
+                method: '#processPendingUpdates'
+            });
+        }
+    }
+
+    /**
+     * Load counters from cache
+     * @private
+     */
+    async #loadFromCache() {
+        try {
+            const store = await this.getDependency('store');
+            const cached = await store.get('counters');
+
+            if (cached) {
+                for (const [id, data] of Object.entries(cached)) {
+                    const element = document.getElementById(id);
+                    if (element && Date.now() - data.timestamp < COUNTER_CONFIG.CACHE_TTL) {
+                        await this.registerCounter(element, data.value);
+                    }
+                }
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.CACHE, ErrorSeverity.LOW, {
+                method: '#loadFromCache'
+            });
+        }
+    }
+
+    /**
+     * Save counter to cache
+     * @private
+     */
+    async #saveToCache(id, value) {
+        try {
+            const store = await this.getDependency('store');
+            const cached = await store.get('counters') || {};
+
+            cached[id] = {
+                value,
+                timestamp: Date.now()
+            };
+
+            await store.set('counters', cached);
+        } catch (error) {
+            this.handleError(error, ErrorType.CACHE, ErrorSeverity.LOW, {
+                method: '#saveToCache',
+                id,
+                value
+            });
+        }
+    }
+
+    /**
+     * Clean up resources
+     * @protected
+     */
+    async _dispose() {
+        if (this.#updateTimeout) {
+            clearTimeout(this.#updateTimeout);
+            this.#updateTimeout = null;
+        }
+        this.#pendingUpdates.clear();
+        this.#counters = {};
+        await super._dispose();
+    }
+
+    /**
+     * Get counter manager metrics
+     * @returns {Object} Metrics object
+     */
+    getMetrics() {
+        return {
+            ...super.getMetrics(),
+            counters: {
+                total: Object.keys(this.#counters).length,
+                pending: this.#pendingUpdates.size,
+                lastUpdate: Math.max(
+                    ...Object.values(this.#counters)
+                        .map(c => c.lastUpdate)
+                        .filter(Boolean)
+                )
+            }
+        };
     }
 }
 
+// Export class only
 export { CounterManager };
-export const counterManager = CounterManager.getInstance();
