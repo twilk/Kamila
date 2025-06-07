@@ -39,7 +39,7 @@ class DataManager extends BaseManager {
         if (DataManager.#instance) {
             return DataManager.#instance;
         }
-        super(registry, 'DataManager');
+        super(registry, 'data');
         DataManager.#instance = this;
         DataManager._registry = registry;
         
@@ -143,6 +143,118 @@ class DataManager extends BaseManager {
             throw error;
         } finally {
             this.#isRefreshing = false;
+        }
+    }
+
+    /**
+     * Update DRWN data
+     * @returns {Promise<void>}
+     */
+    async updateDrwnData() {
+        try {
+            this.log(LogLevel.INFO, '🔄 Updating DRWN data...');
+            
+            // Get active store
+            const storeManager = await this.getDependency('store');
+            const activeStore = await storeManager.getActiveStore();
+            
+            // Get order service
+            const orderService = await this.getDependency('order');
+            const result = await orderService.getOrderStatuses(
+                activeStore?.id || 'ALL',
+                { forceRefresh: true }
+            );
+
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to get order statuses');
+            }
+
+            // Update DRWN table
+            const drwnBody = document.getElementById('drwn-body');
+            if (drwnBody) {
+                drwnBody.innerHTML = ''; // Clear existing content
+                
+                // Add rows for each status
+                Object.entries(result.counts).forEach(([status, count]) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${status}</td>
+                        <td>${count}</td>
+                    `;
+                    drwnBody.appendChild(tr);
+                });
+            }
+
+            // Emit data updated event
+            const eventManager = await this.getDependency('event');
+            await eventManager.emit('drwn:updated', {
+                data: result.counts,
+                timestamp: new Date().toISOString()
+            });
+
+            this.log(LogLevel.SUCCESS, '✅ DRWN data updated');
+        } catch (error) {
+            this.handleError(error, ErrorType.DATA_REFRESH, ErrorSeverity.HIGH);
+            throw error;
+        }
+    }
+
+    /**
+     * Update ranking data
+     * @returns {Promise<void>}
+     */
+    async updateRankingData() {
+        try {
+            this.log(LogLevel.INFO, '🔄 Updating ranking data...');
+            
+            // Get active store
+            const storeManager = await this.getDependency('store');
+            const activeStore = await storeManager.getActiveStore();
+            
+            // Get order service
+            const orderService = await this.getDependency('order');
+            const result = await orderService.getOrderStatuses(
+                activeStore?.id || 'ALL',
+                { forceRefresh: true }
+            );
+
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to get order statuses');
+            }
+
+            // Update ranking table
+            const rankingBody = document.querySelector('#ranking-data tbody');
+            if (rankingBody) {
+                rankingBody.innerHTML = ''; // Clear existing content
+                
+                // Sort stores by total count
+                const storeRankings = Object.entries(result.counts)
+                    .map(([store, count]) => ({ store, count }))
+                    .sort((a, b) => b.count - a.count);
+
+                // Add rows for each store
+                storeRankings.forEach((ranking, index) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${index + 1}</td>
+                        <td>${ranking.store}</td>
+                        <td>${ranking.count}</td>
+                    `;
+                    rankingBody.appendChild(tr);
+                });
+            }
+
+            // Emit data updated event
+            const eventManager = await this.getDependency('event');
+            await eventManager.emit('ranking:updated', {
+                data: result.counts,
+                timestamp: new Date().toISOString()
+            });
+
+            this.log(LogLevel.SUCCESS, '✅ Ranking data updated');
+        } catch (error) {
+            this.handleError(error, ErrorType.DATA_REFRESH, ErrorSeverity.HIGH);
+            throw error;
         }
     }
 

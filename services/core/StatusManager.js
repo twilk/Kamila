@@ -134,16 +134,20 @@ class StatusManager extends BaseManager {
         try {
             this.log(LogLevel.INFO, '🔄 Initializing status manager...');
             
-            // Add dependencies
-            this.addDependency('ui');
-            this.addDependency('event');
-            
-            // Get dependencies
-            const eventManager = await this.getDependency('event');
-            
-            if (!eventManager?.isReady()) {
-                throw new Error('EventManager must be ready');
+            // Get required dependencies
+            const [storage, error, eventManager] = await Promise.all([
+                this.getDependency('storage'),
+                this.getDependency('error'),
+                this.getDependency('event')
+            ]);
+
+            // Validate required dependencies
+            if (!storage?.isInitialized()) {
+                throw new Error('Storage manager must be initialized');
             }
+
+            // Restore state from storage
+            await this.#restoreState();
 
             // Setup event listeners first
             await eventManager.on('ui:ready', () => this.#processPendingUIUpdates());
@@ -177,6 +181,143 @@ class StatusManager extends BaseManager {
                 method: '_initialize'
             });
             return false;
+        }
+    }
+
+    /**
+     * Restore state from storage
+     * @private
+     */
+    async #restoreState() {
+        try {
+            this.log(LogLevel.INFO, '🔄 Starting state restoration...');
+            
+            const storage = await this.getDependency('storage');
+            const cacheManager = await this.getDependency('cache');
+            
+            // Restore status state
+            const savedState = await storage.get('status_state');
+            this.log(LogLevel.DEBUG, '📥 Retrieved saved state:', { savedState });
+            
+            if (savedState) {
+                const oldState = { ...this.#status };
+                this.#status = {
+                    ...this.#status,
+                    ...savedState,
+                    online: navigator.onLine, // Always use current online status
+                    initialized: false // Will be set to true after full initialization
+                };
+                
+                this.log(LogLevel.INFO, '📥 Restored status state:', { 
+                    before: oldState,
+                    after: this.#status,
+                    changes: Object.keys(savedState)
+                });
+            } else {
+                this.log(LogLevel.WARNING, '⚠️ No saved state found, using defaults');
+            }
+
+            // Restore order counts
+            const savedCounts = await storage.get('last_order_counts');
+            this.log(LogLevel.DEBUG, '📥 Retrieved saved counts:', { savedCounts });
+            
+            if (savedCounts?.counts) {
+                const oldCounts = { ...this.#status.orderCounts };
+                this.#status.orderCounts = savedCounts.counts;
+                this.#status.lastUpdate = savedCounts.timestamp;
+                
+                this.log(LogLevel.INFO, '📥 Restored order counts:', {
+                    before: oldCounts,
+                    after: this.#status.orderCounts,
+                    lastUpdate: new Date(this.#status.lastUpdate).toISOString()
+                });
+
+                // Validate restored counts
+                const isValid = this.#validateCounts(savedCounts.counts);
+                if (!isValid) {
+                    this.log(LogLevel.WARNING, '⚠️ Restored counts validation failed, resetting to defaults');
+                    this.#resetCounts();
+                }
+            } else {
+                this.log(LogLevel.WARNING, '⚠️ No saved counts found, using defaults');
+            }
+
+            // Cache the restored counts if valid
+            if (this.#status.orderCounts && this.#validateCounts(this.#status.orderCounts)) {
+                await cacheManager.set('order_counts', this.#status.orderCounts, { ttl: 5 * 60 * 1000 });
+                this.log(LogLevel.INFO, '💾 Cached restored counts');
+            }
+
+            // Emit state restored event
+            const eventManager = await this.getDependency('event');
+            await eventManager.emit('status:state-restored', {
+                status: this.#status,
+                timestamp: Date.now()
+            });
+
+            this.log(LogLevel.SUCCESS, '✅ State restoration complete');
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
+                method: '#restoreState'
+            });
+            this.log(LogLevel.ERROR, '❌ State restoration failed:', { error: error.message });
+            return false;
+        }
+    }
+
+    /**
+     * Validate order counts
+     * @private
+     * @param {Object} counts Order counts to validate
+     * @returns {boolean} True if counts are valid
+     */
+    #validateCounts(counts) {
+        if (!counts) return false;
+
+        const requiredKeys = ['untouched', 'called', 'ready', 'overdue', 'critical'];
+        const hasAllKeys = requiredKeys.every(key => typeof counts[key] === 'number');
+        const allNonNegative = Object.values(counts).every(count => count >= 0);
+
+        return hasAllKeys && allNonNegative;
+    }
+
+    /**
+     * Reset counts to defaults
+     * @private
+     */
+    #resetCounts() {
+        this.#status.orderCounts = {
+            untouched: 0,
+            called: 0,
+            ready: 0,
+            overdue: 0,
+            critical: 0
+        };
+        this.#status.lastUpdate = Date.now();
+    }
+
+    /**
+     * Save current state to storage
+     * @private
+     */
+    async #saveState() {
+        try {
+            const storage = await this.getDependency('storage');
+            
+            // Save status state
+            await storage.set('status_state', {
+                orderCounts: this.#status.orderCounts,
+                lastUpdate: this.#status.lastUpdate,
+                timestamps: this.#status.timestamps,
+                error: this.#status.error
+            });
+
+            this.log(LogLevel.DEBUG, '💾 Saved status state to storage');
+        } catch (error) {
+            this.handleError(error, ErrorType.STORAGE, ErrorSeverity.LOW, {
+                method: '#saveState'
+            });
         }
     }
 
@@ -348,6 +489,9 @@ class StatusManager extends BaseManager {
      * @protected
      */
     async _dispose() {
+        // Save state before disposing
+        await this.#saveState();
+        
         if (this.#updateInterval) {
             clearInterval(this.#updateInterval);
             this.#updateInterval = null;
@@ -489,6 +633,10 @@ class StatusManager extends BaseManager {
             this.#status.orderCounts = counts;
             this.#status.lastUpdate = Date.now();
 
+            // Cache the counts
+            const cacheManager = await this.getDependency('cache');
+            await cacheManager.set('order_counts', counts, { ttl: 5 * 60 * 1000 }); // 5 minutes TTL
+
             // Check for significant changes
             await this.#checkForSignificantChanges();
 
@@ -499,6 +647,13 @@ class StatusManager extends BaseManager {
             const event = await this.getDependency('event');
             await event.emit('status:updated', {
                 type: 'orders',
+                counts,
+                timestamp: this.#status.lastUpdate
+            });
+
+            // Store in local storage for persistence
+            const storage = await this.getDependency('storage');
+            await storage.set('last_order_counts', {
                 counts,
                 timestamp: this.#status.lastUpdate
             });
@@ -727,18 +882,66 @@ class StatusManager extends BaseManager {
      */
     async #updateStatus() {
         try {
-            // Check if we need to show notifications
+            // Get current data from cache or API
+            const cacheManager = await this.getDependency('cache');
+            const cachedCounts = await cacheManager.get('order_counts');
+            
+            let counts;
+            if (cachedCounts) {
+                counts = cachedCounts;
+            } else {
+                // Get fresh data from OrderService
+                const orderService = await this.getDependency('order');
+                const result = await orderService.getOrderStatuses();
+                if (!result.success) {
+                    throw new Error(result.error || 'Failed to get order statuses');
+                }
+                counts = result.counts;
+                
+                // Cache the new counts
+                await cacheManager.set('order_counts', counts, { ttl: 5 * 60 * 1000 });
+            }
+
+            // Update internal state
+            this.#status.orderCounts = counts;
+            this.#status.lastUpdate = Date.now();
+            this.#status.timestamps.lastSync.status = Date.now();
+
+            // Check for significant changes
             await this.#checkForSignificantChanges();
 
-            // Emit status update event
+            // Update UI with animation
+            await this.#updateUIWithAnimation(counts);
+
+            // Emit status update event with complete data
             const event = await this.getDependency('event');
             await event.emit('status:updated', {
                 type: 'periodic',
-                status: this.getStatus(),
+                status: {
+                    online: this.#status.online,
+                    initialized: this.#status.initialized,
+                    error: this.#status.error,
+                    orderCounts: this.#status.orderCounts,
+                    lastUpdate: this.#status.lastUpdate,
+                    timestamps: this.#status.timestamps,
+                    uptime: Date.now() - this._startTime
+                },
                 timestamp: Date.now()
+            });
+
+            this.log(LogLevel.SUCCESS, '✅ Status updated', {
+                counts: this.#status.orderCounts,
+                lastUpdate: this.#status.lastUpdate
             });
         } catch (error) {
             this.handleError(error, ErrorType.STATUS_UPDATE, ErrorSeverity.LOW);
+            
+            // Emit error event
+            const event = await this.getDependency('event');
+            await event.emit('status:error', {
+                error,
+                timestamp: Date.now()
+            });
         }
     }
 

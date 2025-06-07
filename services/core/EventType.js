@@ -28,7 +28,9 @@ export const ErrorType = {
     API: 'api_error',
     DATA: 'data_error',
     VALIDATION: 'validation_error',
-    CLEANUP: 'cleanup_error'
+    CLEANUP: 'cleanup_error',
+    PACKING: 'PACKING',
+    FTP: 'FTP'
 };
 
 // Error Severity Levels

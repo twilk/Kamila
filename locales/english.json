@@ -258,5 +258,30 @@
             "label": "Critical",
             "tooltip": "Orders waiting over 7 days"
         }
+    },
+    "packing": {
+        "title": "Packing Requests",
+        "loading": "Loading packing requests...",
+        "error": "Error loading packing requests",
+        "retry": "Retry",
+        "table": {
+            "orderId": "Order ID",
+            "store": "Store",
+            "products": "Products",
+            "shipping": "Shipping",
+            "status": "Status",
+            "actions": "Actions"
+        },
+        "status": {
+            "packed": "Packed",
+            "pending": "Pending"
+        },
+        "shipping": {
+            "yes": "Yes",
+            "no": "No"
+        },
+        "confirm": "Confirm Packing",
+        "confirmSuccess": "Packing confirmed for order {id}",
+        "confirmError": "Failed to confirm packing"
     }
 }

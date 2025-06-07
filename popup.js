@@ -33,6 +33,7 @@ import { OrderService, createOrderService } from './services/api/OrderService.js
 import { APIManager } from './services/core/APIManager.js';
 import { UserCardService } from './services/userCard.js';
 import { RefreshManager } from './services/core/RefreshManager.js';
+import { PackingRequests } from './src/components/PackingRequests.js';
 
 // Import types and constants
 import { ErrorType, ErrorSeverity, LogLevel } from './services/core/EventType.js';
@@ -123,8 +124,7 @@ for (const [name, Manager] of MANAGERS) {
  * @returns {Promise<Object>} Initialized manager instances
  */
 async function initializeManagers() {
-    console.log('🚀 Starting manager initialization...');
-    
+    console.log('[DEBUG] initializeManagers: start');
     try {
         // Initialize in correct dependency order
         const initOrder = [
@@ -145,9 +145,10 @@ async function initializeManagers() {
             ['ui'],       // Depends on theme, refresh
             ['settings'], // Depends on storage
             ['notification'], // Depends on event, storage, language
+            ['interface'], // Depends on event, language, store, theme, status
             ['loading', 'connection', 'menu',
              'debug', 'volume', 'update', 'user',
-             'message', 'progress', 'interface', 'counter', 'usercard']
+             'message', 'progress', 'counter', 'usercard']
         ];
         
         // Initialize managers in sequence
@@ -160,10 +161,13 @@ async function initializeManagers() {
                     if (!manager) {
                         throw new Error(`Manager ${name} not found in registry`);
                     }
-                    if (!manager?.isInitialized()) {
-                        await manager.initialize();
+                    if (!manager.isInitialized()) {
+                        const success = await manager.initialize();
+                        if (!success) {
+                            throw new Error(`Failed to initialize ${name}`);
+                        }
+                        console.log(`✅ Initialized ${name}`);
                     }
-                    console.log(`✅ Initialized ${name}`);
                 } catch (error) {
                     console.error(`❌ Failed to initialize ${name}:`, error);
                     throw error;
@@ -182,6 +186,29 @@ async function initializeManagers() {
             }
         }
         
+        // Setup event listeners and components
+        await setupEventListeners(instances);
+        
+        // Initialize interface manager
+        const interfaceManager = InterfaceManager.getInstance();
+        if (!interfaceManager.isInitialized()) {
+            await interfaceManager.initialize();
+        }
+
+        // Setup packing container
+        const packingContainer = document.getElementById('packing-container');
+        if (packingContainer) {
+            try {
+                const packingComponent = new PackingRequests();
+                await packingComponent.mount(packingContainer);
+                this.log(LogLevel.SUCCESS, '✅ Packing component mounted');
+            } catch (error) {
+                console.error('Failed to mount packing component:', error);
+                const errorHandler = await registry.get('error');
+                errorHandler?.handle(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+            }
+        }
+        
         // Print initialization report
         const report = registry.printInitializationReport();
         
@@ -197,9 +224,10 @@ async function initializeManagers() {
             throw new Error(`Failed to initialize managers: ${report.failed.join(', ')}`);
         }
         
+        console.log('[DEBUG] initializeManagers: end');
         return instances;
     } catch (error) {
-        console.error('❌ Manager initialization failed:', error);
+        console.error('[DEBUG] initializeManagers: error', error);
         registry.printInitializationReport();
         throw error;
     }
@@ -224,6 +252,7 @@ function areManagersReady(instances) {
 
 // Setup event listeners
 async function setupEventListeners(instances) {
+    console.log('[DEBUG] setupEventListeners: start');
     if (!areManagersReady(instances)) {
         throw new Error('Required managers not ready');
     }
@@ -285,6 +314,17 @@ async function setupEventListeners(instances) {
             console.error('Failed to show error:', e);
         }
     });
+
+    // Setup packing container
+    const packingContainer = document.getElementById('packing-container');
+    if (packingContainer) {
+        const packingComponent = new PackingRequests();
+        packingComponent.mount(packingContainer);
+    }
+
+    // Setup tabs
+    setupTabs();
+    console.log('[DEBUG] setupEventListeners: end');
 }
 
 // Store previous counts for animation
@@ -302,23 +342,36 @@ let previousCounts = {
  * @returns {Promise<void>}
  */
 async function updateCounters(counts) {
+    console.log('[DEBUG] updateCounters: start', counts);
     try {
         // Show loading state
         document.querySelectorAll('.lead-status').forEach(status => {
             status.classList.add('loading');
         });
 
-        // If counts not provided, fetch them
+        // Get managers
+        const [counterManager, cacheManager] = await Promise.all([
+            registry.get('counter'),
+            registry.get('cache')
+        ]);
+
+        // If counts not provided, try to get from cache first
         if (!counts) {
-            const orderService = await registry.get('order');
-            const result = await orderService.getOrderStatuses();
-            if (!result.success) {
-                throw new Error(result.error);
+            const cachedData = await cacheManager.get('counters_ALL');
+            if (cachedData?.data?.counts) {
+                counts = cachedData.data.counts;
+            } else {
+                // If not in cache, fetch from API
+                const orderService = await registry.get('order');
+                const result = await orderService.getOrderStatuses();
+                if (!result.success) {
+                    throw new Error(result.error);
+                }
+                counts = result.counts;
             }
-            counts = result.counts;
         }
 
-        // Update each counter element
+        // Update each counter element with animation
         const counterElements = {
             'count-untouched': counts.untouched || 0,
             'count-called': counts.called || 0,
@@ -327,14 +380,14 @@ async function updateCounters(counts) {
             'count-critical': counts.critical || 0
         };
 
-        const counterManager = await registry.get('counter');
-        
         // Update each counter
         for (const [id, value] of Object.entries(counterElements)) {
             const element = document.getElementById(id);
             if (element) {
                 // Register counter if not already registered
-                await counterManager.registerCounter(element, value);
+                if (!counterManager.hasCounter(id)) {
+                    await counterManager.registerCounter(element, value);
+                }
                 // Update counter value with animation
                 await counterManager.updateCounter(id, value, true);
             }
@@ -353,28 +406,28 @@ async function updateCounters(counts) {
 
         // Emit counters updated event
         const eventManager = await registry.get('event');
-        await eventManager.emit(EVENTS.COUNTERS_UPDATED, {
+        await eventManager.emit('counters:updated', {
             counts,
             timestamp: Date.now()
         });
 
-        // Log update
         console.log('✅ Updated all counters:', counts);
     } catch (error) {
-        console.error('Error updating counters:', error);
+        console.error('[DEBUG] updateCounters: error', error);
         document.querySelectorAll('.lead-status').forEach(status => {
             status.classList.add('error');
         });
 
         // Emit error event
         const eventManager = await registry.get('event');
-        await eventManager.emit(EVENTS.ERROR_OCCURRED, error);
+        await eventManager.emit('error:occurred', error);
     } finally {
         // Remove loading state
         document.querySelectorAll('.lead-status').forEach(status => {
             status.classList.remove('loading');
         });
     }
+    console.log('[DEBUG] updateCounters: end');
 }
 
 /**
@@ -428,6 +481,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         const instances = await initializeManagers();
         await setupEventListeners(instances);
+        await setupSettingsListeners();
         await initializeUI();
         
         // Initial data load
@@ -509,6 +563,7 @@ async function resizeWindow(height) {
  * @returns {Promise<void>}
  */
 async function loadAndUpdateData(forceRefresh = false) {
+    console.log('[DEBUG] loadAndUpdateData: start', { forceRefresh });
     try {
         if (!managerInstances) throw new Error('Managers not initialized');
         
@@ -518,6 +573,7 @@ async function loadAndUpdateData(forceRefresh = false) {
             const cachedData = await managerInstances.cacheManager.get('data');
             if (validateCacheData(cachedData)) {
                 managerInstances.logManager.log(LogLevel.INFO, '✨ Data up to date');
+                console.log('[DEBUG] loadAndUpdateData: end (cache hit)');
                 return cachedData;
             }
         }
@@ -542,8 +598,10 @@ async function loadAndUpdateData(forceRefresh = false) {
         managerInstances.logManager.log(LogLevel.SUCCESS, '✅ Data updated', { store: storeName });
         managerInstances.operationProgressManager.setSuccess('logs.dataUpdated');
 
+        console.log('[DEBUG] loadAndUpdateData: end');
         return response.data;
     } catch (error) {
+        console.error('[DEBUG] loadAndUpdateData: error', error);
         managerInstances?.operationProgressManager?.setError('logs.dataFetchError');
         managerInstances?.errorHandler?.handle(error, ErrorType.DATA_LOAD, ErrorSeverity.HIGH);
         throw error;
@@ -552,6 +610,7 @@ async function loadAndUpdateData(forceRefresh = false) {
 
 // Update setupAutoRefresh function
 function setupAutoRefresh() {
+    console.log('[DEBUG] setupAutoRefresh: start');
     if (!managerInstances) return;
 
     const refreshInterval = setInterval(async () => {
@@ -573,10 +632,12 @@ function setupAutoRefresh() {
             timestamp: new Date().toISOString()
         });
     });
+    console.log('[DEBUG] setupAutoRefresh: end');
 }
 
 // Initialize OrderService and fetch data
 async function initializeAndFetchData() {
+    console.log('[DEBUG] initializeAndFetchData: start');
     try {
         if (!managerInstances) throw new Error('Managers not initialized');
 
@@ -592,50 +653,17 @@ async function initializeAndFetchData() {
         // Initialize tooltips
         initializeTooltips();
         
+        console.log('[DEBUG] initializeAndFetchData: end');
     } catch (error) {
+        console.error('[DEBUG] initializeAndFetchData: error', error);
         managerInstances?.errorHandler?.handle(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
     }
-}
-
-// Add this after the other event listeners in setupEventListeners function
-function setupTabs() {
-    if (!managerInstances) return;
-
-    const menu = document.querySelector('.menu');
-    const tabPanes = document.querySelectorAll('.tab-pane');
-    
-    menu?.addEventListener('click', async (event) => {
-        event.preventDefault();
-        const link = event.target.closest('.link');
-        if (!link) return;
-
-        // Remove active class from all links and panes
-        document.querySelectorAll('.link').forEach(l => l.classList.remove('active'));
-        tabPanes.forEach(pane => pane.classList.remove('active'));
-
-        // Add active class to clicked link and corresponding pane
-        link.classList.add('active');
-        const targetId = link.getAttribute('data-target');
-        document.getElementById(targetId)?.classList.add('active');
-
-        try {
-            // Get event manager safely
-            const eventManager = await registry.get('event');
-            if (eventManager?.isInitialized()) {
-                await eventManager.emit(EVENTS.TAB_CHANGED, {
-                    tab: targetId,
-                    timestamp: new Date().toISOString()
-                });
-            }
-        } catch (error) {
-            console.error('Failed to emit tab change event:', error);
-        }
-    });
 }
 
 // Update language switching
 let languageChangeTimeout = null;
 async function handleLanguageChange(language) {
+    console.log('[DEBUG] handleLanguageChange: start', language);
     if (!managerInstances) return;
 
     if (languageChangeTimeout) {
@@ -652,11 +680,14 @@ async function handleLanguageChange(language) {
             managerInstances.debugManager.log(`❌ Failed to change language: ${error.message}`, LogLevel.ERROR);
         }
     }, 300);
+    console.log('[DEBUG] handleLanguageChange: end');
 }
 
 // Update interface
 async function updateInterface() {
+    console.log('[DEBUG] updateInterface: start');
     // Implementation of updateInterface function
+    console.log('[DEBUG] updateInterface: end');
 }
 
 // Initialize tooltips
@@ -671,12 +702,16 @@ function updateStatusIndicators(counts) {
 
 // Get selected store
 async function getSelectedStore() {
+    console.log('[DEBUG] getSelectedStore: start');
     // Implementation of getSelectedStore function
+    console.log('[DEBUG] getSelectedStore: end');
 }
 
 // Validate cache data
 function validateCacheData(cachedData) {
+    console.log('[DEBUG] validateCacheData: start', cachedData);
     // Implementation of validateCacheData function
+    console.log('[DEBUG] validateCacheData: end');
 }
 
 // Add these variables at the top with other declarations
@@ -703,6 +738,7 @@ function updateNextRefreshTime() {
 
 // Modify the updateLastRefreshTime function
 function updateLastRefreshTime() {
+    console.log('[DEBUG] updateLastRefreshTime: start');
     const lastUpdateEl = document.getElementById('last-update-time');
     const now = new Date();
     lastUpdateEl.textContent = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
@@ -725,12 +761,315 @@ function updateLastRefreshTime() {
     }
     updateNextRefreshTime();
     nextRefreshInterval = setInterval(updateNextRefreshTime, 1000);
+    console.log('[DEBUG] updateLastRefreshTime: end');
 }
 
 // Add cleanup to the dispose function
 async function dispose() {
+    console.log('[DEBUG] dispose: start');
     if (nextRefreshInterval) {
         clearInterval(nextRefreshInterval);
     }
     // ... rest of dispose function
+    console.log('[DEBUG] dispose: end');
+}
+
+function setupTabs() {
+    console.log('[DEBUG] setupTabs: start');
+    if (!managerInstances) return;
+
+    const menu = document.querySelector('.menu');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+    
+    menu?.addEventListener('click', async (event) => {
+        event.preventDefault();
+        const link = event.target.closest('.link');
+        if (!link) return;
+
+        try {
+            // Get target tab ID
+            const targetId = link.getAttribute('data-target');
+            if (!targetId) return;
+
+            // Remove active class from all links and panes
+            document.querySelectorAll('.link').forEach(l => l.classList.remove('active'));
+            tabPanes.forEach(pane => {
+                pane.classList.remove('show', 'active');
+                pane.style.opacity = '0';
+            });
+
+            // Add active class to clicked link and corresponding pane
+            link.classList.add('active');
+            const targetPane = document.querySelector(targetId);
+            if (targetPane) {
+                targetPane.classList.add('show', 'active');
+                // Add fade in
+                setTimeout(() => {
+                    targetPane.style.opacity = '1';
+                }, 50);
+
+                // Handle specific tab content loading
+                const tabId = targetId.substring(1); // Remove # from ID
+                switch (tabId) {
+                    case 'status':
+                        const statusManager = await registry.get('status');
+                        await statusManager.updateStatus();
+                        break;
+                    case 'drwn':
+                        const dataManager = await registry.get('data');
+                        await dataManager.updateDrwnData();
+                        break;
+                    case 'ranking':
+                        const rankingManager = await registry.get('data');
+                        await rankingManager.updateRankingData();
+                        break;
+                    case 'packing':
+                        const packingContainer = document.getElementById('packing-container');
+                        if (packingContainer) {
+                            try {
+                                const packingComponent = new PackingRequests();
+                                await packingComponent.mount(packingContainer);
+                            } catch (error) {
+                                console.error('Failed to mount packing component:', error);
+                                const errorHandler = await registry.get('error');
+                                errorHandler?.handle(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+                            }
+                        }
+                        break;
+                }
+            }
+
+            // Emit tab change event
+            const eventManager = await registry.get('event');
+            if (eventManager?.isInitialized()) {
+                await eventManager.emit(EVENTS.TAB_CHANGED, {
+                    tab: targetId.substring(1),
+                    timestamp: new Date().toISOString()
+                });
+            }
+        } catch (error) {
+            console.error('Failed to handle tab change:', error);
+            const errorHandler = await registry.get('error');
+            errorHandler?.handle(error, ErrorType.UI, ErrorSeverity.HIGH);
+        }
+    });
+
+    // Set initial active tab
+    const activeTab = document.querySelector('.link.active');
+    if (activeTab) {
+        const targetId = activeTab.getAttribute('data-target');
+        const targetPane = document.querySelector(targetId);
+        if (targetPane) {
+            targetPane.classList.add('show', 'active');
+            targetPane.style.opacity = '1';
+        }
+    }
+    console.log('[DEBUG] setupTabs: end');
+}
+
+// Add this after setupEventListeners function
+async function setupSettingsListeners() {
+    const settingsManager = await registry.get('settings');
+    const eventManager = await registry.get('event');
+
+    // Theme switch
+    const themeSwitch = document.getElementById('theme-switch');
+    if (themeSwitch) {
+        themeSwitch.addEventListener('change', async () => {
+            await settingsManager.updateSettings({
+                [SETTINGS_KEYS.THEME]: themeSwitch.checked ? 'dark' : 'light'
+            });
+        });
+    }
+
+    // Language buttons
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            await settingsManager.updateSettings({
+                [SETTINGS_KEYS.LANGUAGE]: btn.dataset.lang
+            });
+        });
+    });
+
+    // Store selection
+    const storeSelect = document.getElementById('store-select');
+    if (storeSelect) {
+        storeSelect.addEventListener('change', async () => {
+            await settingsManager.updateSettings({
+                [SETTINGS_KEYS.STORE_ID]: storeSelect.value
+            });
+        });
+    }
+
+    // Debug button
+    const debugButton = document.getElementById('debug-button');
+    if (debugButton) {
+        debugButton.addEventListener('click', async () => {
+            const currentDebug = settingsManager.get(SETTINGS_KEYS.DEBUG_MODE);
+            await settingsManager.updateSettings({
+                [SETTINGS_KEYS.DEBUG_MODE]: !currentDebug
+            });
+        });
+    }
+
+    // Sound settings
+    const volumeSlider = document.getElementById('volume-slider');
+    const soundUrl = document.getElementById('sound-url');
+    if (volumeSlider) {
+        volumeSlider.addEventListener('input', async () => {
+            const currentSound = settingsManager.get(SETTINGS_KEYS.SOUND);
+            await settingsManager.updateSettings({
+                [SETTINGS_KEYS.SOUND]: {
+                    ...currentSound,
+                    volume: parseInt(volumeSlider.value)
+                }
+            });
+        });
+    }
+    if (soundUrl) {
+        soundUrl.addEventListener('change', async () => {
+            const currentSound = settingsManager.get(SETTINGS_KEYS.SOUND);
+            await settingsManager.updateSettings({
+                [SETTINGS_KEYS.SOUND]: {
+                    ...currentSound,
+                    url: soundUrl.value
+                }
+            });
+        });
+    }
+
+    // Refresh settings
+    document.querySelectorAll('input[name^="refresh_"]').forEach(input => {
+        input.addEventListener('change', async () => {
+            if (input.checked) {
+                const currentRefresh = settingsManager.get(SETTINGS_KEYS.REFRESH);
+                await settingsManager.updateSettings({
+                    [SETTINGS_KEYS.REFRESH]: {
+                        ...currentRefresh,
+                        [input.name.replace('refresh_', '')]: input.value
+                    }
+                });
+            }
+        });
+    });
+
+    // Notification settings
+    document.querySelectorAll('input[name^="notification_"]').forEach(input => {
+        input.addEventListener('change', async () => {
+            if (input.checked) {
+                const currentNotifications = settingsManager.get(SETTINGS_KEYS.NOTIFICATIONS);
+                await settingsManager.updateSettings({
+                    [SETTINGS_KEYS.NOTIFICATIONS]: {
+                        ...currentNotifications,
+                        [input.name.replace('notification_', '')]: input.value
+                    }
+                });
+            }
+        });
+    });
+
+    // UI settings
+    document.querySelectorAll('input[name^="ui_"]').forEach(input => {
+        input.addEventListener('change', async () => {
+            const currentUI = settingsManager.get(SETTINGS_KEYS.UI_CONFIG);
+            if (input.type === 'checkbox') {
+                await settingsManager.updateSettings({
+                    [SETTINGS_KEYS.UI_CONFIG]: {
+                        ...currentUI,
+                        [input.name.replace('ui_', '')]: input.checked
+                    }
+                });
+            }
+        });
+    });
+
+    // Tab changes
+    document.querySelectorAll('.link[data-target]').forEach(link => {
+        link.addEventListener('click', async () => {
+            const currentUI = settingsManager.get(SETTINGS_KEYS.UI_CONFIG);
+            await settingsManager.updateSettings({
+                [SETTINGS_KEYS.UI_CONFIG]: {
+                    ...currentUI,
+                    lastOpenTab: link.getAttribute('data-target').substring(1)
+                }
+            });
+        });
+    });
+
+    // Cache settings
+    document.querySelectorAll('input[name^="cache_"]').forEach(input => {
+        input.addEventListener('change', async () => {
+            const currentCache = settingsManager.get(SETTINGS_KEYS.CACHE_CONFIG);
+            if (input.type === 'checkbox') {
+                await settingsManager.updateSettings({
+                    [SETTINGS_KEYS.CACHE_CONFIG]: {
+                        ...currentCache,
+                        [input.name.replace('cache_', '')]: input.checked
+                    }
+                });
+            } else if (input.type === 'number') {
+                await settingsManager.updateSettings({
+                    [SETTINGS_KEYS.CACHE_CONFIG]: {
+                        ...currentCache,
+                        [input.name.replace('cache_', '')]: parseInt(input.value)
+                    }
+                });
+            }
+        });
+    });
+
+    // Listen for settings changes
+    eventManager.on('settings:updated', async ({ settings }) => {
+        // Update UI to reflect new settings
+        Object.entries(settings).forEach(([key, value]) => {
+            // Update radio buttons
+            const radio = document.querySelector(`input[name="${key}"][value="${value}"]`);
+            if (radio) {
+                radio.checked = true;
+            }
+
+            // Update sound URL
+            if (key === SETTINGS_KEYS.SOUND) {
+                const soundUrl = document.getElementById('sound-url');
+                if (soundUrl) {
+                    soundUrl.value = value.url;
+                }
+                const volumeSlider = document.getElementById('volume-slider');
+                if (volumeSlider) {
+                    volumeSlider.value = value.volume;
+                }
+            }
+
+            // Update theme switch
+            if (key === SETTINGS_KEYS.THEME) {
+                const themeSwitch = document.getElementById('theme-switch');
+                if (themeSwitch) {
+                    themeSwitch.checked = value === 'dark';
+                }
+            }
+
+            // Update language buttons
+            if (key === SETTINGS_KEYS.LANGUAGE) {
+                document.querySelectorAll('.lang-btn').forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.lang === value);
+                });
+            }
+
+            // Update store select
+            if (key === SETTINGS_KEYS.STORE_ID) {
+                const storeSelect = document.getElementById('store-select');
+                if (storeSelect) {
+                    storeSelect.value = value;
+                }
+            }
+
+            // Update debug button
+            if (key === SETTINGS_KEYS.DEBUG_MODE) {
+                const debugButton = document.getElementById('debug-button');
+                if (debugButton) {
+                    debugButton.classList.toggle('active', value);
+                }
+            }
+        });
+    });
 }

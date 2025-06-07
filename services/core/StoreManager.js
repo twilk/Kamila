@@ -350,6 +350,42 @@ class StoreManager extends BaseManager {
     }
 
     /**
+     * Get value by key
+     * @param {string} key Key to get
+     * @returns {Promise<any>} Value
+     */
+    async get(key) {
+        try {
+            const storage = await this.getDependency('storage');
+            return storage.get(key);
+        } catch (error) {
+            this.handleError(error, ErrorType.DATA, ErrorSeverity.LOW, {
+                method: 'get',
+                key
+            });
+            return null;
+        }
+    }
+
+    /**
+     * Set value by key
+     * @param {string} key Key to set
+     * @param {any} value Value to set
+     * @returns {Promise<void>}
+     */
+    async set(key, value) {
+        try {
+            const storage = await this.getDependency('storage');
+            await storage.set(key, value);
+        } catch (error) {
+            this.handleError(error, ErrorType.DATA, ErrorSeverity.LOW, {
+                method: 'set',
+                key
+            });
+        }
+    }
+
+    /**
      * Clean up resources
      * @protected
      */

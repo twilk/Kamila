@@ -12,9 +12,9 @@ export const API_CONFIG = {
     CACHE_TTL: 5 * 60 * 1000, // 5 minutes
     ENDPOINTS: {
         ORDERS: '/orders',
-        INVENTORY: '/inventory',
-        AUTH: '/auth/token',
-        STORES: '/stores'
+        // INVENTORY: '/inventory',
+        AUTH: '/auth/access_token',
+        // STORES: '/stores'
     },
     STATUS_CODES: {
         NEW: '1',
@@ -263,10 +263,13 @@ export const getStatusName = (statusCode) => {
 
     return statusMap[statusCode] || 'Nieznany status';
 };
+ 
+// IP will be 95.48.184.174
 
 export const FTP_CONFIG = {
-    host: process.env.FTP_HOST || 'ftp.darwina.pl',
-    user: process.env.FTP_USER || 'ftp_user',
-    password: process.env.FTP_PASSWORD || 'ftp_password',
-    secure: true
+    host: 'ftp.darwina.pl',
+    user: 'ftp_user',
+    password: 'ftp_password',
+    secure: true,
+    port: 21
 }; 

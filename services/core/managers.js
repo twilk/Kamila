@@ -29,6 +29,7 @@ import { OrderService } from '../api/OrderService.js';
 import { OrderManager } from './OrderManager.js';
 import { LogLevel } from './LogLevel.js';
 import { APIManager } from './APIManager.js';
+import { PackingManager } from './PackingManager.js';
 
 /**
  * Central registry for all managers
@@ -456,3 +457,4 @@ export const getAlarmManager = () => getManager('alarm');
 export const getCounterManager = () => getManager('counter');
 export const getOrderManager = () => getManager('order');
 export const getAPIManager = () => getManager('api');
+export const getPackingManager = () => getManager('packing');

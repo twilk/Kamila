@@ -20,7 +20,7 @@ const API_CONFIG = {
     BASE_URL: 'https://darwina.pl/api',
     ENDPOINTS: {
         ORDERS: '/orders',
-        AUTH: '/auth/token'
+        AUTH: '/auth/access_token'
     }
 };
 
@@ -41,7 +41,7 @@ class OrderService extends BaseManager {
         if (OrderService.#instance) {
             return OrderService.#instance;
         }
-        super(registry, 'OrderService');
+        super(registry, 'order');
         OrderService.#instance = this;
         OrderService._registry = registry;
         
@@ -91,23 +91,45 @@ class OrderService extends BaseManager {
             this.log(LogLevel.INFO, '🔄 Refreshing API token...');
             
             this.#tokenRefreshPromise = (async () => {
-                const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.AUTH}`, {
+                const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.AUTH}`;
+                this.log(LogLevel.DEBUG, '📡 Token request', { url });
+                
+                const response = await fetch(url, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(this.#credentials)
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json'
+                    },
+                    body: new URLSearchParams({
+                        grant_type: 'client_credentials',
+                        scope: 'READWRITE',
+                        client_id: this.#credentials.client_id,
+                        client_secret: this.#credentials.client_secret
+                    }).toString()
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`Token refresh failed: ${response.status}`);
+                    const errorText = await response.text();
+                    this.log(LogLevel.ERROR, '❌ Token refresh failed', {
+                        status: response.status,
+                        statusText: response.statusText,
+                        error: errorText
+                    });
+                    throw new Error(`Token refresh failed: ${response.status} ${errorText}`);
                 }
                 
                 const data = await response.json();
-                this.#credentials.token = data.access_token;
+                this.#credentials = {
+                    ...this.#credentials,
+                    DARWINA_API_KEY: data.access_token,  // Store with same key as old solution
+                    token: data.access_token  // Keep for backward compatibility
+                };
                 this.#lastTokenRefresh = Date.now();
+                
+                this.log(LogLevel.SUCCESS, '✅ Token refreshed successfully');
             })();
             
             await this.#tokenRefreshPromise;
-            this.log(LogLevel.SUCCESS, '✅ Token refreshed');
         } catch (error) {
             this.handleError(error, ErrorType.AUTH, ErrorSeverity.HIGH);
             throw error;
@@ -124,8 +146,9 @@ class OrderService extends BaseManager {
             
             const response = await fetch(url, {
                 headers: {
-                    'Authorization': `Bearer ${this.#credentials.token}`,
-                    'Content-Type': 'application/json'
+                    'Authorization': `Bearer ${this.#credentials.DARWINA_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
                 }
             });
 
@@ -153,17 +176,26 @@ class OrderService extends BaseManager {
 
             const orders = [...allOrders, ...data.data];
             
-            // Check if there are more pages
-            const hasMorePages = data.data.length === 50; // If we got full page, there might be more
+            // Calculate page info
+            const pageInfo = {
+                currentPage: page,
+                perPage: 50, // We know this from the limit parameter
+                ordersInPage: data.data.length,
+                totalPages: data.total_count ? Math.ceil(data.total_count / 50) : null,
+                hasMorePages: data.data.length === 50, // If we got full page, there might be more
+                totalSoFar: orders.length
+            };
+            
+            console.log('💩 [API] Page info:', pageInfo);
             
             console.log('💩 [API] Page received:', {
-                page,
-                ordersInPage: data.data.length,
-                totalSoFar: orders.length,
-                hasMorePages
+                page: pageInfo.currentPage,
+                ordersInPage: pageInfo.ordersInPage,
+                totalSoFar: pageInfo.totalSoFar,
+                hasMorePages: pageInfo.hasMorePages
             });
 
-            if (hasMorePages) {
+            if (pageInfo.hasMorePages) {
                 await new Promise(resolve => setTimeout(resolve, 100)); // Small delay between pages
                 return this.#fetchOrdersRecursively(url, page + 1, orders);
             }
@@ -303,6 +335,47 @@ class OrderService extends BaseManager {
                 success: false,
                 error: error.message
             };
+        }
+    }
+
+    async _initialize() {
+        try {
+            this.log(LogLevel.INFO, '🔄 Initializing order service...');
+            
+            // Get required dependencies
+            const [storage, api, error] = await Promise.all([
+                this.getDependency('storage'),
+                this.getDependency('api'),
+                this.getDependency('error')
+            ]);
+
+            // Validate dependencies
+            if (!storage?.isInitialized()) throw new Error('Storage manager must be initialized');
+            if (!api?.isInitialized()) throw new Error('API manager must be initialized');
+            if (!error?.isInitialized()) throw new Error('Error manager must be initialized');
+
+            // Load credentials from storage
+            const credentials = await storage.get('api_credentials');
+            if (!credentials?.client_id || !credentials?.client_secret) {
+                throw new Error('API credentials not found');
+            }
+            this.#credentials = credentials;
+            this.log(LogLevel.INFO, '🔑 Credentials loaded, getting initial token...');
+
+            // Verify token refresh works
+            try {
+                await this.#refreshToken();
+            } catch (tokenError) {
+                this.log(LogLevel.ERROR, '❌ Failed to refresh token during initialization', { error: tokenError.message });
+                // Don't mark as initialized if token refresh fails
+                return false;
+            }
+
+            this.log(LogLevel.SUCCESS, '✅ Order service initialized');
+            return true;
+        } catch (error) {
+            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.HIGH);
+            return false;
         }
     }
 }

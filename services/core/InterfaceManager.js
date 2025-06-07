@@ -607,35 +607,169 @@ class InterfaceManager extends BaseManager {
 
     /**
      * Initialize tabs
+     * @returns {Promise<void>}
      */
     async initializeTabs() {
         try {
-            const tabButtons = document.querySelectorAll('.nav-link');
+            const eventManager = await this.getDependency('event');
+            const tabButtons = document.querySelectorAll('.link[data-target]');
             const tabPanes = document.querySelectorAll('.tab-pane');
 
+            // Initialize tab click handlers
             tabButtons.forEach(button => {
                 button.addEventListener('click', async () => {
                     const targetId = button.getAttribute('data-target');
                     
                     // Remove active class from all buttons and panes
                     tabButtons.forEach(btn => btn.classList.remove('active'));
-                    tabPanes.forEach(pane => pane.classList.remove('show', 'active'));
+                    tabPanes.forEach(pane => {
+                        pane.classList.remove('show', 'active');
+                        // Add fade out
+                        pane.style.opacity = '0';
+                    });
                     
                     // Add active class to clicked button and its target pane
                     button.classList.add('active');
-                    document.querySelector(targetId)?.classList.add('show', 'active');
+                    const targetPane = document.querySelector(targetId);
+                    if (targetPane) {
+                        targetPane.classList.add('show', 'active');
+                        // Add fade in
+                        setTimeout(() => {
+                            targetPane.style.opacity = '1';
+                        }, 50);
+                    }
+
+                    // Handle specific tab content loading
+                    switch (targetId) {
+                        case '#status':
+                            await this.loadStatusContent();
+                            break;
+                        case '#drwn':
+                            await this.loadDrwnContent();
+                            break;
+                        case '#ranking':
+                            await this.loadRankingContent();
+                            break;
+                        case '#packing':
+                            await this.loadPackingContent();
+                            break;
+                    }
 
                     // Emit tab change event
-                    const eventManager = await this.getDependency('event');
-                    await eventManager.emit('interface:tab-changed', {
-                        tab: targetId,
-                        timestamp: Date.now()
+                    await eventManager.emit(EVENTS.TAB_CHANGED, {
+                        tab: targetId.substring(1),
+                        element: targetPane
                     });
                 });
             });
+
+            // Set initial active tab
+            const activeTab = document.querySelector('.link.active[data-target]');
+            if (activeTab) {
+                const targetId = activeTab.getAttribute('data-target');
+                const targetPane = document.querySelector(targetId);
+                if (targetPane) {
+                    targetPane.classList.add('show', 'active');
+                    targetPane.style.opacity = '1';
+                    
+                    // Load initial content
+                    switch (targetId) {
+                        case '#status':
+                            await this.loadStatusContent();
+                            break;
+                        case '#drwn':
+                            await this.loadDrwnContent();
+                            break;
+                        case '#ranking':
+                            await this.loadRankingContent();
+                            break;
+                        case '#packing':
+                            await this.loadPackingContent();
+                            break;
+                    }
+                }
+            }
+
+            // Add CSS for transitions
+            const style = document.createElement('style');
+            style.textContent = `
+                .tab-pane {
+                    transition: opacity 0.3s ease-in-out;
+                    opacity: 0;
+                }
+                .tab-pane.show.active {
+                    opacity: 1;
+                }
+            `;
+            document.head.appendChild(style);
+
+            this.log(LogLevel.SUCCESS, '✅ Tabs initialized');
         } catch (error) {
-            this.handleError(error, ErrorType.INITIALIZATION, ErrorSeverity.MEDIUM, {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.MEDIUM, {
                 method: 'initializeTabs'
+            });
+        }
+    }
+
+    /**
+     * Load status tab content
+     * @private
+     */
+    async loadStatusContent() {
+        try {
+            const statusManager = await this.getDependency('status');
+            await statusManager.updateStatus();
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: 'loadStatusContent'
+            });
+        }
+    }
+
+    /**
+     * Load DRWN tab content
+     * @private
+     */
+    async loadDrwnContent() {
+        try {
+            const dataManager = await this.getDependency('data');
+            await dataManager.updateDrwnData();
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: 'loadDrwnContent'
+            });
+        }
+    }
+
+    /**
+     * Load ranking tab content
+     * @private
+     */
+    async loadRankingContent() {
+        try {
+            const dataManager = await this.getDependency('data');
+            await dataManager.updateRankingData();
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: 'loadRankingContent'
+            });
+        }
+    }
+
+    /**
+     * Load packing tab content
+     * @private
+     */
+    async loadPackingContent() {
+        try {
+            const packingContainer = document.getElementById('packing-container');
+            if (packingContainer) {
+                const packingComponent = new PackingRequests();
+                await packingComponent.mount(packingContainer);
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: 'loadPackingContent'
             });
         }
     }

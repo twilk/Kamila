@@ -203,4 +203,54 @@ export class MenuManager extends BaseManager {
             this.log(LogLevel.WARNING, `⚠️ Failed to restore store state: ${error.message}`);
         }
     }
+
+    /**
+     * Handle keyboard navigation
+     * @param {KeyboardEvent} event Keyboard event
+     */
+    handleKeyboardNavigation(event) {
+        try {
+            const tabs = Array.from(document.querySelectorAll(SELECTORS.TAB));
+            const currentTab = document.activeElement;
+            const currentIndex = tabs.indexOf(currentTab);
+            
+            let nextTab;
+            
+            switch (event.key) {
+                case KEYS.LEFT:
+                    event.preventDefault();
+                    nextTab = tabs[currentIndex - 1] || tabs[tabs.length - 1];
+                    break;
+                    
+                case KEYS.RIGHT:
+                    event.preventDefault();
+                    nextTab = tabs[currentIndex + 1] || tabs[0];
+                    break;
+                    
+                case KEYS.HOME:
+                    event.preventDefault();
+                    nextTab = tabs[0];
+                    break;
+                    
+                case KEYS.END:
+                    event.preventDefault();
+                    nextTab = tabs[tabs.length - 1];
+                    break;
+                    
+                case KEYS.ENTER:
+                case KEYS.SPACE:
+                    event.preventDefault();
+                    currentTab.click();
+                    return;
+            }
+            
+            if (nextTab) {
+                nextTab.focus();
+            }
+        } catch (error) {
+            this.handleError(error, ErrorType.UI, ErrorSeverity.LOW, {
+                method: 'handleKeyboardNavigation'
+            });
+        }
+    }
 } 

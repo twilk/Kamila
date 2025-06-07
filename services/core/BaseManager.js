@@ -567,4 +567,38 @@ export class BaseManager {
     static createLegacy() {
         return new this(null);
     }
-} 
+}
+
+// Add PackingManager to dependency order
+const DEPENDENCY_ORDER = [
+    'error',
+    'log',
+    'event',
+    'storage',
+    'store',
+    'cache',
+    'api',
+    'order',
+    'data',
+    'status',
+    'language',
+    'theme',
+    'refresh',
+    'alarm',
+    'ui',
+    'settings',
+    'notification',
+    'loading',
+    'connection',
+    'menu',
+    'debug',
+    'volume',
+    'update',
+    'user',
+    'message',
+    'progress',
+    'interface',
+    'counter',
+    'usercard',
+    'packing' // Add PackingManager
+]; 

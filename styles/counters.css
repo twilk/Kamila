@@ -407,7 +407,7 @@ body[data-theme="dark"] #total-count {
 
 /* Last Update Section */
 .last-update {
-    display: flex;
+    display: block;
     align-items: center;
     justify-content: space-between;
     padding-top: 8px;

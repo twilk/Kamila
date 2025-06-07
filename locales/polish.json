@@ -254,5 +254,30 @@
             "label": "Dramat",
             "tooltip": "Zamówienia oczekujące ponad 7 dni"
         }
+    },
+    "packing": {
+        "title": "Prośby o spakowanie",
+        "loading": "Ładowanie próśb o spakowanie...",
+        "error": "Błąd podczas ładowania próśb o spakowanie",
+        "retry": "Spróbuj ponownie",
+        "table": {
+            "orderId": "ID zamówienia",
+            "store": "Sklep",
+            "products": "Produkty",
+            "shipping": "Wysyłka",
+            "status": "Status",
+            "actions": "Akcje"
+        },
+        "status": {
+            "packed": "Spakowane",
+            "pending": "Oczekuje"
+        },
+        "shipping": {
+            "yes": "Tak",
+            "no": "Nie"
+        },
+        "confirm": "Potwierdź spakowanie",
+        "confirmSuccess": "Spakowanie potwierdzone dla zamówienia {id}",
+        "confirmError": "Błąd podczas potwierdzania spakowania"
     }
 }
